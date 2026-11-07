@@ -86,13 +86,13 @@
     position: absolute; inset: 0; z-index: 4;
     display: flex; flex-direction: row-reverse;
   }
-  /* スライド遷移中は、ページ端の灰色の縦線（シートの輪郭影）を出さない */
-  #stage.sliding .page { box-shadow: none; }
+  /* ページに輪郭・影・隙間は付けない：見開きでも紙の背景が一様につながるようにする
+     （以前は box-shadow と左右3pxのマージンがあり、見開き中央に灰色〜ベージュの
+     縦帯と、ページ下端に影の帯が見えていた） */
   .page {
-    position: relative; flex: none; height: 100%; margin: 0 3px;
+    position: relative; flex: none; height: 100%; margin: 0;
     display: flex; flex-direction: column;
     gap: var(--tiergap); background: var(--bg);
-    box-shadow: 0 0 0 1px var(--line), 0 0 18px rgba(0,0,0,.16);
     padding: calc(var(--padT) + env(safe-area-inset-top, 0px)) var(--padX)
              calc(var(--padB) + env(safe-area-inset-bottom, 0px));
   }
@@ -905,7 +905,7 @@ function buildProbe(){
   if (probePage) probePage.remove();
   probePage = document.createElement("div");
   probePage.className = "page probe";
-  probePage.style.width = Math.max(200, panelW() - 6) + "px";
+  probePage.style.width = Math.max(200, panelW()) + "px";
   probePage.setAttribute("aria-hidden", "true");
   const n = S.mode === "double" ? 2 : 1;
   for (let i = 0; i < n; i++) {
@@ -1277,7 +1277,7 @@ let animating = false, winStart = 0;
 function buildPageEl(pageData){
   const el = document.createElement("div");
   el.className = "page";
-  el.style.width = Math.max(200, panelW() - 6) + "px";
+  el.style.width = Math.max(200, panelW()) + "px";
   /* 漫画ページ：画像を全面に1枚だけ置く。実データは表示のこのタイミングで
      エントリ単位に解凍して差し込む（先読みぶんはキャッシュに乗る） */
   if (pageData.manga !== undefined && pageData.manga !== null) {
