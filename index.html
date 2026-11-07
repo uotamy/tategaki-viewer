@@ -748,21 +748,42 @@ function serializeEpisodes(episodes){
 function deserializeEpisodes(data){
   if (!Array.isArray(data) || !data.length) return null;
   try {
-    return data.map(ep => ({
-      title: ep.title,
-      paragraphs: ep.paragraphs.map(p => {
-        const o = { units: textToUnits(p.t), cls: p.cls || "" };
-        if (Array.isArray(p.tbl) && p.tbl.length) o.table = p.tbl;
-        if (p.img) { o.img = p.img; o.src = p.src; }
-        if (p.pb) o.breakBefore = true;
-        if (p.tb) o.breakTier = true;
-        return o;
-      })
-    }));
+    return data.map(ep => {
+      /* 保存形式のプロパティ名は paras（serializeEpisodes 側）。以前の読み込み側は
+         paragraphs を読んでいて、保存済みの本文が常に復元エラー（null）になっていた。
+         旧形式で書かれたレコードの救済として paragraphs も受け付ける */
+      const paras = ep.paras || ep.paragraphs;
+      if (!Array.isArray(paras)) throw new Error("bad episode record");
+      return {
+        title: ep.title,
+        paragraphs: paras.map(p => {
+          const o = { units: textToUnits(p.t), cls: p.cls || "" };
+          if (Array.isArray(p.tbl) && p.tbl.length) o.table = p.tbl;
+          if (p.img) { o.img = p.img; o.src = p.src; }
+          if (p.pb) o.breakBefore = true;
+          if (p.tb) o.breakTier = true;
+          return o;
+        })
+      };
+    });
   } catch (e) { return null; }
 }
+/* 保存したレコードの値そのものを読み返す（キーの存在確認だけでは不十分：
+   以前、保存形式と復元形式の不一致で「キーはあるのに本文が復元できない」
+   状態を保存成功と誤判定し、全形式で本棚から開けなくなった） */
+async function idbGetValue(store, key){
+  const db = await idbOpen();
+  if (!db) return null;
+  return new Promise(res => {
+    try {
+      const rq = db.transaction(store, "readonly").objectStore(store).get(key);
+      rq.onsuccess = () => res(rq.result || null);
+      rq.onerror = () => res(null);
+    } catch (e) { res(null); }
+  });
+}
 /* 開いた本の本文を IndexedDB に保存する（保存できない場合は false を返し、位置だけ保存する）。
-   書き込み完了だけで成功とせず、保存後にキーで読み返して実在を確認する。
+   書き込み完了だけで成功とせず、保存後に値を読み返して「復元できること」まで確認する。
    確認できなければ接続を取り直してもう一度だけ試す（初回の接続がブロック明け等で
    不安定だった場合に、黙って未保存のまま本棚へ残るのを防ぐ） */
 async function saveBookContent(key, episodes){
@@ -780,7 +801,10 @@ async function saveBookContent(key, episodes){
         tx.onabort = () => res(false);
       } catch (e) { res(false); }
     });
-    if (written && await idbHasKey(IDB_STORE, key)) return true;
+    if (written) {
+      const back = await idbGetValue(IDB_STORE, key);
+      if (back && deserializeEpisodes(back)) return true;
+    }
     idbReset();
   }
   return false;
