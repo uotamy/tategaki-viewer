@@ -590,7 +590,6 @@ const S = {
   positions: {},            // bookKey -> {ep, pos, charInEp}
   library: [],              // 本棚: {key,kind,title,note,fileName,epTitles,epChars,totalChars,stored,lastRead}
   lastKey: null,
-  pendingKey: null,         // 本棚で選んだ「ファイル再選択待ち」の本
   cache: new Map(),         // epIndex -> pages
   uiTimer: null
 };
@@ -1864,7 +1863,7 @@ function buildShelf(){
       '<div class="bprog"><i style="width:' + pct + '%"></i></div>' +
       '<div class="bfoot"><span>' + (started ? pct + "%まで読了" : "未読") + "</span>" +
       (entry.lastRead ? "<span>" + fmtReadDate(entry.lastRead) + "</span>" : "") +
-      (!entry.stored && entry.kind !== "guide" ? '<span class="bneed">ファイル再選択で続きから</span>' : "") +
+      (!entry.stored && entry.kind !== "guide" ? '<span class="bneed">本文が保存されていません</span>' : "") +
       '<span class="go">' + (entry.key === S.work.key ? "読書中" : (started ? "続きから読む" : "開く")) + "</span></div>";
     /* カードのタップで、その本を最後に読んでいたページから開く */
     card.addEventListener("click", () => openFromShelf(entry));
@@ -1896,7 +1895,7 @@ async function openFromShelf(entry){
   }
   /* 漫画は本文ではなくzipアーカイブ自体が保存されている。目録だけ読み直して開く。
      保存済みかどうかのフラグ（entry.stored）は鵜呑みにせず、必ず実物の読み込みを試す。
-     フラグが古い・誤っているだけで本文が残っている本を「再選択が必要」と誤認しないため。
+     フラグが古い・誤っているだけで本文が残っている本を「開けない」と誤認しないため。
      読み込めた場合は setBook 経由でフラグが「保存済み」に回復する */
   if (entry.manga || entry.kind === "manga") {
     const arch = await loadBookArchive(entry.key);
@@ -1908,21 +1907,21 @@ async function openFromShelf(entry){
         hideShelf();
         toast(resumed ? "前回の続きから開きました" : "『" + entry.title + "』を開きました");
         return;
-      } catch (e) { /* アーカイブが壊れている場合はファイル再選択へ落とす */ }
+      } catch (e) { /* アーカイブが壊れている場合は下のエラー表示へ落とす */ }
+    }
+  } else {
+    const eps = await loadBookContent(entry.key);
+    if (eps) {
+      const resumed = setBook({ title: entry.title, note: entry.note }, eps, entry.key,
+        { kind: "file", fileName: entry.fileName, stored: true });
+      hideShelf();
+      toast(resumed ? "前回の続きから開きました" : "『" + entry.title + "』を開きました");
+      return;
     }
   }
-  const eps = await loadBookContent(entry.key);
-  if (eps) {
-    const resumed = setBook({ title: entry.title, note: entry.note }, eps, entry.key,
-      { kind: "file", fileName: entry.fileName, stored: true });
-    hideShelf();
-    toast(resumed ? "前回の続きから開きました" : "『" + entry.title + "』を開きました");
-    return;
-  }
-  /* 本文が端末に残っていない本：同じファイルを選んでもらえば保存位置から再開する */
-  S.pendingKey = entry.key;
-  toast("続きを読むには、同じファイルをもう一度選んでください");
-  $("#fileInput").click();
+  /* 本文が端末に残っていない本は、ファイルの再選択では開かない。
+     ファイル選択は出さず、エラーを表示して本棚に留まる */
+  toast("エラー：『" + entry.title + "』の本文が端末に保存されていないため、開けません", 3600);
 }
 $("#btnShelf").addEventListener("click", () => { closeSheets(); showShelf(); pokeUI(); });
 $("#btnShelfClose").addEventListener("click", () => hideShelf());
@@ -2273,23 +2272,17 @@ $("#fileInput").addEventListener("change", async e => {
   e.target.value = "";
   if (!file) return;
   setLoading(true);
-  let pendingEntry = null;
   try {
     /* 「読み込み中」の表示を先に描画してから、重い解析・割り付けに入る（操作が固まって見えないように） */
     await new Promise(r => setTimeout(r, 40));
     const buf = await file.arrayBuffer();
-    /* 本棚から「ファイル再選択」で来た場合は、控えておいた本のキーを引き継ぐ。
-       以前はここで pendingKey を捨てていたため、選んだファイルの名前やサイズが
-       前回と少しでも違う（ダウンロード時の改名など）と別な本として扱われ、
-       保存済みの読書位置・しおりと結び付かなかった */
-    pendingEntry = S.pendingKey ? (S.library.find(x => x.key === S.pendingKey) || null) : null;
-    S.pendingKey = null;
-    const keyFor = title => (pendingEntry && (pendingEntry.fileName === file.name || pendingEntry.title === title))
-      ? pendingEntry.key : (file.name + ":" + file.size);
+    /* 本のキーはファイル名とサイズで決まる。本棚の本は端末に保存された本文から開くのが
+       原則で、続きを読むためにファイルを選ばせる経路は持たない（本文が無ければエラー） */
+    const keyFor = () => (file.name + ":" + file.size);
     /* 保存できなかった本は、開けた時点でそのことを知らせる（後から本棚で
-       「再選択が必要」とだけ言われて理由が分からなくならないように） */
+       エラーになるときに、理由が分からなくならないように） */
     const notifyNotStored = stored => {
-      if (!stored) setTimeout(() => toast("この端末に保存できませんでした（容量不足など）。次回開くときはファイルの再選択が必要です"), 1200);
+      if (!stored) setTimeout(() => toast("この端末に保存できませんでした（容量不足など）。この本は次回開けません"), 1200);
     };
     if (/\.epub$/i.test(file.name)) {
       const book = await parseEpub(buf, file.name);
@@ -2346,8 +2339,6 @@ $("#fileInput").addEventListener("change", async e => {
     hideShelf();
     closeSheets();
   } catch (err) {
-    /* 読み込みに失敗した場合は再選択待ちの控えを戻し、選び直しで続きから開けるようにする */
-    if (pendingEntry) S.pendingKey = pendingEntry.key;
     toast("このファイルは読み込めませんでした");
   } finally {
     setLoading(false);
