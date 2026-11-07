@@ -657,27 +657,81 @@ function contentKey(key){ return LS_KEY + ":book:" + key; }
    位置・しおり・設定（localStorage）と本文（IndexedDB）はどちらも端末側の保存なので、
    このWebアプリをそのままAPK化（WebViewで包む）しても同じ仕組みで動く。 */
 const IDB_NAME = "tategaki-viewer-db", IDB_STORE = "books", IDB_ARCHIVE_STORE = "archives";
-let idbPromise = null;
-function idbOpen(){
-  if (!("indexedDB" in window)) return Promise.resolve(null);
-  if (!idbPromise) {
-    idbPromise = new Promise(res => {
-      let req;
-      try { req = indexedDB.open(IDB_NAME, 2); } catch (e) { res(null); return; }
-      req.onupgradeneeded = () => {
-        try {
-          const db = req.result;
-          if (!db.objectStoreNames.contains(IDB_STORE)) db.createObjectStore(IDB_STORE);
-          /* 漫画zipは展開せず、アーカイブ自体をここに保存する（開くたびに目録だけ読み直す） */
-          if (!db.objectStoreNames.contains(IDB_ARCHIVE_STORE)) db.createObjectStore(IDB_ARCHIVE_STORE);
-        } catch (e) { /* noop */ }
+let idbDb = null, idbOpening = null;
+function idbOpenOnce(version){
+  return new Promise(res => {
+    let req;
+    try { req = version ? indexedDB.open(IDB_NAME, version) : indexedDB.open(IDB_NAME); }
+    catch (e) { res(null); return; }
+    req.onupgradeneeded = () => {
+      try {
+        const db = req.result;
+        if (!db.objectStoreNames.contains(IDB_STORE)) db.createObjectStore(IDB_STORE);
+        /* 漫画zipは展開せず、アーカイブ自体をここに保存する（開くたびに目録だけ読み直す） */
+        if (!db.objectStoreNames.contains(IDB_ARCHIVE_STORE)) db.createObjectStore(IDB_ARCHIVE_STORE);
+      } catch (e) { /* noop */ }
+    };
+    req.onsuccess = () => res(req.result);
+    req.onerror = () => res(null);
+    /* 他タブ等にブロックされた場合は失敗として返すが、保持はしない（下の idbOpen が次回再試行する） */
+    req.onblocked = () => res(null);
+  });
+}
+/* IndexedDB を開く。以前の実装は「一度失敗（ブロック・一時的エラー）すると、その失敗結果を
+   セッション中ずっと保持して二度と保存を試みない」作りで、開いた本が一切保存されず、
+   次回必ず「同じファイルを選んでください」になっていた。ここでは:
+   - 成功した接続だけを保持し、失敗は次回呼び出しで開き直す
+   - DBはあるのにストアが欠けている場合（旧ビルドが先にDBを作っていた場合）は
+     バージョンを上げてストアを作り直す
+   - 他タブが新バージョンを要求したら接続を閉じて道を譲る */
+async function idbOpen(){
+  if (!("indexedDB" in window)) return null;
+  if (idbDb) return idbDb;
+  if (idbOpening) return idbOpening;
+  idbOpening = (async () => {
+    let db = await idbOpenOnce(2);
+    if (db && (!db.objectStoreNames.contains(IDB_STORE) || !db.objectStoreNames.contains(IDB_ARCHIVE_STORE))) {
+      const v = db.version + 1;
+      try { db.close(); } catch (e) { /* noop */ }
+      db = await idbOpenOnce(v);
+    }
+    idbOpening = null;
+    if (db) {
+      idbDb = db;
+      db.onversionchange = () => {
+        try { db.close(); } catch (e) { /* noop */ }
+        if (idbDb === db) idbDb = null;
       };
-      req.onsuccess = () => res(req.result);
-      req.onerror = () => res(null);
-      req.onblocked = () => res(null);
-    });
-  }
-  return idbPromise;
+    }
+    return db;
+  })();
+  return idbOpening;
+}
+function idbReset(){
+  if (idbDb) { try { idbDb.close(); } catch (e) { /* noop */ } idbDb = null; }
+  idbOpening = null;
+}
+/* 保存したはずのレコードが本当に残っているか、値本体を読まずキーだけ確認する */
+async function idbHasKey(store, key){
+  const db = await idbOpen();
+  if (!db) return false;
+  return new Promise(res => {
+    try {
+      const rq = db.transaction(store, "readonly").objectStore(store).getKey(key);
+      rq.onsuccess = () => res(rq.result !== undefined);
+      rq.onerror = () => res(false);
+    } catch (e) { res(false); }
+  });
+}
+/* ブラウザに保存領域の永続化を願い出る（許可されると、容量圧迫時の自動削除の対象外になりやすい）。
+   願い出ていなかった頃は、端末側の判断で本文が消え、続きから開けなくなることがあった */
+function requestPersistence(){
+  try {
+    if (navigator.storage && navigator.storage.persist) {
+      const p = navigator.storage.persist();
+      if (p && typeof p.catch === "function") p.catch(() => {});
+    }
+  } catch (e) { /* noop */ }
 }
 function serializeEpisodes(episodes){
   return episodes.map(ep => ({
@@ -708,19 +762,29 @@ function deserializeEpisodes(data){
     }));
   } catch (e) { return null; }
 }
-/* 開いた本の本文を IndexedDB に保存する（保存できない場合は false を返し、位置だけ保存する） */
+/* 開いた本の本文を IndexedDB に保存する（保存できない場合は false を返し、位置だけ保存する）。
+   書き込み完了だけで成功とせず、保存後にキーで読み返して実在を確認する。
+   確認できなければ接続を取り直してもう一度だけ試す（初回の接続がブロック明け等で
+   不安定だった場合に、黙って未保存のまま本棚へ残るのを防ぐ） */
 async function saveBookContent(key, episodes){
-  const db = await idbOpen();
-  if (!db) return false;
-  return new Promise(res => {
-    try {
-      const tx = db.transaction(IDB_STORE, "readwrite");
-      tx.objectStore(IDB_STORE).put(serializeEpisodes(episodes), key);
-      tx.oncomplete = () => res(true);
-      tx.onerror = () => res(false);
-      tx.onabort = () => res(false);
-    } catch (e) { res(false); }
-  });
+  requestPersistence();
+  const data = serializeEpisodes(episodes);
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const db = await idbOpen();
+    if (!db) return false;
+    const written = await new Promise(res => {
+      try {
+        const tx = db.transaction(IDB_STORE, "readwrite");
+        tx.objectStore(IDB_STORE).put(data, key);
+        tx.oncomplete = () => res(true);
+        tx.onerror = () => res(false);
+        tx.onabort = () => res(false);
+      } catch (e) { res(false); }
+    });
+    if (written && await idbHasKey(IDB_STORE, key)) return true;
+    idbReset();
+  }
+  return false;
 }
 async function loadBookContent(key){
   const db = await idbOpen();
@@ -755,17 +819,32 @@ async function dropBookContent(key){
    zipアーカイブ自体（File/Blob）をそのまま IndexedDB に保存する。
    開くときは目録だけを読み、画像はページ表示のタイミングで1枚ずつ解凍する。 */
 async function saveBookArchive(key, blob){
-  const db = await idbOpen();
-  if (!db || !blob) return false;
-  return new Promise(res => {
-    try {
-      const tx = db.transaction(IDB_ARCHIVE_STORE, "readwrite");
-      tx.objectStore(IDB_ARCHIVE_STORE).put(blob, key);
-      tx.oncomplete = () => res(true);
-      tx.onerror = () => res(false);
-      tx.onabort = () => res(false);
-    } catch (e) { res(false); }
-  });
+  if (!blob) return false;
+  requestPersistence();
+  /* 容量見積もりで明らかに収まらないアーカイブ（GB級の漫画zipなど）は、
+     長時間かかる書き込みを試みて結局失敗する前に、ここで未保存と確定させる */
+  try {
+    if (navigator.storage && navigator.storage.estimate) {
+      const est = await navigator.storage.estimate();
+      if (est && est.quota && (est.usage || 0) + blob.size > est.quota) return false;
+    }
+  } catch (e) { /* 見積もりが取れない環境では従来どおり書き込みを試す */ }
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const db = await idbOpen();
+    if (!db) return false;
+    const written = await new Promise(res => {
+      try {
+        const tx = db.transaction(IDB_ARCHIVE_STORE, "readwrite");
+        tx.objectStore(IDB_ARCHIVE_STORE).put(blob, key);
+        tx.oncomplete = () => res(true);
+        tx.onerror = () => res(false);
+        tx.onabort = () => res(false);
+      } catch (e) { res(false); }
+    });
+    if (written && await idbHasKey(IDB_ARCHIVE_STORE, key)) return true;
+    idbReset();
+  }
+  return false;
 }
 async function loadBookArchive(key){
   const db = await idbOpen();
@@ -1803,9 +1882,12 @@ async function openFromShelf(entry){
     toast(resumed ? "前回の続きから開きました" : "『" + entry.title + "』を開きました");
     return;
   }
-  /* 漫画は本文ではなくzipアーカイブ自体が保存されている。目録だけ読み直して開く */
+  /* 漫画は本文ではなくzipアーカイブ自体が保存されている。目録だけ読み直して開く。
+     保存済みかどうかのフラグ（entry.stored）は鵜呑みにせず、必ず実物の読み込みを試す。
+     フラグが古い・誤っているだけで本文が残っている本を「再選択が必要」と誤認しないため。
+     読み込めた場合は setBook 経由でフラグが「保存済み」に回復する */
   if (entry.manga || entry.kind === "manga") {
-    const arch = entry.stored ? await loadBookArchive(entry.key) : null;
+    const arch = await loadBookArchive(entry.key);
     if (arch) {
       try {
         const book = await parseMangaArchive(arch, entry.fileName || entry.title);
@@ -1817,7 +1899,7 @@ async function openFromShelf(entry){
       } catch (e) { /* アーカイブが壊れている場合はファイル再選択へ落とす */ }
     }
   }
-  const eps = entry.stored ? await loadBookContent(entry.key) : null;
+  const eps = await loadBookContent(entry.key);
   if (eps) {
     const resumed = setBook({ title: entry.title, note: entry.note }, eps, entry.key,
       { kind: "file", fileName: entry.fileName, stored: true });
@@ -2179,18 +2261,32 @@ $("#fileInput").addEventListener("change", async e => {
   e.target.value = "";
   if (!file) return;
   setLoading(true);
+  let pendingEntry = null;
   try {
     /* 「読み込み中」の表示を先に描画してから、重い解析・割り付けに入る（操作が固まって見えないように） */
     await new Promise(r => setTimeout(r, 40));
     const buf = await file.arrayBuffer();
-    const key = file.name + ":" + file.size;
+    /* 本棚から「ファイル再選択」で来た場合は、控えておいた本のキーを引き継ぐ。
+       以前はここで pendingKey を捨てていたため、選んだファイルの名前やサイズが
+       前回と少しでも違う（ダウンロード時の改名など）と別な本として扱われ、
+       保存済みの読書位置・しおりと結び付かなかった */
+    pendingEntry = S.pendingKey ? (S.library.find(x => x.key === S.pendingKey) || null) : null;
     S.pendingKey = null;
+    const keyFor = title => (pendingEntry && (pendingEntry.fileName === file.name || pendingEntry.title === title))
+      ? pendingEntry.key : (file.name + ":" + file.size);
+    /* 保存できなかった本は、開けた時点でそのことを知らせる（後から本棚で
+       「再選択が必要」とだけ言われて理由が分からなくならないように） */
+    const notifyNotStored = stored => {
+      if (!stored) setTimeout(() => toast("この端末に保存できませんでした（容量不足など）。次回開くときはファイルの再選択が必要です"), 1200);
+    };
     if (/\.epub$/i.test(file.name)) {
       const book = await parseEpub(buf, file.name);
+      const key = keyFor(book.title);
       const stored = await saveBookContent(key, book.episodes);
       const resumed = setBook({ title: book.title, note: "EPUB" }, book.episodes, key,
         { kind: "file", fileName: file.name, stored });
       toast(resumed ? "前回の続きから開きました" : "『" + book.title + "』を開きました（全" + book.episodes.length + "章）");
+      notifyNotStored(stored);
     } else if (/\.(zip|cbz)$/i.test(file.name)) {
       /* まず目録だけを見て分岐する：テキストが無く画像だけなら漫画として扱い、
          テキストを含むzip（青空文庫zip等）は従来どおりテキストとして処理する。
@@ -2207,31 +2303,39 @@ $("#fileInput").addEventListener("change", async e => {
       }
       if (mangaBook) {
         /* 保存は画像の全展開ではなく、zipアーカイブ自体（File）をIndexedDBへ */
+        const key = keyFor(mangaBook.title);
         const stored = await saveBookArchive(key, file);
         const resumed = setBook({ title: mangaBook.title, note: "画像ZIP（漫画）" }, mangaBook.episodes, key,
           { kind: "manga", fileName: file.name, stored, mangaState: mangaBook.mangaState });
         toast(resumed ? "前回の続きから開きました"
           : "『" + mangaBook.title + "』を開きました（全" + mangaBook.episodes[0].paragraphs.length + "ページ）");
+        notifyNotStored(stored);
       } else {
         const book = await parseZipBook(buf, file.name);
+        const key = keyFor(book.title);
         const stored = await saveBookContent(key, book.episodes);
         const resumed = setBook({ title: book.title, note: "青空文庫ZIP" }, book.episodes, key,
           { kind: "file", fileName: file.name, stored });
         toast(resumed ? "前回の続きから開きました" : "『" + book.title + "』を開きました");
+        notifyNotStored(stored);
       }
     } else {
       let text;
       try { text = new TextDecoder("utf-8", { fatal: true }).decode(buf); }
       catch (err) { text = new TextDecoder("shift_jis").decode(buf); }
       const book = parseTextBook(text, file.name);
+      const key = keyFor(book.title);
       const stored = await saveBookContent(key, book.episodes);
       const resumed = setBook({ title: book.title, note: file.name }, book.episodes, key,
         { kind: "file", fileName: file.name, stored });
       toast(resumed ? "前回の続きから開きました" : "『" + book.title + "』を開きました");
+      notifyNotStored(stored);
     }
     hideShelf();
     closeSheets();
   } catch (err) {
+    /* 読み込みに失敗した場合は再選択待ちの控えを戻し、選び直しで続きから開けるようにする */
+    if (pendingEntry) S.pendingKey = pendingEntry.key;
     toast("このファイルは読み込めませんでした");
   } finally {
     setLoading(false);
@@ -2263,11 +2367,12 @@ ensureGuideEntry();
    （「読書に戻る」でそのまま読める）、本棚で本を選ぶと、その本の最後に
    読んでいたページから開く。本ごとの最終ページ・しおりは従来どおり保持される。 */
 (async () => {
+  requestPersistence();
   let openedLast = false;
   const lastEntry = S.lastKey ? S.library.find(x => x.key === S.lastKey) : null;
   if (lastEntry && lastEntry.kind !== "guide") {
     if (lastEntry.manga || lastEntry.kind === "manga") {
-      const arch = lastEntry.stored ? await loadBookArchive(lastEntry.key) : null;
+      const arch = await loadBookArchive(lastEntry.key);
       if (arch) {
         try {
           const book = await parseMangaArchive(arch, lastEntry.fileName || lastEntry.title);
@@ -2277,7 +2382,7 @@ ensureGuideEntry();
         } catch (e) { /* 読めなければガイドへ落とす */ }
       }
     } else {
-      const eps = lastEntry.stored ? await loadBookContent(lastEntry.key) : null;
+      const eps = await loadBookContent(lastEntry.key);
       if (eps) {
         setBook({ title: lastEntry.title, note: lastEntry.note }, eps, lastEntry.key,
           { kind: "file", fileName: lastEntry.fileName, stored: true });
