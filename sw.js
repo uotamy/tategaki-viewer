@@ -3,7 +3,7 @@
    - install: アプリ一式をキャッシュ + skipWaiting
    - activate: 旧キャッシュ削除 + clients.claim
    - fetch: ドキュメントはネットワーク優先（更新が次回起動時に届く）、他は stale-while-revalidate */
-var VERSION = "v1";
+var VERSION = "v2";
 var CACHE = "tategaki-viewer-" + VERSION;
 var SHELL = ["./", "./index.html", "./manifest.webmanifest",
   "./icon-192.png", "./icon-512.png", "./icon-maskable-512.png"];

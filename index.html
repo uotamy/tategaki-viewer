@@ -81,6 +81,13 @@
     position: absolute; inset: 0; z-index: 4;
     display: flex; flex-direction: row-reverse;
   }
+  /* 章またぎスライド用：現在のページ群と遷移先のページ群を横に並べた帯 */
+  .slidewrap {
+    position: absolute; inset: 0; z-index: 4;
+    display: flex; flex-direction: row-reverse;
+  }
+  /* スライド遷移中は、ページ端の灰色の縦線（シートの輪郭影）を出さない */
+  #stage.sliding .page { box-shadow: none; }
   .page {
     position: relative; flex: none; height: 100%; margin: 0 3px;
     display: flex; flex-direction: column;
@@ -107,6 +114,30 @@
   .tier p.head { font-size: 1.06em; font-weight: 600; margin-left: .8em; }
   .tier p.endmark { text-align: end; color: var(--sub); }
   .tier rt { font-size: .5em; }
+  /* Markdownの表：縦書き段の中に、横書きの表ブロックとして収める */
+  .tier .mdtable {
+    writing-mode: horizontal-tb; -webkit-writing-mode: horizontal-tb;
+    display: block; margin: .35em 0; text-indent: 0; max-height: 100%;
+  }
+  .tier .mdtable table {
+    border-collapse: collapse; font-size: .8em; line-height: 1.55;
+    font-family: var(--font); color: var(--ink);
+  }
+  .tier .mdtable th, .tier .mdtable td {
+    border: 1px solid var(--line); padding: .28em .65em;
+    text-align: left; white-space: nowrap; font-weight: 400;
+  }
+  .tier .mdtable th { background: var(--tint); font-weight: 600; }
+  /* 青空文庫の傍点・太字注記の表現 */
+  .tier .boten { text-emphasis: filled sesame; -webkit-text-emphasis: filled sesame;
+    text-emphasis-position: over right; -webkit-text-emphasis-position: over right; }
+  .tier .fbold { font-weight: 700; }
+  /* 挿絵：縦書き段の中に横書きの図版ブロックとして収める */
+  .tier .illus {
+    writing-mode: horizontal-tb; -webkit-writing-mode: horizontal-tb;
+    display: block; margin: .35em 0; text-align: center; max-height: 100%;
+  }
+  .tier .illus img { max-width: 92%; max-height: 100%; height: auto; }
 
   #pageBadge {
     position: absolute; z-index: 5; pointer-events: none;
@@ -455,7 +486,7 @@
         </div>
         <button class="bbtn" id="btnShelfClose">読書に戻る</button>
       </div>
-      <button class="shelf-open" id="btnShelfOpen">ファイルを開く（.txt / .md / .epub）</button>
+      <button class="shelf-open" id="btnShelfOpen">ファイルを開く（.txt / .md / .epub / .zip）</button>
       <p class="shelf-hint">各カードの「削除」ボタンで履歴から削除できます。削除すると、その本の読書位置・しおり・端末に保存した本文も一緒に消えます（元のファイル自体は消えません）。</p>
       <div id="shelfList"></div>
     </div>
@@ -463,7 +494,7 @@
 
   <div id="toast"></div>
   <div id="loading"><div class="spin"></div><div>読み込み中…</div></div>
-  <input type="file" id="fileInput" hidden accept=".txt,.md,.markdown,.epub,text/plain,application/epub+zip" />
+  <input type="file" id="fileInput" hidden accept=".txt,.md,.markdown,.epub,.zip,text/plain,application/epub+zip,application/zip" />
 </div>
 
 <script>
@@ -490,7 +521,7 @@ const GUIDE_EPISODES = [
     paras: [
       "このビューワーは、日本語の小説を読むための縦書きビューワーです。縦書き・右から左へのページ送り、上下二段組みの組版で、紙の文庫本を読む感覚に寄せてあります。",
       "この文章は、ビューワーの使い方そのものです。サンプル小説の代わりに入っています。まずはこのまま読み進めながら、ページ送りやメニューの操作を試してみてください。",
-      "読めるファイルは、テキストファイル（.txt）、Markdown（.md）、EPUB（.epub）です。Shift_JISのテキストや、青空文庫形式の《ルビ》記法、EPUB内のルビにも対応しています。",
+      "読めるファイルは、テキストファイル（.txt）、Markdown（.md）、EPUB（.epub）、青空文庫の配布形式（.zip）です。Shift_JISのテキストや、青空文庫形式のルビ記法、EPUB内のルビにも対応しています。青空文庫の注記（改ページ・改段・見出し・傍点など）も処理され、.zipに画像が同梱されていれば挿絵も表示されます。",
       "なお、Kindle本のようなDRM（コピー防止）付きの本は開けません。対象は、自分の原稿や青空文庫など、DRMのないファイルです。"
     ]
   },
@@ -608,12 +639,21 @@ function persistLoad(){
   } catch (e) { return false; }
 }
 function unitsToMarkup(units){
+  /* 傍点・太字フラグは制御文字の目印として書き出し、復元時に textToUnits が拾い直す */
   let out = "", buf = "";
+  let eOn = false, bOn = false;
+  const flushBuf = () => { out += buf; buf = ""; };
   units.forEach(u => {
+    const e = !!u.e, b = !!u.b;
+    if (e !== eOn) { flushBuf(); out += e ? "\uE000" : "\uE001"; eOn = e; }
+    if (b !== bOn) { flushBuf(); out += b ? "\uE002" : "\uE003"; bOn = b; }
     if (u.c !== undefined) buf += u.c;
-    else { out += buf; buf = ""; out += "｜" + u.r + "《" + u.t + "》"; }
+    else { flushBuf(); out += "｜" + u.r + "《" + u.t + "》"; }
   });
-  return out + buf;
+  flushBuf();
+  if (eOn) out += "\uE001";
+  if (bOn) out += "\uE003";
+  return out;
 }
 function contentKey(key){ return LS_KEY + ":book:" + key; }
 /* 本文データは容量の大きい localStorage ではなく IndexedDB に保存する。
@@ -638,7 +678,14 @@ function idbOpen(){
 function serializeEpisodes(episodes){
   return episodes.map(ep => ({
     title: ep.title,
-    paras: ep.paragraphs.map(p => ({ t: unitsToMarkup(p.units), cls: p.cls || "" }))
+    paras: ep.paragraphs.map(p => {
+      const o = { t: unitsToMarkup(p.units), cls: p.cls || "" };
+      if (p.table) o.tbl = p.table; /* 表はセル構造ごと保存し、復元時も表として描く */
+      if (p.img) { o.img = p.img; o.src = p.src; } /* 挿絵は画像データごと保存する */
+      if (p.breakBefore) o.pb = 1;
+      if (p.breakTier) o.tb = 1;
+      return o;
+    })
   }));
 }
 function deserializeEpisodes(data){
@@ -646,7 +693,14 @@ function deserializeEpisodes(data){
   try {
     return data.map(ep => ({
       title: ep.title,
-      paragraphs: ep.paras.map(p => ({ units: textToUnits(p.t), cls: p.cls || "" }))
+      paragraphs: ep.paragraphs.map(p => {
+        const o = { units: textToUnits(p.t), cls: p.cls || "" };
+        if (Array.isArray(p.tbl) && p.tbl.length) o.table = p.tbl;
+        if (p.img) { o.img = p.img; o.src = p.src; }
+        if (p.pb) o.breakBefore = true;
+        if (p.tb) o.breakTier = true;
+        return o;
+      })
     }));
   } catch (e) { return null; }
 }
@@ -743,17 +797,41 @@ window.addEventListener("beforeunload", () => persistNow());
 /* ---------------- テキスト → ユニット ----------------
    ユニット: {c:"あ"} 1文字 / {r:"漢字", t:"かんじ"} ルビ（分割不可） */
 function textToUnits(str){
-  str = String(str).replace(/［＃[^］]*］/g, "");
+  str = String(str)
+    /* 傍点注記：［＃「対象」に傍点］は、直前にある対象文字列へ傍点フラグを付ける
+       （制御文字を目印に変換しておき、ユニット化のときに拾う） */
+    .replace(/([^［］]*?)［＃「([^」]+)」に[^］]*?傍点］/g, (m, pre, target) =>
+      pre.endsWith(target)
+        ? pre.slice(0, pre.length - target.length) + "\uE000" + target + "\uE001"
+        : pre)
+    /* 太字注記：［＃太字］〜［＃太字終わり］も目印に変換する */
+    .replace(/［＃太字］/g, "\uE002")
+    .replace(/［＃太字終わり］/g, "\uE003")
+    /* 残りの［＃…］注記は本文に生テキストとして漏らさず除去する
+       （改ページ等の構造注記は parseTextBook 側で先に処理される） */
+    .replace(/［＃[^］]*］/g, "");
   const units = [];
+  let emph = false, bold = false;
+  const mk = u => { if (emph) u.e = 1; if (bold) u.b = 1; return u; };
+  const pushText = s => {
+    for (const c of s) {
+      if (c === "\uE000") { emph = true; continue; }
+      if (c === "\uE001") { emph = false; continue; }
+      if (c === "\uE002") { bold = true; continue; }
+      if (c === "\uE003") { bold = false; continue; }
+      units.push(mk({ c }));
+    }
+  };
+  /* ルビは2形式とも対応：｜漢字《かんじ》（｜区切り）と 漢字《かんじ》（漢字直付け） */
   const re = /｜([^《｜]+)《([^》]+)》|([一-龯々〆ヶ]+)《([^》]+)》/g;
   let last = 0, m;
   while ((m = re.exec(str))) {
-    for (const c of str.slice(last, m.index)) units.push({ c });
-    if (m[1] !== undefined) units.push({ r: m[1], t: m[2] });
-    else units.push({ r: m[3], t: m[4] });
+    pushText(str.slice(last, m.index));
+    if (m[1] !== undefined) units.push(mk({ r: m[1], t: m[2] }));
+    else units.push(mk({ r: m[3], t: m[4] }));
     last = m.index + m[0].length;
   }
-  for (const c of str.slice(last)) units.push({ c });
+  pushText(str.slice(last));
   return units;
 }
 function unitsToText(units){ return units.map(u => u.c !== undefined ? u.c : u.r).join(""); }
@@ -787,12 +865,30 @@ function buildProbe(){
   probeTier = probePage.firstChild;
 }
 function chunkHTML(units){
-  return units.map(u => u.c !== undefined ? esc(u.c)
-    : "<ruby>" + esc(u.r) + "<rt>" + esc(u.t) + "</rt></ruby>").join("");
+  return units.map(u => {
+    let h;
+    if (u.c !== undefined) h = esc(u.c);
+    else if (u.r !== undefined) h = "<ruby>" + esc(u.r) + "<rt>" + esc(u.t) + "</rt></ruby>";
+    else h = "";
+    if (u.b) h = '<span class="fbold">' + h + "</span>";
+    if (u.e) h = '<span class="boten">' + h + "</span>";
+    return h;
+  }).join("");
+}
+function tableHTML(rows){
+  let h = '<div class="mdtable"><table><tbody>';
+  rows.forEach((row, ri) => {
+    const tag = ri === 0 ? "th" : "td";
+    h += "<tr>" + row.map(c => "<" + tag + ">" + esc(c) + "</" + tag + ">").join("") + "</tr>";
+  });
+  return h + "</tbody></table></div>";
 }
 function renderChunks(tierEl, chunks){
-  tierEl.innerHTML = chunks.map(ch =>
-    '<p class="' + ch.cls + '">' + chunkHTML(ch.units) + "</p>").join("");
+  tierEl.innerHTML = chunks.map(ch => {
+    if (ch.table) return tableHTML(ch.table);
+    if (ch.img) return ch.src ? '<div class="illus"><img src="' + ch.src + '" alt="挿絵" /></div>' : "";
+    return '<p class="' + ch.cls + '">' + chunkHTML(ch.units) + "</p>";
+  }).join("");
 }
 function probeFits(chunks){
   renderChunks(probeTier, chunks);
@@ -815,12 +911,133 @@ function chunkClsFor(para, off){
   const f = para.units.length ? unitStartChar(para.units[0]) : "";
   return ("「『（―".includes(f)) ? "noind" : "";
 }
+/* ---------------- 割り付け計測の高速化 ----------------
+   従来の割り付けは、段の内容全体をプローブDOMへ描いては実測する二分探索で、
+   1段ごとに何度も強制リフロー（レイアウトスラッシング）が発生し、長編
+   （約19万字級）では開く・設定変更のたびに全量再計算で固まっていた。
+   現在は縦書きの列モデルで計算する：列の幅＝行高、1列に収まる長さ＝段の高さ。
+   文字幅は Canvas の measureText で実測し、段落ごとの累積長をキャッシュする
+   ため、DOM実測は表・挿絵の原子ブロック（少数）とフォールバック時だけに残る。 */
+let M = null, measureCtx = null, advGen = 0;
+function computeMetrics(){
+  try {
+    const cs = getComputedStyle(probeTier);
+    const fs = parseFloat(cs.fontSize), lh = parseFloat(cs.lineHeight);
+    if (!fs || !lh || !probeTier.clientWidth || !probeTier.clientHeight) { M = null; return; }
+    if (!measureCtx) measureCtx = document.createElement("canvas").getContext("2d");
+    measureCtx.font = cs.fontWeight + " " + fs + "px " + cs.fontFamily;
+    M = { fs, lh, tierW: probeTier.clientWidth, tierH: probeTier.clientHeight,
+          ls: fs * 0.01, ctx: measureCtx,
+          key: [S.font, S.fsIdx, S.lhIdx, S.marginIdx, S.mode, advGen,
+                probeTier.clientWidth, probeTier.clientHeight].join("|") };
+  } catch (e) { M = null; }
+}
+function advOf(u){
+  if (u.c !== undefined) return M.ctx.measureText(u.c).width + M.ls;
+  const t = u.r || "";
+  return M.ctx.measureText(t).width + M.ls * Math.max(1, [...t].length);
+}
+function paraPrefix(para){
+  if (para._pk === M.key && para._prefix) return para._prefix;
+  const n = para.units.length, pre = new Float32Array(n + 1);
+  for (let i = 0; i < n; i++) pre[i + 1] = pre[i] + advOf(para.units[i]);
+  para._prefix = pre; para._pk = M.key;
+  return pre;
+}
+function colCap(){ return Math.max(M.fs, M.tierH - M.fs * 0.5); } /* 1列に収まる長さ（安全側に半文字引く） */
+function colsFor(px, ind){
+  const cap = colCap(), first = cap - (ind ? M.fs : 0);
+  if (px <= first) return 1;
+  return 1 + Math.ceil((px - first) / cap);
+}
+function colWFor(para, off){
+  if (off === 0 && para.cls) {
+    if (para.cls.includes("title")) return M.fs * 1.3 * 1.55;
+    if (para.cls.includes("head")) return M.lh * 1.06;
+  }
+  return M.lh;
+}
+function headExtra(para, off){
+  return (off === 0 && para.cls && para.cls.includes("head")) ? 0.8 * 1.06 * M.fs : 0;
+}
+function prefixWidth(chunk){
+  /* 話タイトル（prefix）：1.3倍フォント・行高1.55・左余白1em として占有幅を概算する */
+  let L = 0;
+  chunk.units.forEach(u => { L += advOf(u) * 1.3; });
+  return Math.ceil(L / colCap()) * (M.fs * 1.3 * 1.55) + M.fs * 1.3;
+}
 function fillTier(paras, pos, prefix){
+  if (!M) return fillTierProbe(paras, pos, prefix);
   const chunks = prefix ? prefix.slice() : [];
+  const baseLen = chunks.length;
+  let pi = pos.pi, off = pos.off;
+  let budget = M.tierW - 1;
+  if (prefix) budget -= prefixWidth(prefix[0]);
+  while (pi < paras.length) {
+    const para = paras[pi], total = para.units.length;
+    if (off >= total) { pi++; off = 0; continue; }
+    /* ［＃改ページ］［＃改段］：段落の途中でなければ、ここで段を打ち切って次の段・ページへ送る */
+    if (off === 0 && chunks.length > baseLen && (para.breakBefore || para.breakTier)) break;
+    /* 表・挿絵は原子ブロックとしてDOM実測で収め、その段はそこで打ち切る（頻度が低いための割り切り） */
+    if (para.table || para.img) {
+      const whole = { units: para.units.slice(), cls: para.table ? "table" : "illus",
+                      table: para.table, img: para.img, src: para.src };
+      if (probeFits(chunks.concat([whole]))) { chunks.push(whole); pi++; off = 0; break; }
+      if (chunks.length > baseLen) break;
+      chunks.push(whole); pi++; off = 0; break;
+    }
+    const startCls = chunkClsFor(para, off);
+    const ind = !/(cont|noind|head|title|endmark)/.test(startCls);
+    const pre = paraPrefix(para);
+    const colW = colWFor(para, off), extra = headExtra(para, off);
+    const restPx = pre[total] - pre[off];
+    if (colsFor(restPx, ind) * colW + extra <= budget) {
+      chunks.push({ units: para.units.slice(off), cls: startCls });
+      budget -= colsFor(restPx, ind) * colW + extra;
+      pi++; off = 0; continue;
+    }
+    const colsAvail = Math.floor((budget - extra) / colW);
+    if (colsAvail <= 0) break;
+    const capPx = colsAvail * colCap() - (ind ? M.fs : 0);
+    let lo = 0, hi = total - off;
+    while (hi - lo > 1) {
+      const mid = (lo + hi) >> 1;
+      if (pre[off + mid] - pre[off] <= capPx) lo = mid; else hi = mid;
+    }
+    let n = lo;
+    while (n > 0 && n < total - off) {
+      const nextU = para.units[off + n], lastU = para.units[off + n - 1];
+      if (NO_START.includes(unitStartChar(nextU)) || NO_END.includes(unitEndChar(lastU))) n--;
+      else break;
+    }
+    if (n === 0) {
+      if (chunks.length === baseLen) { chunks.push({ units: para.units.slice(off, off + 1), cls: startCls }); off += 1; }
+      break;
+    }
+    chunks.push({ units: para.units.slice(off, off + n), cls: startCls });
+    off += n; break;
+  }
+  return { chunks, pos: { pi, off } };
+}
+/* フォールバック：列モデルが使えない環境では従来のプローブ実測で割り付ける */
+function fillTierProbe(paras, pos, prefix){
+  const chunks = prefix ? prefix.slice() : [];
+  const baseLen = chunks.length;
   let pi = pos.pi, off = pos.off;
   while (pi < paras.length) {
     const para = paras[pi], total = para.units.length;
     if (off >= total) { pi++; off = 0; continue; }
+    /* ［＃改ページ］［＃改段］：段落の途中でなければ、ここで段を打ち切って次の段・ページへ送る */
+    if (off === 0 && chunks.length > baseLen && (para.breakBefore || para.breakTier)) break;
+    /* 表・挿絵は途中で割らず、丸ごと1ブロックとして段に収める。
+       入らない場合は次の段・ページへ送り、空の段でのみ（はみ出し覚悟で）そのまま置いて前進させる */
+    if (para.table || para.img) {
+      const whole = { units: para.units.slice(), cls: para.table ? "table" : "illus",
+                      table: para.table, img: para.img, src: para.src };
+      if (probeFits(chunks.concat([whole]))) { chunks.push(whole); pi++; off = 0; continue; }
+      if (chunks.length > baseLen) break;
+      chunks.push(whole); pi++; off = 0; continue;
+    }
     const startCls = chunkClsFor(para, off);
     const restLen = total - off;
     const mk = n => ({ units: para.units.slice(off, off + n), cls: startCls });
@@ -849,12 +1066,16 @@ function fillTier(paras, pos, prefix){
 function paginate(epIdx){
   if (S.cache.has(epIdx)) return S.cache.get(epIdx);
   const ep = S.episodes[epIdx];
+  computeMetrics();
   const tiersPer = S.mode === "double" ? 2 : 1;
   const pages = [];
   let pos = { pi: 0, off: 0 }, first = true;
   while (pos.pi < ep.paragraphs.length) {
     const page = { tiers: [], start: { pi: pos.pi, off: pos.off } };
     for (let t = 0; t < tiersPer; t++) {
+      /* ［＃改ページ］の段落は、段の途中ではなく必ずページ先頭から始める */
+      if (t > 0 && pos.pi < ep.paragraphs.length && ep.paragraphs[pos.pi].breakBefore
+          && page.tiers.some(c => c.length)) break;
       const prefix = (first && t === 0 && ep.title)
         ? [{ units: textToUnits(ep.title), cls: "title" }] : null;
       const res = fillTier(ep.paragraphs, pos, prefix);
@@ -944,6 +1165,7 @@ function renderCurrent(dir){ renderWindow(); }
 /* 同じ話の中：トラックごと1ページ分（見開き時は2ページ分）スライドして切り替える */
 function animateGroupTo(newPage, done){
   animating = true;
+  stage.classList.add("sliding");
   const target = (newPage - winStart) * panelW();
   track.style.transition = "transform .32s cubic-bezier(.25,.7,.3,1)";
   track.style.transform = "translateX(" + target + "px)";
@@ -951,13 +1173,52 @@ function animateGroupTo(newPage, done){
   const finish = () => {
     if (fin) return; fin = true;
     S.page = newPage; animating = false;
+    stage.classList.remove("sliding");
     renderWindow();
     if (done) done();
   };
   track.addEventListener("transitionend", finish, { once: true });
   setTimeout(finish, 460);
 }
-/* 話をまたぐ移動と「めくり」方式：入ってくるページ群を独立した面として動かす */
+/* 話（章）をまたぐスライド：章内と同じ「ページ単位の離散スライド」に統一する。
+   現在のページ群と遷移先のページ群を横一列に並べた帯を作り、帯ごと
+   1ページ群分だけ滑らせて、現在の群を押し出しながら次の群を送り込む。
+   （以前の「入ってくるページが静止した現在ページの上にかぶさってくる」
+   方式は廃止し、章内・章またぎで同じ動きにした） */
+function slideGroupTo(dir, tgt){
+  animating = true;
+  renderWindow(); /* ドラッグ追随でずれたトラック位置を現在ページへ戻してから帯を作る */
+  stage.classList.add("sliding");
+  const groupW = ppv * panelW();
+  const curPages = paginate(S.ep), tgtPages = paginate(tgt.ep);
+  const curEls = [], tgtEls = [];
+  for (let i = S.page; i < Math.min(curPages.length, S.page + ppv); i++) curEls.push(buildPageEl(curPages[i]));
+  for (let i = tgt.page; i < Math.min(tgtPages.length, tgt.page + ppv); i++) tgtEls.push(buildPageEl(tgtPages[i]));
+  const wrap = document.createElement("div");
+  wrap.className = "slidewrap";
+  /* row-reverse なので先頭の群が右端に来る。
+     next: [現在群, 遷移先群] を右へ1群分滑らせる / prev: [遷移先群, 現在群] を右位置から0へ戻す */
+  (dir === "next" ? curEls.concat(tgtEls) : tgtEls.concat(curEls))
+    .forEach(el => wrap.appendChild(el));
+  wrap.style.transition = "none";
+  wrap.style.transform = "translateX(" + (dir === "next" ? 0 : groupW) + "px)";
+  pageHost.appendChild(wrap);
+  requestAnimationFrame(() => {
+    wrap.style.transition = "transform .32s cubic-bezier(.25,.7,.3,1)";
+    wrap.style.transform = "translateX(" + (dir === "next" ? groupW : 0) + "px)";
+  });
+  let fin = false;
+  const finish = () => {
+    if (fin) return; fin = true;
+    S.ep = tgt.ep; S.page = tgt.page;
+    wrap.remove(); animating = false;
+    stage.classList.remove("sliding");
+    renderWindow();
+  };
+  wrap.addEventListener("transitionend", finish, { once: true });
+  setTimeout(finish, 460);
+}
+/* 「めくり」方式：入ってくるページ群を独立した面としてめくる（章内・章またぎ共通） */
 function overlayGroup(dir, tgt, flip){
   animating = true;
   const pages = paginate(tgt.ep);
@@ -1009,9 +1270,10 @@ function turn(dir){
   if (!tgt) { toast(dir === "next" ? "この話の最後のページです" : "最初のページです"); return; }
   hideUI();
   if (S.turnStyle === "flip") { overlayGroup(dir, tgt, true); return; }
-  if (tgt.ep === S.ep && !reduceMotion) { animateGroupTo(tgt.page); return; }
-  if (tgt.ep === S.ep) { S.page = tgt.page; renderWindow(); return; }
-  overlayGroup(dir, tgt, false);
+  /* スライド方式は章内・章またぎとも同じページ単位の離散スライドで統一する */
+  if (reduceMotion) { S.ep = tgt.ep; S.page = tgt.page; renderWindow(); return; }
+  if (tgt.ep === S.ep) { animateGroupTo(tgt.page); return; }
+  slideGroupTo(dir, tgt);
 }
 function openEpisode(i, pageSpec){
   S.ep = i;
@@ -1049,6 +1311,7 @@ stage.addEventListener("pointermove", e => {
   if (Math.abs(drag.dx) > 8 && Math.abs(drag.dx) > Math.abs(drag.dy) * 1.15) {
     const lim = ppv * panelW();
     const dx = Math.max(-lim, Math.min(lim, drag.dx));
+    stage.classList.add("sliding");
     track.style.transition = "none";
     track.style.transform = "translateX(" + (drag.base + dx) + "px)";
   }
@@ -1058,9 +1321,10 @@ function endDrag(e, cancelled){
   if (!drag) return;
   const d = drag; drag = null;
   if (lpFired) { lpFired = false; return; }
-  if (cancelled) { renderWindow(); return; }
+  if (cancelled) { stage.classList.remove("sliding"); renderWindow(); return; }
   const adx = Math.abs(d.dx), ady = Math.abs(d.dy);
   if (adx < 10 && ady < 10) {
+    stage.classList.remove("sliding");
     const W = stage.clientWidth, x = e.clientX - stage.getBoundingClientRect().left;
     if (x < W * 0.3) turn("next");
     else if (x > W * 0.7) turn("prev");
@@ -1071,14 +1335,18 @@ function endDrag(e, cancelled){
     const dir = d.dx > 0 ? "next" : "prev";
     if (S.turnStyle === "slide" && !animating) {
       const tgt = targetFor(dir);
+      /* 章内・章またぎとも同じ離散スライドへ（章またぎも slideGroupTo が引き継ぐ） */
       if (tgt && tgt.ep === S.ep) { hideUI(); animateGroupTo(tgt.page); return; }
+      if (tgt) { hideUI(); slideGroupTo(dir, tgt); return; }
+      stage.classList.remove("sliding");
       renderWindow();
-      if (tgt) overlayGroup(dir, tgt, false);
       return;
     }
+    stage.classList.remove("sliding");
     turn(dir);
     return;
   }
+  stage.classList.remove("sliding");
   renderWindow();
 }
 stage.addEventListener("pointerup", e => endDrag(e, false));
@@ -1219,6 +1487,8 @@ function isDark(hex){
   return (0.2126 * r + 0.7152 * g + 0.0722 * b) < 128;
 }
 function applyTypography(repaginate){
+  /* 再割り付けのたびに文字幅キャッシュを作り直す（フォント読込完了後の実フォントで測り直すため） */
+  if (repaginate) advGen++;
   const savedPos = S.episodes.length ? currentPos() : { pi: 0, off: 0 };
   const savedEp = S.ep;
   stage.style.setProperty("--font", FONTS[S.font].css);
@@ -1399,42 +1669,143 @@ function setBook(work, episodes, key, opts){
   return resumed;
 }
 /* ---- .txt / .md ---- */
-function parseTextBook(text, fileName){
+function parseTextBook(text, fileName, images){
   const lines = text.split(/\r\n|\r|\n/);
   let workTitle = fileName.replace(/\.(txt|md|markdown)$/i, "");
   const episodes = [];
   let cur = null, buf = [];
+  let pendingBreak = 0; /* 1:［＃改段］ 2:［＃改ページ］（次に作る段落へ付ける） */
   const ensureEp = () => { if (!cur) { cur = { title: workTitle, paragraphs: [] }; episodes.push(cur); } };
+  const stripMd = s => s.replace(/\*\*([^*]+)\*\*/g, "$1").replace(/\*([^*]+)\*/g, "$1")
+    .replace(/`([^`]+)`/g, "$1").replace(/\[([^\]]+)\]\([^)]*\)/g, "$1");
+  const pushPara = (units, cls) => {
+    if (!units || !units.length) return;
+    ensureEp();
+    const p = { units, cls: cls || "" };
+    if (pendingBreak === 2) p.breakBefore = true;
+    else if (pendingBreak === 1) p.breakTier = true;
+    pendingBreak = 0;
+    cur.paragraphs.push(p);
+  };
   const flush = () => {
     if (!buf.length) return;
-    const joined = buf.join("");
+    const cleaned = stripMd(buf.join("")).trim();
     buf = [];
-    const cleaned = joined
-      .replace(/\*\*([^*]+)\*\*/g, "$1").replace(/\*([^*]+)\*/g, "$1")
-      .replace(/`([^`]+)`/g, "$1").replace(/\[([^\]]+)\]\([^)]*\)/g, "$1").trim();
     if (!cleaned) return;
-    ensureEp();
-    cur.paragraphs.push({ units: textToUnits(cleaned), cls: paraClsFor(cleaned) });
+    pushPara(textToUnits(cleaned), paraClsFor(cleaned));
   };
   const startEp = title => {
     flush();
     cur = { title: title.trim(), paragraphs: [] };
     episodes.push(cur);
   };
-  for (const raw of lines) {
-    const line = raw.replace(/^\s+/, "");
+  /* 見出しの扱い：大見出し（Markdownの # / ##、青空文庫の大見出し）だけが話を区切り、
+     それより小さい見出し（### 以下、中見出し、小見出し）は改ページせず本文中の中見出しにする */
+  const applyHeading = (size, inner) => {
+    if (size === "大") startEp(unitsToText(textToUnits(inner)));
+    else { flush(); pushPara(textToUnits(inner), "head"); }
+  };
+  const isSepRow = s => { const t = s.trim(); return t.includes("-") && t.includes("|") && /^[|:\-\s]+$/.test(t); };
+  const parseRow = s => {
+    let t = s.trim();
+    if (t.startsWith("|")) t = t.slice(1);
+    if (t.endsWith("|")) t = t.slice(0, -1);
+    return t.split("|").map(c => stripMd(c.trim()));
+  };
+  const addIllus = name => {
+    const base = name.split("/").pop();
+    const src = images ? (images[name] || images[base]) : null;
+    /* 画像が同梱されていない単体テキストでは、注記だけ落として何も表示しない（表示は崩れない） */
+    if (!src) return;
+    ensureEp();
+    const p = { units: textToUnits("挿絵"), cls: "illus", img: base, src };
+    if (pendingBreak === 2) p.breakBefore = true;
+    else if (pendingBreak === 1) p.breakTier = true;
+    pendingBreak = 0;
+    cur.paragraphs.push(p);
+  };
+  let headMode = null, headBuf = [];
+  for (let li = 0; li < lines.length; li++) {
+    let line = lines[li].replace(/^\s+/, "");
+    /* --- 青空文庫：複数行にわたる見出しブロックの継続行 --- */
+    if (headMode) {
+      if (line.includes("［＃" + headMode + "見出し終わり］")) {
+        const inner = headBuf.join("");
+        const size = headMode;
+        headMode = null; headBuf = [];
+        applyHeading(size, inner);
+      } else headBuf.push(line.trim());
+      continue;
+    }
+    /* --- 青空文庫：挿絵・改ページ・改段（構造に関わる注記を先に処理する） --- */
+    const illus = line.match(/［＃挿絵（(.+?)）入る］/);
+    if (illus) {
+      flush();
+      addIllus(illus[1]);
+      line = line.replace(/［＃挿絵（.+?）入る］/g, "").trim();
+      if (!line) continue;
+    }
+    if (line.includes("［＃改ページ］")) {
+      flush(); pendingBreak = 2;
+      line = line.replace(/［＃改ページ］/g, "");
+      if (!line.trim()) continue;
+    } else if (line.includes("［＃改段］")) {
+      flush(); if (pendingBreak < 1) pendingBreak = 1;
+      line = line.replace(/［＃改段］/g, "");
+      if (!line.trim()) continue;
+    }
+    /* --- 青空文庫：見出し注記（行末形式／1行ブロック形式／複数行ブロック開始） --- */
+    const ah = line.match(/^(.+?)［＃「(.+?)」は(大|中|小)見出し］\s*$/);
+    if (ah) { applyHeading(ah[3], ah[2]); continue; }
+    const bh = line.match(/［＃(大|中|小)見出し］(.*?)［＃\1見出し終わり］/);
+    if (bh) { applyHeading(bh[1], bh[2]); continue; }
+    const hb = line.match(/^［＃(大|中|小)見出し］\s*$/);
+    if (hb) { headMode = hb[1]; headBuf = []; continue; }
+    /* --- Markdown見出し：第○話形式 --- */
     const h = line.match(/^(#{1,6})\s*(.+?)\s*#*\s*$/);
     const ch = line.match(/^(第[0-9０-９一二三四五六七八九十百千]+[話章節編巻])[\s　]*(.*)$/);
-    if (h) { startEp(h[2]); continue; }
+    if (h) {
+      if (h[1].length <= 2) startEp(stripMd(h[2]).trim());
+      else { flush(); pushPara(textToUnits(stripMd(h[2]).trim()), "head"); }
+      continue;
+    }
     if (ch) { startEp((ch[1] + (ch[2] ? "　" + ch[2] : "")).trim()); continue; }
     if (/^(-{3,}|\*{3,}|_{3,})\s*$/.test(line)) { flush(); continue; }
     if (!line.trim()) { flush(); continue; }
+    /* --- Markdownの表（パイプ記法）：次の行が区切り行なら、表として取り込む --- */
+    if (line.includes("|") && li + 1 < lines.length && isSepRow(lines[li + 1])) {
+      flush();
+      const rows = [parseRow(line)];
+      li++;
+      while (li + 1 < lines.length) {
+        const nx = lines[li + 1];
+        if (!nx.trim() || !nx.includes("|") || isSepRow(nx)) break;
+        rows.push(parseRow(nx)); li++;
+      }
+      ensureEp();
+      cur.paragraphs.push({ units: textToUnits(rows.map(r => r.join(" ")).join(" ")), cls: "table", table: rows });
+      continue;
+    }
+    /* --- 青空文庫：［＃改行］は段落を割り、後半を字下げなしで続ける --- */
+    let afterSegs = null;
+    if (line.includes("［＃改行］")) {
+      const segs = line.split("［＃改行］");
+      line = segs[0];
+      afterSegs = segs.slice(1);
+    }
     const bodyLine = line.replace(/^>\s?/, "").replace(/^[\s　]+/, "");
     if (buf.length) {
       const prev = buf[buf.length - 1];
       if (/[A-Za-z0-9]$/.test(prev) && /^[A-Za-z0-9]/.test(bodyLine)) buf.push(" ");
     }
     buf.push(bodyLine);
+    if (afterSegs) {
+      flush();
+      afterSegs.forEach(seg => {
+        const t = stripMd(seg).trim();
+        if (t) pushPara(textToUnits(t), "cont");
+      });
+    }
   }
   flush();
   const valid = episodes.filter(e => e.paragraphs.length);
@@ -1589,6 +1960,31 @@ async function parseEpub(buf, fileName){
   return { title: workTitle, episodes };
 }
 
+/* ---- .zip（青空文庫の配布形式：テキストと画像の同梱） ---- */
+async function parseZipBook(buf, fileName){
+  if (typeof JSZip === "undefined") throw new Error("nozip");
+  const zip = await JSZip.loadAsync(buf);
+  const names = Object.keys(zip.files).filter(n => !zip.files[n].dir && !n.startsWith("__MACOSX"));
+  const txtName = names.find(n => /\.txt$/i.test(n));
+  if (!txtName) throw new Error("notext");
+  /* 同梱画像はデータURL化して、［＃挿絵（ファイル名）入る］の位置に表示できるようにする */
+  const images = {};
+  for (const n of names) {
+    if (/\.(jpe?g|png|gif)$/i.test(n)) {
+      const b64 = await zip.files[n].async("base64");
+      const ext = n.split(".").pop().toLowerCase();
+      const mime = ext === "png" ? "image/png" : ext === "gif" ? "image/gif" : "image/jpeg";
+      images[n] = "data:" + mime + ";base64," + b64;
+      images[baseName(n)] = images[n];
+    }
+  }
+  const txtBuf = await zip.files[txtName].async("arraybuffer");
+  let text;
+  try { text = new TextDecoder("utf-8", { fatal: true }).decode(txtBuf); }
+  catch (e) { text = new TextDecoder("shift_jis").decode(txtBuf); }
+  return parseTextBook(text, baseName(txtName), images);
+}
+
 /* ---- ファイル入力 ---- */
 $("#fileInput").addEventListener("change", async e => {
   const file = e.target.files[0];
@@ -1596,6 +1992,8 @@ $("#fileInput").addEventListener("change", async e => {
   if (!file) return;
   setLoading(true);
   try {
+    /* 「読み込み中」の表示を先に描画してから、重い解析・割り付けに入る（操作が固まって見えないように） */
+    await new Promise(r => setTimeout(r, 40));
     const buf = await file.arrayBuffer();
     const key = file.name + ":" + file.size;
     S.pendingKey = null;
@@ -1605,6 +2003,12 @@ $("#fileInput").addEventListener("change", async e => {
       const resumed = setBook({ title: book.title, note: "EPUB" }, book.episodes, key,
         { kind: "file", fileName: file.name, stored });
       toast(resumed ? "前回の続きから開きました" : "『" + book.title + "』を開きました（全" + book.episodes.length + "章）");
+    } else if (/\.zip$/i.test(file.name)) {
+      const book = await parseZipBook(buf, file.name);
+      const stored = await saveBookContent(key, book.episodes);
+      const resumed = setBook({ title: book.title, note: "青空文庫ZIP" }, book.episodes, key,
+        { kind: "file", fileName: file.name, stored });
+      toast(resumed ? "前回の続きから開きました" : "『" + book.title + "』を開きました");
     } else {
       let text;
       try { text = new TextDecoder("utf-8", { fatal: true }).decode(buf); }
