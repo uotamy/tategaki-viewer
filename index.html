@@ -139,6 +139,19 @@
   }
   .tier .illus img { max-width: 92%; max-height: 100%; height: auto; }
 
+  /* ---------- 漫画（画像のみのzip）：1画像＝1ページの全面表示 ---------- */
+  .page.manga {
+    align-items: center; justify-content: center; padding: 0; overflow: hidden;
+  }
+  .page.manga .manga-ph {
+    position: absolute; inset: 0;
+    font-size: 12.5px; color: var(--sub); letter-spacing: .08em;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .page.manga img {
+    display: block; width: 100%; height: 100%; object-fit: contain;
+  }
+
   #pageBadge {
     position: absolute; z-index: 5; pointer-events: none;
     top: calc(env(safe-area-inset-top, 0px) + 10px); left: 14px;
@@ -494,7 +507,7 @@
 
   <div id="toast"></div>
   <div id="loading"><div class="spin"></div><div>読み込み中…</div></div>
-  <input type="file" id="fileInput" hidden accept=".txt,.md,.markdown,.epub,.zip,text/plain,application/epub+zip,application/zip" />
+  <input type="file" id="fileInput" hidden accept=".txt,.md,.markdown,.epub,.zip,.cbz,text/plain,application/epub+zip,application/zip" />
 </div>
 
 <script>
@@ -522,6 +535,7 @@ const GUIDE_EPISODES = [
       "このビューワーは、日本語の小説を読むための縦書きビューワーです。縦書き・右から左へのページ送り、上下二段組みの組版で、紙の文庫本を読む感覚に寄せてあります。",
       "この文章は、ビューワーの使い方そのものです。サンプル小説の代わりに入っています。まずはこのまま読み進めながら、ページ送りやメニューの操作を試してみてください。",
       "読めるファイルは、テキストファイル（.txt）、Markdown（.md）、EPUB（.epub）、青空文庫の配布形式（.zip）です。Shift_JISのテキストや、青空文庫形式のルビ記法、EPUB内のルビにも対応しています。青空文庫の注記（改ページ・改段・見出し・傍点など）も処理され、.zipに画像が同梱されていれば挿絵も表示されます。",
+      "画像だけが入った.zip（漫画のアーカイブ）も開けます。その場合は「画像の本」として扱われ、画像1枚が1ページになり、ファイル名の数値順（1、2、…、10の順）に並びます。ページ送りの方向や方式は小説と同じで、本棚・進み具合・しおりもそのまま使えます。画像はページを表示するタイミングで1枚ずつ読み出されるので、大きなzipでもまとめて展開はしません。",
       "なお、Kindle本のようなDRM（コピー防止）付きの本は開けません。対象は、自分の原稿や青空文庫など、DRMのないファイルです。"
     ]
   },
@@ -659,15 +673,22 @@ function contentKey(key){ return LS_KEY + ":book:" + key; }
 /* 本文データは容量の大きい localStorage ではなく IndexedDB に保存する。
    位置・しおり・設定（localStorage）と本文（IndexedDB）はどちらも端末側の保存なので、
    このWebアプリをそのままAPK化（WebViewで包む）しても同じ仕組みで動く。 */
-const IDB_NAME = "tategaki-viewer-db", IDB_STORE = "books";
+const IDB_NAME = "tategaki-viewer-db", IDB_STORE = "books", IDB_ARCHIVE_STORE = "archives";
 let idbPromise = null;
 function idbOpen(){
   if (!("indexedDB" in window)) return Promise.resolve(null);
   if (!idbPromise) {
     idbPromise = new Promise(res => {
       let req;
-      try { req = indexedDB.open(IDB_NAME, 1); } catch (e) { res(null); return; }
-      req.onupgradeneeded = () => { try { req.result.createObjectStore(IDB_STORE); } catch (e) { /* noop */ } };
+      try { req = indexedDB.open(IDB_NAME, 2); } catch (e) { res(null); return; }
+      req.onupgradeneeded = () => {
+        try {
+          const db = req.result;
+          if (!db.objectStoreNames.contains(IDB_STORE)) db.createObjectStore(IDB_STORE);
+          /* 漫画zipは展開せず、アーカイブ自体をここに保存する（開くたびに目録だけ読み直す） */
+          if (!db.objectStoreNames.contains(IDB_ARCHIVE_STORE)) db.createObjectStore(IDB_ARCHIVE_STORE);
+        } catch (e) { /* noop */ }
+      };
       req.onsuccess = () => res(req.result);
       req.onerror = () => res(null);
       req.onblocked = () => res(null);
@@ -745,6 +766,34 @@ async function dropBookContent(key){
   const db = await idbOpen();
   if (!db) return;
   try { db.transaction(IDB_STORE, "readwrite").objectStore(IDB_STORE).delete(key); } catch (e) { /* noop */ }
+  try { db.transaction(IDB_ARCHIVE_STORE, "readwrite").objectStore(IDB_ARCHIVE_STORE).delete(key); } catch (e) { /* noop */ }
+}
+/* 漫画（画像のみzip）の保存：画像を全部展開して保存するのではなく、
+   zipアーカイブ自体（File/Blob）をそのまま IndexedDB に保存する。
+   開くときは目録だけを読み、画像はページ表示のタイミングで1枚ずつ解凍する。 */
+async function saveBookArchive(key, blob){
+  const db = await idbOpen();
+  if (!db || !blob) return false;
+  return new Promise(res => {
+    try {
+      const tx = db.transaction(IDB_ARCHIVE_STORE, "readwrite");
+      tx.objectStore(IDB_ARCHIVE_STORE).put(blob, key);
+      tx.oncomplete = () => res(true);
+      tx.onerror = () => res(false);
+      tx.onabort = () => res(false);
+    } catch (e) { res(false); }
+  });
+}
+async function loadBookArchive(key){
+  const db = await idbOpen();
+  if (!db) return null;
+  return new Promise(res => {
+    try {
+      const rq = db.transaction(IDB_ARCHIVE_STORE, "readonly").objectStore(IDB_ARCHIVE_STORE).get(key);
+      rq.onsuccess = () => res(rq.result || null);
+      rq.onerror = () => res(null);
+    } catch (e) { res(null); }
+  });
 }
 function epCharCounts(episodes){
   return episodes.map(ep => ep.paragraphs.reduce((a, p) => a + p.units.length, 0));
@@ -758,6 +807,9 @@ function registerBook(key, title, note, kind, fileName, episodes, stored){
   e.epChars = counts;
   e.totalChars = counts.reduce((a, b) => a + b, 0);
   e.stored = kind === "guide" ? true : !!stored;
+  const mangaEp = episodes.find(ep => ep.isManga);
+  if (mangaEp) { e.manga = true; e.pageCount = mangaEp.paragraphs.length; }
+  else { delete e.manga; delete e.pageCount; }
   e.lastRead = Date.now();
   S.library = [e].concat(S.library.filter(x => x.key !== key));
   persist();
@@ -1063,9 +1115,123 @@ function fillTierProbe(paras, pos, prefix){
   }
   return { chunks, pos: { pi, off } };
 }
+/* ---------------- 漫画（画像のみzip）の遅延読み出し ----------------
+   zipは全展開しない。JSZip.loadAsync が読むのは目録（セントラルディレクトリ）
+   までで、各エントリの解凍はページを表示するタイミングで entry.async() を
+   呼んだときだけ起きる。解凍した画像はオブジェクトURL化し、直近ぶんだけ
+   キャッシュして古いものから破棄する（大きな漫画zipでもメモリを圧迫しない）。 */
+let mangaState = null; /* {key, zip, entries:[{name, entry}]} */
+const mangaURLCache = new Map(); /* 画像index -> objectURL（LRU） */
+const mangaPending = new Map();  /* 画像index -> Promise<objectURL> */
+const MANGA_IMG_RE = /\.(jpe?g|png|webp|gif|bmp|avif|jfif)$/i;
+function mimeForImageName(name){
+  const ext = name.split(".").pop().toLowerCase();
+  return { jpg: "image/jpeg", jpeg: "image/jpeg", jfif: "image/jpeg", png: "image/png",
+           webp: "image/webp", gif: "image/gif", bmp: "image/bmp", avif: "image/avif" }[ext] || "image/jpeg";
+}
+/* ファイル名の自然順：数字の塊を数値として比べる（1, 2, …, 10 の順になる） */
+function naturalCompare(a, b){
+  const ca = String(a).split(/(\d+)/), cb = String(b).split(/(\d+)/);
+  const n = Math.max(ca.length, cb.length);
+  for (let i = 0; i < n; i++) {
+    if (ca[i] === undefined) return -1;
+    if (cb[i] === undefined) return 1;
+    if (ca[i] === cb[i]) continue;
+    const na = /^\d+$/.test(ca[i]) ? parseInt(ca[i], 10) : NaN;
+    const nb = /^\d+$/.test(cb[i]) ? parseInt(cb[i], 10) : NaN;
+    if (!isNaN(na) && !isNaN(nb)) return na - nb;
+    return ca[i] < cb[i] ? -1 : 1;
+  }
+  return 0;
+}
+function clearMangaState(){
+  mangaURLCache.forEach(url => { try { URL.revokeObjectURL(url); } catch (e) { /* noop */ } });
+  mangaURLCache.clear();
+  mangaPending.clear();
+  mangaState = null;
+}
+function setMangaState(state, key){
+  clearMangaState();
+  mangaState = { key: key || null, zip: state.zip, entries: state.entries };
+}
+function getMangaURL(idx){
+  const st = mangaState;
+  if (!st || !st.entries[idx]) return Promise.resolve(null);
+  if (mangaURLCache.has(idx)) {
+    const url = mangaURLCache.get(idx);
+    mangaURLCache.delete(idx); mangaURLCache.set(idx, url); /* LRU: 最近使ったものへ */
+    return Promise.resolve(url);
+  }
+  if (mangaPending.has(idx)) return mangaPending.get(idx);
+  const p = (async () => {
+    try {
+      /* ここで初めて、この1枚だけが解凍される */
+      const data = await st.entries[idx].entry.async("arraybuffer");
+      if (mangaState !== st) return null;
+      const url = URL.createObjectURL(new Blob([data], { type: mimeForImageName(st.entries[idx].name) }));
+      mangaURLCache.set(idx, url);
+      while (mangaURLCache.size > 14) {
+        const oldest = mangaURLCache.keys().next().value;
+        if (oldest === idx) break;
+        try { URL.revokeObjectURL(mangaURLCache.get(oldest)); } catch (e) { /* noop */ }
+        mangaURLCache.delete(oldest);
+      }
+      return url;
+    } catch (e) { return null; }
+    finally { mangaPending.delete(idx); }
+  })();
+  mangaPending.set(idx, p);
+  return p;
+}
+async function loadMangaImageInto(idx, imgEl){
+  const url = await getMangaURL(idx);
+  if (url && imgEl.isConnected) imgEl.src = url;
+  else if (!url && imgEl.isConnected) imgEl.alt = "画像を読み込めませんでした";
+}
+function prefetchMangaAround(center){
+  if (!mangaState) return;
+  [center + ppv, center + ppv * 2, center - ppv].forEach(i => {
+    if (i >= 0 && i < mangaState.entries.length) getMangaURL(i);
+  });
+}
+/* zip目録から、実ファイルだけの名前一覧を返す（解凍はしない） */
+function zipEntryNames(zip){
+  return Object.keys(zip.files).filter(n => {
+    if (zip.files[n].dir || n.startsWith("__MACOSX")) return false;
+    const b = n.split("/").pop();
+    return b && !b.startsWith("._") && b !== ".DS_Store" && b !== "Thumbs.db";
+  });
+}
+/* 目録だけから漫画の本を組み立てる：本文の代わりに「画像が何枚あるか」だけを持ち、
+   実データは mangaState 経由でページ表示時に取りに行く */
+function buildMangaFromZip(zip, fileName){
+  const imageNames = zipEntryNames(zip).filter(n => MANGA_IMG_RE.test(n)).sort(naturalCompare);
+  if (!imageNames.length) throw new Error("notext");
+  const entries = imageNames.map(n => ({ name: n, entry: zip.files[n] }));
+  const title = String(fileName || "漫画").replace(/\.(zip|cbz)$/i, "");
+  const episode = {
+    title: title, isManga: true,
+    /* 進み具合・しおりの位置計算に乗せるため、1画像＝1文字ぶんのダミー段落にする */
+    paragraphs: entries.map(e => ({ units: [{ c: "画" }], cls: "manga", img: e.name }))
+  };
+  return { title, episodes: [episode], mangaState: { zip, entries } };
+}
+async function parseMangaArchive(buf, fileName){
+  if (typeof JSZip === "undefined") throw new Error("nozip");
+  const zip = await JSZip.loadAsync(buf); /* 読むのは目録まで。画像は解凍しない */
+  return buildMangaFromZip(zip, fileName);
+}
+
 function paginate(epIdx){
   if (S.cache.has(epIdx)) return S.cache.get(epIdx);
   const ep = S.episodes[epIdx];
+  /* 漫画は組版せず、画像1枚＝1ページとしてそのまま並べる */
+  if (ep && ep.isManga) {
+    const pages = ep.paragraphs.map((p, i) => ({ tiers: [], start: { pi: i, off: 0 }, manga: i }));
+    if (!pages.length) pages.push({ tiers: [], start: { pi: 0, off: 0 }, manga: 0 });
+    S.cache.set(epIdx, pages);
+    return pages;
+  }
   computeMetrics();
   const tiersPer = S.mode === "double" ? 2 : 1;
   const pages = [];
@@ -1112,6 +1278,23 @@ function buildPageEl(pageData){
   const el = document.createElement("div");
   el.className = "page";
   el.style.width = Math.max(200, panelW() - 6) + "px";
+  /* 漫画ページ：画像を全面に1枚だけ置く。実データは表示のこのタイミングで
+     エントリ単位に解凍して差し込む（先読みぶんはキャッシュに乗る） */
+  if (pageData.manga !== undefined && pageData.manga !== null) {
+    el.classList.add("manga");
+    const img = document.createElement("img");
+    img.alt = mangaState && mangaState.entries[pageData.manga]
+      ? mangaState.entries[pageData.manga].name.split("/").pop() : "漫画のページ";
+    img.draggable = false;
+    const ph = document.createElement("div");
+    ph.className = "manga-ph";
+    ph.textContent = (pageData.manga + 1) + "ページ目を読み込み中…";
+    img.addEventListener("load", () => ph.remove(), { once: true });
+    el.appendChild(ph);
+    el.appendChild(img);
+    loadMangaImageInto(pageData.manga, img);
+    return el;
+  }
   for (const tierChunks of pageData.tiers) {
     const t = document.createElement("div");
     t.className = "tier";
@@ -1159,6 +1342,7 @@ function renderWindow(){
   for (let i = winStart; i < end; i++) track.appendChild(buildPageEl(pages[i]));
   track.style.transition = "none";
   track.style.transform = "translateX(" + trackOffset() + "px)";
+  if (mangaState) prefetchMangaAround(S.page);
   afterNav();
 }
 function renderCurrent(dir){ renderWindow(); }
@@ -1416,9 +1600,11 @@ function buildToc(){
     const b = document.createElement("button");
     b.className = "tocrow" + (i === S.ep ? " now" : "");
     const chars = ep.paragraphs.reduce((a, p) => a + p.units.length, 0);
+    const metaTxt = ep.isManga ? ep.paragraphs.length.toLocaleString() + "ページ"
+                                : chars.toLocaleString() + "字";
     b.innerHTML = '<span class="tt">' + esc(ep.title) + "</span>" +
       (i === S.ep ? '<span class="reading">読書中</span>' : "") +
-      '<span class="meta">' + chars.toLocaleString() + "字</span>";
+      '<span class="meta">' + metaTxt + "</span>";
     b.addEventListener("click", () => { closeSheets(); openEpisode(i, 0); });
     list.appendChild(b);
   });
@@ -1596,7 +1782,8 @@ function buildShelf(){
     const epName = pos && entry.epTitles && entry.epTitles[pos.ep] ? entry.epTitles[pos.ep] : "";
     const started = !!(pos && (pos.ep > 0 || (pos.charInEp || 0) > 0));
     let meta = esc(entry.note || entry.fileName || "");
-    if (epName) meta += (meta ? "　・　" : "") + "読書中：" + esc(epName);
+    if (entry.manga) meta += (meta ? "　・　" : "") + "画像の本・全" + (entry.pageCount || entry.totalChars || 0) + "ページ";
+    else if (epName) meta += (meta ? "　・　" : "") + "読書中：" + esc(epName);
     else if (entry.epTitles) meta += (meta ? "　・　" : "") + "全" + entry.epTitles.length + (entry.kind === "file" ? "章" : "話");
     card.innerHTML =
       '<div class="bt">' + esc(entry.title) + "</div>" +
@@ -1634,6 +1821,20 @@ async function openFromShelf(entry){
     toast(resumed ? "前回の続きから開きました" : "『" + entry.title + "』を開きました");
     return;
   }
+  /* 漫画は本文ではなくzipアーカイブ自体が保存されている。目録だけ読み直して開く */
+  if (entry.manga || entry.kind === "manga") {
+    const arch = entry.stored ? await loadBookArchive(entry.key) : null;
+    if (arch) {
+      try {
+        const book = await parseMangaArchive(arch, entry.fileName || entry.title);
+        const resumed = setBook({ title: entry.title, note: entry.note }, book.episodes, entry.key,
+          { kind: "manga", fileName: entry.fileName, stored: true, mangaState: book.mangaState });
+        hideShelf();
+        toast(resumed ? "前回の続きから開きました" : "『" + entry.title + "』を開きました");
+        return;
+      } catch (e) { /* アーカイブが壊れている場合はファイル再選択へ落とす */ }
+    }
+  }
   const eps = entry.stored ? await loadBookContent(entry.key) : null;
   if (eps) {
     const resumed = setBook({ title: entry.title, note: entry.note }, eps, entry.key,
@@ -1655,6 +1856,11 @@ $("#btnShelfOpen").addEventListener("click", () => { $("#fileInput").click(); })
 function setBook(work, episodes, key, opts){
   opts = opts || {};
   S.work = { title: work.title, note: work.note || "", key };
+  /* 漫画の本なら遅延読み出し用のzip目録状態を差し替え、そうでなければ破棄する */
+  const isMangaBook = episodes.some(ep => ep.isManga);
+  S.work.manga = isMangaBook;
+  if (opts.mangaState) setMangaState(opts.mangaState, key);
+  else if (!isMangaBook) clearMangaState();
   S.episodes = episodes;
   S.cache.clear();
   buildProbe();
@@ -2003,12 +2209,34 @@ $("#fileInput").addEventListener("change", async e => {
       const resumed = setBook({ title: book.title, note: "EPUB" }, book.episodes, key,
         { kind: "file", fileName: file.name, stored });
       toast(resumed ? "前回の続きから開きました" : "『" + book.title + "』を開きました（全" + book.episodes.length + "章）");
-    } else if (/\.zip$/i.test(file.name)) {
-      const book = await parseZipBook(buf, file.name);
-      const stored = await saveBookContent(key, book.episodes);
-      const resumed = setBook({ title: book.title, note: "青空文庫ZIP" }, book.episodes, key,
-        { kind: "file", fileName: file.name, stored });
-      toast(resumed ? "前回の続きから開きました" : "『" + book.title + "』を開きました");
+    } else if (/\.(zip|cbz)$/i.test(file.name)) {
+      /* まず目録だけを見て分岐する：テキストが無く画像だけなら漫画として扱い、
+         テキストを含むzip（青空文庫zip等）は従来どおりテキストとして処理する。
+         この時点ではどのエントリも解凍していない */
+      let mangaBook = null;
+      if (typeof JSZip !== "undefined") {
+        try {
+          const zipPeek = await JSZip.loadAsync(buf);
+          const names = zipEntryNames(zipPeek);
+          const hasTxt = names.some(n => /\.txt$/i.test(n));
+          const hasImg = names.some(n => MANGA_IMG_RE.test(n));
+          if (!hasTxt && hasImg) mangaBook = buildMangaFromZip(zipPeek, file.name);
+        } catch (e) { /* zipとして読めない場合は従来経路でエラーを出す */ }
+      }
+      if (mangaBook) {
+        /* 保存は画像の全展開ではなく、zipアーカイブ自体（File）をIndexedDBへ */
+        const stored = await saveBookArchive(key, file);
+        const resumed = setBook({ title: mangaBook.title, note: "画像ZIP（漫画）" }, mangaBook.episodes, key,
+          { kind: "manga", fileName: file.name, stored, mangaState: mangaBook.mangaState });
+        toast(resumed ? "前回の続きから開きました"
+          : "『" + mangaBook.title + "』を開きました（全" + mangaBook.episodes[0].paragraphs.length + "ページ）");
+      } else {
+        const book = await parseZipBook(buf, file.name);
+        const stored = await saveBookContent(key, book.episodes);
+        const resumed = setBook({ title: book.title, note: "青空文庫ZIP" }, book.episodes, key,
+          { kind: "file", fileName: file.name, stored });
+        toast(resumed ? "前回の続きから開きました" : "『" + book.title + "』を開きました");
+      }
     } else {
       let text;
       try { text = new TextDecoder("utf-8", { fatal: true }).decode(buf); }
@@ -2056,11 +2284,23 @@ ensureGuideEntry();
   let openedLast = false;
   const lastEntry = S.lastKey ? S.library.find(x => x.key === S.lastKey) : null;
   if (lastEntry && lastEntry.kind !== "guide") {
-    const eps = lastEntry.stored ? await loadBookContent(lastEntry.key) : null;
-    if (eps) {
-      setBook({ title: lastEntry.title, note: lastEntry.note }, eps, lastEntry.key,
-        { kind: "file", fileName: lastEntry.fileName, stored: true });
-      openedLast = true;
+    if (lastEntry.manga || lastEntry.kind === "manga") {
+      const arch = lastEntry.stored ? await loadBookArchive(lastEntry.key) : null;
+      if (arch) {
+        try {
+          const book = await parseMangaArchive(arch, lastEntry.fileName || lastEntry.title);
+          setBook({ title: lastEntry.title, note: lastEntry.note }, book.episodes, lastEntry.key,
+            { kind: "manga", fileName: lastEntry.fileName, stored: true, mangaState: book.mangaState });
+          openedLast = true;
+        } catch (e) { /* 読めなければガイドへ落とす */ }
+      }
+    } else {
+      const eps = lastEntry.stored ? await loadBookContent(lastEntry.key) : null;
+      if (eps) {
+        setBook({ title: lastEntry.title, note: lastEntry.note }, eps, lastEntry.key,
+          { kind: "file", fileName: lastEntry.fileName, stored: true });
+        openedLast = true;
+      }
     }
   }
   if (!openedLast) {

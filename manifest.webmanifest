@@ -1,7 +1,7 @@
 {
-  "name": "縦書き小説ビューワー",
-  "short_name": "小説ビューワー",
-  "description": "日本語の小説を読むための縦書きビューワー（.txt / .md / .epub 対応）",
+  "name": "タテヨミ",
+  "short_name": "タテヨミ",
+  "description": "日本語の小説を読むための縦書きビューワー（.txt / .md / .epub / 画像zip 対応）",
   "lang": "ja",
   "dir": "ltr",
   "start_url": ".",
