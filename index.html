@@ -182,20 +182,7 @@
   /* メニューバーは常時表示せず、本文の上に重なって出し入れする。
      隠れている間は display:none にして、画面外や透明なボタンが残らないようにする */
   #app.ui-hidden .bar { display: none; }
-  #fab {
-    position: fixed; z-index: 25;
-    right: calc(env(safe-area-inset-right, 0px) + 14px);
-    bottom: calc(env(safe-area-inset-bottom, 0px) + 16px);
-    width: 46px; height: 46px; border-radius: 50%;
-    border: 1px solid var(--line); background: var(--chrome); color: var(--ink);
-    display: flex; align-items: center; justify-content: center; cursor: pointer;
-    opacity: .82; box-shadow: 0 4px 16px rgba(0,0,0,.18);
-    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
-    transition: bottom .25s ease;
-  }
-  #fab svg { width: 22px; height: 22px; }
-  /* メニュー表示中もFABは残し、下部バーと重ならない位置へ逃がす */
-  #app:not(.ui-hidden) #fab { bottom: calc(env(safe-area-inset-bottom, 0px) + 78px); }
+
   .tbtn {
     display: flex; flex-direction: column; align-items: center; gap: 1px;
     border: 0; background: transparent; color: var(--ink); cursor: pointer;
@@ -397,10 +384,6 @@
     <button class="bbtn" id="btnNextEp">次の話</button>
   </footer>
 
-  <button id="fab" aria-label="メニューを表示">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h10"/></svg>
-  </button>
-
   <div id="scrim"></div>
 
   <section class="sheet" id="tocSheet" aria-label="目次">
@@ -543,7 +526,7 @@ const GUIDE_EPISODES = [
     title: "本を開く・ページをめくる",
     paras: [
       { t: "本を開く", cls: "head" },
-      "画面右下の丸いボタン（フローティングボタン）を押すとメニューが出ます。「開く」からファイルを選ぶと、その本が開いて本棚（履歴）に残ります。本棚の「ファイルを開く」ボタンからも開けます。",
+      "画面の中央をタップするとメニューが出ます（本文の長押しでも開けます）。メニューの「開く」からファイルを選ぶと、その本が開いて本棚（履歴）に残ります。本棚の「ファイルを開く」ボタンからも開けます。",
       { t: "ページ送り", cls: "head" },
       "画面の左側をタップすると次のページ、右側をタップすると前のページへ進みます。左右へのスワイプでも送れます。中央をタップするとメニューの表示・非表示が切り替わります。",
       "メニューはしばらくすると自動で隠れ、本文だけの全画面に戻ります。本文を長押ししてもメニューが開きます。",
@@ -1556,7 +1539,6 @@ function pokeUI(){
 function toggleUI(){
   if (app.classList.contains("ui-hidden")) showUI(); else hideUI();
 }
-$("#fab").addEventListener("click", () => toggleUI());
 let toastTimer = null;
 function toast(msg, ms){
   const t = $("#toast");
