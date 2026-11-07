@@ -1312,10 +1312,16 @@ function paginate(epIdx){
       if (pos.pi >= ep.paragraphs.length) break;
     }
     if (page.tiers.every(c => c.length === 0)) break;
+    /* 段組みは本全体で固定する：残量が少なく上段だけで本文が終わるページや、
+       改ページで下段が使われなかったページでも段数を落とさない。
+       不足分は空の段として補い、上段に流し込んで下段は空白のままにする
+       （紙の本の最終ページと同じ見た目）。補わないと残った1段が flex で
+       ページ全体の高さに伸び、唐突に一段組みの長い列になってしまう */
+    while (page.tiers.length < tiersPer) page.tiers.push([]);
     pages.push(page);
     first = false;
   }
-  if (!pages.length) pages.push({ tiers: [[]], start: { pi: 0, off: 0 } });
+  if (!pages.length) pages.push({ tiers: Array.from({ length: tiersPer }, () => []), start: { pi: 0, off: 0 } });
   S.cache.set(epIdx, pages);
   return pages;
 }
@@ -1357,9 +1363,15 @@ function buildPageEl(pageData){
     loadMangaImageInto(pageData.manga, img);
     return el;
   }
-  for (const tierChunks of pageData.tiers) {
+  /* 描画側でも段数を保証する：データ側で段が不足していても、設定どおりの
+     段数ぶんの受け皿を必ず作り、空の段は空白のまま残す。
+     これにより二段組み設定なら全ページが常に二段、一段組みなら常に一段になる */
+  const tiersPer = S.mode === "double" ? 2 : 1;
+  for (let ti = 0; ti < tiersPer; ti++) {
+    const tierChunks = pageData.tiers[ti] || [];
     const t = document.createElement("div");
     t.className = "tier";
+    if (!tierChunks.length) t.setAttribute("aria-hidden", "true");
     renderChunks(t, tierChunks);
     el.appendChild(t);
   }
