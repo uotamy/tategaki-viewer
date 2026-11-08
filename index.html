@@ -71,11 +71,6 @@
     position: absolute; inset: 0; z-index: 4;
     display: flex; flex-direction: row-reverse;
   }
-  /* 章またぎスライド用：現在のページ群と遷移先のページ群を横に並べた帯 */
-  .slidewrap {
-    position: absolute; inset: 0; z-index: 4;
-    display: flex; flex-direction: row-reverse;
-  }
   /* ページに輪郭・影・隙間は付けない：見開きでも紙の背景が一様につながるようにする
      （以前は box-shadow と左右3pxのマージンがあり、見開き中央に灰色〜ベージュの
      縦帯と、ページ下端に影の帯が見えていた） */
@@ -2144,63 +2139,82 @@ function animateGroupTo(newPage, done){
   let fin = false;
   const finish = () => {
     if (fin) return; fin = true;
+    track.removeEventListener("transitionend", onEnd);
     S.page = newPage; animating = false;
     stage.classList.remove("sliding");
     renderWindow();
     if (done) done();
   };
-  track.addEventListener("transitionend", finish, { once: true });
-  setTimeout(finish, 460);
+  /* 終了判定はトラック自身の transform の transitionend だけに絞る。
+     子要素から伝播してきた transitionend で先に終わらせない */
+  const onEnd = e => {
+    if (e.target !== track || e.propertyName !== "transform") return;
+    finish();
+  };
+  track.addEventListener("transitionend", onEnd);
+  setTimeout(finish, 600);
 }
-/* 話（章）をまたぐスライド：章内と同じ「ページ単位の離散スライド」に統一する。
-   現在のページ群と遷移先のページ群を横一列に並べた帯を作り、帯ごと
-   1ページ群分だけ滑らせて、現在の群を押し出しながら次の群を送り込む。
-   （以前の「入ってくるページが静止した現在ページの上にかぶさってくる」
-   方式は廃止し、章内・章またぎで同じ動きにした） */
+/* 話（章）をまたぐスライド：話の中の送りと完全に同じ仕組みにする。
+   以前は跨ぎ専用の帯要素（.slidewrap）を別途作って滑らせていたが、その方式は
+   実機で「送りが途中で切れて次ページへ飛ぶ」症状が残った。専用帯は
+   requestAnimationFrame 1回だけで開始位置から目標位置へ書き換えるため、
+   開始位置が描画として確定する前にトランジションが始まる場合があり、
+   さらに終了判定も帯やその子要素から伝播する transitionend と、呼び出し
+   時点起点の固定タイマー（460ms）に頼っていたため、開始が遅れた分だけ
+   トランジションの途中で完了処理（帯の撤去＋再描画）が走って飛んで見えた。
+   そこで跨ぎも話の中と同一の #track をそのまま滑らせる：トラックの中身を
+   「現在群＋遷移先群」（prev は逆順）に組み替え、初期位置を強制リフローで
+   確定させてから、話の中と同一のトランジション・同一の終了判定で滑らせる。
+   現在群は表示中の要素をそのまま使い回し、遷移先群は先行組版の控えを
+   取り出して使うので、タップ時点で新規に組版・構築はしない */
 function slideGroupTo(dir, tgt){
-  animating = true;
-  /* ドラッグ追随でずれたトラック位置だけを現在ページへ戻してから帯を作る。
-     以前はここで renderWindow() を丸ごと回していたが、現在ページ群の
-     再構築は跨ぎの応答を遅らせるだけなので、トランスフォームの
-     リセットに留める（位置の保存は遷移完了後の renderWindow が行う） */
-  track.style.transition = "none";
-  track.style.transform = "translateX(" + trackOffset() + "px)";
-  stage.classList.add("sliding");
-  const groupW = ppv * panelW();
   const curPages = paginate(S.ep), tgtPages = paginate(tgt.ep);
   const curEls = [], tgtEls = [];
-  /* 現在群は表示中の要素の複製で済ませ、遷移先群は先行組版の控えを
-     取り出して使う。どちらもタップ時点で新規に組版・構築しない */
   for (let i = S.page; i < Math.min(curPages.length, S.page + ppv); i++) {
     const child = track.children[i - winStart];
-    curEls.push(child ? child.cloneNode(true) : buildPageEl(curPages[i]));
+    curEls.push(child || buildPageEl(curPages[i]));
   }
   for (let i = tgt.page; i < Math.min(tgtPages.length, tgt.page + ppv); i++) {
     tgtEls.push(takePrebuiltPage(tgt.ep, i) || buildPageEl(tgtPages[i]));
   }
-  const wrap = document.createElement("div");
-  wrap.className = "slidewrap";
-  /* row-reverse なので先頭の群が右端に来る。
-     next: [現在群, 遷移先群] を右へ1群分滑らせる / prev: [遷移先群, 現在群] を右位置から0へ戻す */
+  if (!curEls.length || !tgtEls.length) {
+    S.ep = tgt.ep; S.page = tgt.page; renderWindow(); return;
+  }
+  animating = true;
+  stage.classList.add("sliding");
+  /* row-reverse なので先頭の群が右端（先に読む側）に来る。
+     next: [現在群, 遷移先群] を現在群の実幅ぶん右へ滑らせる
+     prev: [遷移先群, 現在群] を遷移先群の実幅ぶん右の位置から0へ戻す
+     （群のページ数が ppv 未満の最終群でも、固定幅ではなく実幅で送る） */
+  const shift = (dir === "next" ? curEls.length : tgtEls.length) * panelW();
+  track.innerHTML = "";
   (dir === "next" ? curEls.concat(tgtEls) : tgtEls.concat(curEls))
-    .forEach(el => wrap.appendChild(el));
-  wrap.style.transition = "none";
-  wrap.style.transform = "translateX(" + (dir === "next" ? 0 : groupW) + "px)";
-  pageHost.appendChild(wrap);
-  requestAnimationFrame(() => {
-    wrap.style.transition = "transform .32s cubic-bezier(.25,.7,.3,1)";
-    wrap.style.transform = "translateX(" + (dir === "next" ? groupW : 0) + "px)";
-  });
+    .forEach(el => track.appendChild(el));
+  track.style.transition = "none";
+  track.style.transform = "translateX(" + (dir === "next" ? 0 : shift) + "px)";
+  /* 初期位置をレイアウトとして確定させてからトランジションを掛ける。
+     確定させずに目標位置まで一息に書き換えると、実機ブラウザでは
+     トランジションが短縮・中断されて最終位置へ飛んで見えることがある */
+  void track.offsetWidth;
   let fin = false;
   const finish = () => {
     if (fin) return; fin = true;
+    track.removeEventListener("transitionend", onEnd);
     S.ep = tgt.ep; S.page = tgt.page;
-    wrap.remove(); animating = false;
+    animating = false;
     stage.classList.remove("sliding");
     renderWindow();
   };
-  wrap.addEventListener("transitionend", finish, { once: true });
-  setTimeout(finish, 460);
+  const onEnd = e => {
+    if (e.target !== track || e.propertyName !== "transform") return;
+    finish();
+  };
+  track.addEventListener("transitionend", onEnd);
+  /* フォールバックはトランジション開始（この行）起点。開始が遅れても
+     トランジションの途中で完了処理が走らないよう余裕を持たせる */
+  setTimeout(finish, 600);
+  track.style.transition = "transform .32s cubic-bezier(.25,.7,.3,1)";
+  track.style.transform = "translateX(" + (dir === "next" ? shift : 0) + "px)";
 }
 /* 「めくり」方式：入ってくるページ群を独立した面としてめくる（章内・章またぎ共通） */
 function overlayGroup(dir, tgt, flip){
@@ -2219,20 +2233,27 @@ function overlayGroup(dir, tgt, flip){
     wrap.style.transform = "translateX(" + (dir === "next" ? -W : W) + "px)";
   }
   pageHost.appendChild(wrap);
-  requestAnimationFrame(() => {
-    wrap.style.transition = "transform .36s cubic-bezier(.3,.65,.3,1), opacity .36s ease";
-    wrap.style.transform = flip ? "rotateY(0deg)" : "translateX(0px)";
-    wrap.style.opacity = "1";
-  });
+  /* スライド方式の跨ぎと同じく、初期位置をレイアウトとして確定させてから
+     トランジションを掛ける（requestAnimationFrame 1回だけでは開始位置が
+     確定せず、実機でアニメーションが短縮・中断される場合があるため） */
+  void wrap.offsetWidth;
   let fin = false;
   const finish = () => {
     if (fin) return; fin = true;
+    wrap.removeEventListener("transitionend", onEnd);
     S.ep = tgt.ep; S.page = tgt.page;
     wrap.remove(); animating = false;
     renderWindow();
   };
-  wrap.addEventListener("transitionend", finish, { once: true });
-  setTimeout(finish, 520);
+  const onEnd = e => {
+    if (e.target !== wrap) return;
+    finish();
+  };
+  wrap.addEventListener("transitionend", onEnd);
+  setTimeout(finish, 640);
+  wrap.style.transition = "transform .36s cubic-bezier(.3,.65,.3,1), opacity .36s ease";
+  wrap.style.transform = flip ? "rotateY(0deg)" : "translateX(0px)";
+  wrap.style.opacity = "1";
 }
 function targetFor(dir){
   const pages = paginate(S.ep);
@@ -2949,6 +2970,8 @@ function fmtReadDate(ts){
 /* 本棚カードの操作シート：その本に適用できる操作だけを並べる。
    なろう未完＝続きを取得／ダウンロード／削除、なろう完結＝更新を確認／
    ダウンロード／削除、通常の本＝ダウンロード／削除。
+   「開く」は並べない：本を開く操作はカード自体のタップが担っており、
+   シートに同じ項目を置くと冗長になるため（ユーザー指示で削除済み）。
    シートは履歴に積まない（本棚表示中に端末の戻るボタンでアプリを終える
    従来の作法を変えないため）。開閉は openSheetUI／closeSheetsUI を使い、
    背景タップ（scrim）でも閉じる */
