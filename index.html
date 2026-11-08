@@ -51,7 +51,12 @@
     --tint:rgba(128,120,105,.12);
   }
 
-  #app { height: 100dvh; height: 100vh; display: flex; flex-direction: column; }
+  /* 高さは「見えている範囲」に合わせる。以前は 100dvh の後に 100vh を書いて
+     いたため常に 100vh が勝ち、最近のAndroid／Chrome（edge-to-edge描画）では
+     画面下のシステムバー（◁ ○ ▢）の裏側まで含んだ高さになり、本文の下端が
+     バーの裏に隠れてしまった。dvh を後に置いて勝たせ、さらにJSが
+     visualViewport から実測した可視高さ（--vvh）を最優先にする */
+  #app { height: 100vh; height: 100dvh; height: var(--vvh, 100dvh); display: flex; flex-direction: column; }
 
   /* ---------- 読書ステージ ---------- */
   #stage {
@@ -2647,6 +2652,9 @@ function turn(dir){
     return;
   }
   hideUI();
+  /* ページ送りもユーザーのタップ／スワイプ起点なので、システムの操作で
+     全画面が解除されていたらここで入り直す */
+  enterImmersive();
   /* 「なし」方式：前後どちらの送りもアニメーションせず即時に切り替える */
   if (S.turnStyle === "none") { S.ep = tgt.ep; S.page = tgt.page; renderWindow(); return; }
   if (S.turnStyle === "flip") { overlayGroup(dir, tgt, true); return; }
@@ -3537,6 +3545,7 @@ function hideShelfUI(){ shelfEl.classList.remove("show"); }
    戻る操作で消費して本棚エントリに戻る。本棚自体は履歴に積み増さないので、
    本棚で端末の戻るボタンを押せば通常どおりアプリが終わる（無限に捕捉しない） */
 function showShelf(){
+  exitImmersive();
   closeSheetsUI();
   hideNarouUI();
   hideAddUI();
@@ -3587,6 +3596,10 @@ function hideShelf(){
       catch (e) { histLive.reading = false; }
     }
   }
+  /* 読書画面に入る操作はすべてここを通る：没入表示（全画面）へ入り、
+     端末の下部ナビゲーションを隠す。本を開くタップの流れで呼ばれるため、
+     ユーザー操作起点の全画面要求が許可される */
+  enterImmersive();
 }
 /* 端末・ブラウザの戻る／進む：履歴エントリの指す画面に表示を合わせる。
    読書中に戻れば本棚が表示され、シートが開いていればまずそれが閉じる。
@@ -3600,6 +3613,8 @@ window.addEventListener("popstate", e => {
   histLive.add = v === "add";
   histLive.aozora = v === "aozora";
   persistNow();
+  /* 読書以外の画面へ戻る操作では没入表示を解除し、システムバーを戻す */
+  if (v !== "reading" && v !== "sheet") exitImmersive();
   if (v === "shelf") { closeSheetsUI(); hideNarouUI(); hideAddUI(); hideAozoraUI(); showShelfUI(); }
   else if (v === "narou") { hideShelfUI(); closeSheetsUI(); hideAddUI(); hideAozoraUI(); showNarouUI(); }
   else if (v === "add") { hideShelfUI(); hideNarouUI(); hideAozoraUI(); closeSheetsUI(); showAddUI(); }
@@ -4726,7 +4741,7 @@ $("#fileInput").addEventListener("change", async e => {
 
 /* ---------------- 画面サイズ変化 ---------------- */
 let lastW = stage.clientWidth, lastH = stage.clientHeight, rsTimer = null;
-window.addEventListener("resize", () => {
+function scheduleReflowCheck(delay){
   clearTimeout(rsTimer);
   rsTimer = setTimeout(() => {
     const w = stage.clientWidth, h = stage.clientHeight;
@@ -4734,7 +4749,78 @@ window.addEventListener("resize", () => {
       lastW = w; lastH = h;
       applyTypography(true);
     }
-  }, 220);
+  }, delay == null ? 220 : delay);
+}
+window.addEventListener("resize", () => scheduleReflowCheck());
+
+/* ---------------- 可視ビューポートの高さ同期 ----------------
+   #app の高さは CSS の dvh だけに頼らず、visualViewport の実測値を
+   --vvh として最優先に使う。ブラウザのバーの出入りや全画面の切替で
+   「実際に見えている高さ」が変わったら、組版（ページ分割）も追随させる。
+   ピンチズーム中（scale≠1）は高さの意味が変わるので触らない */
+function syncViewportH(){
+  const vv = window.visualViewport;
+  if (vv && Math.abs((vv.scale || 1) - 1) > 0.01) return;
+  const h = vv ? Math.round(vv.height) : (window.innerHeight || 0);
+  if (h > 0) document.documentElement.style.setProperty("--vvh", h + "px");
+}
+if (window.visualViewport) {
+  window.visualViewport.addEventListener("resize", () => {
+    syncViewportH();
+    scheduleReflowCheck();
+  });
+}
+syncViewportH();
+
+/* ---------------- 没入表示（読書中はシステムバーを隠す） ----------------
+   以前は読書中に端末の下部ナビゲーション（◁ ○ ▢）が隠れていたが、最近の
+   Android／Chrome は本文をバーの裏まで描く（edge-to-edge）ようになり、
+   バーが表示されたまま本文の下端が隠れるようになった。回転ボタン（画面
+   向きの固定）は実装していない（下記のとおり向き固定のコードは存在しない）
+   が、全画面表示は向き固定と同じ Fullscreen API の仕組みで、Web側から
+   システムバーを確実に隠せるのはこれだけなので、読書中はこれを使う。
+   - 入口：本を開く（hideShelf）とページ送り（turn）＝ユーザーの操作起点
+     でのみ要求する。自動再生的に呼ばれた場合はブラウザに拒否され、
+     そのまま読書が続く（例外は握りつぶす）
+   - 出口：本棚など読書以外の画面へ移るときに解除する
+   - 全画面の出入りで画面の高さが変わるため、fullscreenchange でも
+     可視高さの同期と再組版を行う。これを欠くと、バーが隠れた前提の
+     組版のままバーだけ戻り、再び下端が見えなくなる
+   - タッチ操作でない環境（PCのプレビュー等）では入らない */
+function inFullscreen(){
+  return !!(document.fullscreenElement || document.webkitFullscreenElement);
+}
+function enterImmersive(){
+  if (inFullscreen()) return;
+  let coarse = false;
+  try { coarse = window.matchMedia("(pointer: coarse)").matches; } catch (e) { /* noop */ }
+  if (!coarse) return;
+  const el = document.documentElement;
+  try {
+    let p = null;
+    if (el.requestFullscreen) {
+      try { p = el.requestFullscreen({ navigationUI: "hide" }); }
+      catch (e) { p = el.requestFullscreen(); }
+    } else if (el.webkitRequestFullscreen) {
+      p = el.webkitRequestFullscreen();
+    }
+    if (p && p.catch) p.catch(() => { /* 許可されなくても読書は続行する */ });
+  } catch (e) { /* 全画面にできない環境では通常表示のまま読む */ }
+}
+function exitImmersive(){
+  if (!inFullscreen()) return;
+  try {
+    const p = document.exitFullscreen ? document.exitFullscreen() : null;
+    if (p && p.catch) p.catch(() => { /* noop */ });
+  } catch (e) { /* noop */ }
+}
+document.addEventListener("fullscreenchange", () => {
+  syncViewportH();
+  scheduleReflowCheck(120);
+});
+document.addEventListener("webkitfullscreenchange", () => {
+  syncViewportH();
+  scheduleReflowCheck(120);
 });
 
 /* ---------------- なろうダウンローダーからの自動受け取り ----------------
