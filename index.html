@@ -160,6 +160,14 @@
   .fin-mark { font-size: 1.9em; font-weight: 600; letter-spacing: .4em; }
   .fin-title { font-size: 1.02em; line-height: 1.9; padding-top: .5em; }
   .fin-sub { font-size: .78em; color: var(--sub); line-height: 1.9; padding-top: .5em; }
+  .fin-btn {
+    writing-mode: vertical-rl; -webkit-writing-mode: vertical-rl;
+    font: inherit; font-size: .88em; letter-spacing: .18em;
+    color: var(--accent); background: transparent;
+    border: 1px solid var(--accent); border-radius: 999px;
+    padding: 1.2em .6em; cursor: pointer; margin-top: .5em;
+  }
+  .fin-btn:active { background: var(--tint); }
 
   #pageBadge {
     position: absolute; z-index: 5; pointer-events: none;
@@ -439,6 +447,38 @@
   .nsimilar-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
   .nsimilar-head h3 { flex: 1 1 auto; min-width: 0; font-size: 14.5px; margin: 0; font-family: var(--font); }
   .narou-foot { font-size: 11.5px; color: var(--sub); line-height: 1.7; margin-top: 18px; }
+  /* ---------- 本を追加／青空文庫ダウンローダー画面 ---------- */
+  .bbtn-add { background: var(--accent); border-color: transparent; color: #fff; font-weight: 600; }
+  .bbtn-add:active { filter: brightness(1.12); }
+  #addbook, #aozora {
+    position: fixed; inset: 0; z-index: 45; background: var(--outer);
+    overflow-y: auto; overscroll-behavior: contain; display: none;
+  }
+  #addbook.show, #aozora.show { display: block; animation: shelfIn .25s ease; }
+  .addlist { display: flex; flex-direction: column; gap: 10px; margin-top: 16px; }
+  .additem {
+    text-align: left; background: var(--sheet); border: 1px solid var(--line); border-radius: 14px;
+    padding: 16px; font: inherit; color: var(--ink); cursor: pointer; line-height: 1.35; width: 100%;
+  }
+  .additem .dl-title { display: block; font-size: 16px; font-weight: 600; }
+  .additem .dl-sub { display: block; font-size: 11.5px; font-weight: 400; color: var(--sub); margin-top: 2px; }
+  .additem:active { background: var(--tint); }
+  /* 取得途中の作品（レジューム）リスト */
+  #npartialBox { margin: 14px 0 2px; }
+  #npartialBox h3 { font-size: 14px; margin: 0 2px 9px; font-family: var(--font); }
+  .npartial-card {
+    background: var(--sheet); border: 1px solid var(--accent); border-radius: 14px;
+    padding: 13px 16px 12px; margin-bottom: 10px;
+  }
+  .npartial-card .pt { font-size: 15.5px; font-weight: 600; line-height: 1.45; font-family: var(--font); }
+  .npartial-card .pm { font-size: 12.5px; color: var(--sub); margin-top: 3px; line-height: 1.6; }
+  .npartial-card .pactions { display: flex; gap: 8px; margin-top: 11px; }
+  .npartial-card .pactions .nbtn { padding: 10px; font-size: 13.5px; }
+  /* 本棚カードの「更新を確認」ボタン（なろう作品のみ） */
+  .bookcard .bupd {
+    border: 0; background: transparent; color: var(--accent); font: inherit;
+    font-size: 12px; font-weight: 600; cursor: pointer; padding: 4px 6px; flex: none; white-space: nowrap;
+  }
   /* 取得進捗シート（なろう画面の上に重ねる） */
   #nprog {
     position: fixed; left: 0; right: 0; bottom: 0; z-index: 47; margin: 0 auto; max-width: 620px;
@@ -628,11 +668,9 @@
         <div>
           <h2>本棚（履歴）</h2>
         </div>
+        <button class="bbtn bbtn-add" id="btnAddBook">本追加</button>
         <button class="bbtn" id="btnReload">リロード</button>
-        <button class="bbtn" id="btnShelfClose">読書に戻る</button>
       </div>
-      <button class="shelf-open" id="btnShelfOpen">ファイルを開く（.txt / .md / .epub / .zip）</button>
-      <button class="shelf-open shelf-dl" id="btnShelfNarou"><span class="dl-title">なろうダウンローダー</span><span class="dl-sub">検索・ランキング・おすすめ・URL指定</span></button>
       <div id="shelfList"></div>
     </div>
   </div>
@@ -646,6 +684,11 @@
           <p>「小説家になろう」の作品を探して全話を取得し、そのまま本棚へ登録します。ファイル保存や別ページへの受け渡しは要りません。</p>
         </div>
       </div>
+
+      <section id="npartialBox" hidden aria-label="取得途中の作品">
+        <h3>取得途中の作品</h3>
+        <div id="npartialList"></div>
+      </section>
 
       <nav class="ntabs" aria-label="なろう機能切り替え">
         <button data-ntab="search" aria-selected="true">検索</button>
@@ -747,6 +790,48 @@
     </div>
   </div>
 
+  <div id="addbook" aria-label="本を追加">
+    <div class="narou-inner">
+      <div class="narou-head">
+        <button class="bbtn" id="btnAddBack">← 本棚</button>
+        <div>
+          <h2>本を追加</h2>
+          <p>追加の方法を選んでください。</p>
+        </div>
+      </div>
+      <div class="addlist">
+        <button class="additem" id="btnAddFile"><span class="dl-title">ファイルを開く</span><span class="dl-sub">端末内の .txt / .md / .epub / .zip を取り込む</span></button>
+        <button class="additem" id="btnAddNarou"><span class="dl-title">なろうダウンローダー</span><span class="dl-sub">検索・ランキング・おすすめ・URL指定</span></button>
+        <button class="additem" id="btnAddAozora"><span class="dl-title">青空文庫ダウンローダー</span><span class="dl-sub">作品名・著者名で検索して取り込む</span></button>
+      </div>
+    </div>
+  </div>
+
+  <div id="aozora" aria-label="青空文庫ダウンローダー">
+    <div class="narou-inner">
+      <div class="narou-head">
+        <button class="bbtn" id="btnAozoraBack">← 本を追加</button>
+        <div>
+          <h2>青空文庫ダウンローダー</h2>
+          <p>青空文庫の作品を検索し、テキストzipを取得してそのまま本棚へ登録します。</p>
+        </div>
+      </div>
+      <div class="nform">
+        <p class="nchip-label" id="aozoraIndexStatus" style="margin-bottom:10px;">インデックスを準備しています…</p>
+        <button type="button" class="nbtn" id="btnAozoraIndexUpdate">インデックスを更新</button>
+      </div>
+      <form class="nform" id="aozoraSearchForm">
+        <div class="nfield">
+          <label for="aozoraWord">作品名・著者名</label>
+          <input type="search" id="aozoraWord" placeholder="例）吾輩は猫である ／ 夏目漱石" autocomplete="off" />
+        </div>
+        <button type="submit" class="nbtn primary" id="aozoraSearchSubmit">検索する</button>
+      </form>
+      <div id="aozoraResults"></div>
+      <p class="narou-foot">作品リストは青空文庫の公式インデックスを使い、端末内にキャッシュします。取得は中継サーバー経由で、掲載は著作権の消滅した作品のみです。作品の権利は各権利者に帰属します。</p>
+    </div>
+  </div>
+
   <div id="nprog" role="dialog" aria-modal="false" aria-label="取得の進捗">
     <div class="grab"></div>
     <h2 id="nprogTitle">取得</h2>
@@ -765,6 +850,10 @@
     </div>
     <div class="nprog-actions" id="nprogErrActions" style="display:none;">
       <button type="button" class="nbtn" id="nprogClose">閉じる</button>
+    </div>
+    <div class="nprog-actions" id="nprogFullActions" style="display:none;">
+      <button type="button" class="nbtn primary" id="nprogFull">全話再取得する</button>
+      <button type="button" class="nbtn" id="nprogFullClose">閉じる</button>
     </div>
   </div>
 
@@ -836,7 +925,11 @@ const GUIDE_EPISODES = [
       "各本の左側にはサムネイルが付きます。EPUBでは表紙画像、テキストやzipでは本文で最初に現れる画像、漫画zipでは先頭ページの画像が使われ、画像のない本はアイコン表示になります。サムネイルは本を取り込むときに小さく作って保存されるので、本棚を開くたびに作り直すことはありません。表示は設定の「本棚のサムネイル」で切り替えられます。",
       "履歴の本は、各カードの「削除」ボタンから履歴を削除できます。削除すると、その本の読書位置・しおり・端末に保存した本文も一緒に消えます（元のファイル自体は消えません）。この「使い方」は組み込みのため、削除ボタンは付きません。",
       { t: "なろうダウンローダー", cls: "head" },
-      "本棚の「なろうダウンローダー」からは、「小説家になろう」の作品を検索・ランキング・おすすめ・URL指定で探し、全話を取得してそのまま本棚へ登録できます。話数が多い作品は、取得に時間がかかります。別ページのダウンローダーで登録した本も、従来どおり前面に戻ったときに自動で本棚へ追加されます。",
+      "本の追加は、本棚の「本追加」ボタンから開く「本を追加」画面に集約されています。ファイルを開く（端末内のファイルの取り込み）、なろうダウンローダー、青空文庫ダウンローダーの3つが並びます。",
+      "「なろうダウンローダー」からは、「小説家になろう」の作品を検索・ランキング・おすすめ・URL指定で探し、全話を取得してそのまま本棚へ登録できます。話数が多い作品は、取得に時間がかかります。別ページのダウンローダーで登録した本も、従来どおり前面に戻ったときに自動で本棚へ追加されます。",
+      "「青空文庫ダウンローダー」からは、青空文庫の作品を作品名・著者名で検索し、テキストzipを取得してそのまま本棚へ登録できます。作品リスト（インデックス）は青空文庫の公式のものを使い、端末内にキャッシュされます。「インデックスを更新」で最新のリストに取り直せます。掲載は著作権の消滅した作品のみです。",
+      "取得は1話ごとに端末へ保存されるため、途中で閉じたり中断したりしても、取れた話は残ります。なろう画面の上部に「取得途中の作品」として出るので、「続きから再開」で不足分だけを取得できます。",
+      "本棚のなろう作品のカードには「更新を確認」があります。実行すると目次だけを取得して手元の控えと比べ、増えた話と、更新日が変わった（書き換えられた）話だけを取得して本へ取り込みます。新しい話は末尾へ追加され、読書位置やしおりはそのまま残ります。差分がなければ「更新はありません」と表示されます。",
       { t: "しおり", cls: "head" },
       "メニューの「しおり」から、今開いているページにしおりを挟めます。しおりは本ごとに保存され、一覧からいつでもそのページへ戻れます。",
       { t: "保存のしくみ", cls: "head" },
@@ -888,7 +981,8 @@ const S = {
 const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 /* 起動の遅延復元：前回の本は起動時には読み込まず、本棚のエントリだけを
-   ここに控える。「読書に戻る」を押した時点で初めて本文を読み込んで開く */
+   ここに控える。その本は本棚の先頭に固定され、カードを開いた時点で初めて
+   本文を読み込んで続きから開く（openFromShelf 経由） */
 let pendingRestore = null;
 
 /* ---------------- 端末への自動保存（続きから開くため） ---------------- */
@@ -1809,6 +1903,22 @@ function buildPageEl(pageData){
     inner.appendChild(mark);
     inner.appendChild(ttl);
     inner.appendChild(sub);
+    /* 読了ページから直接本棚へ戻れるボタン。本文エリアのタップ判定
+       （ページ送り／メニュー）に巻き込まれないよう、押下系イベントは
+       ここで止めて、クリックで本棚遷移だけを行う */
+    const toShelf = document.createElement("button");
+    toShelf.type = "button";
+    toShelf.className = "fin-btn";
+    toShelf.textContent = "本棚に戻る";
+    ["pointerdown", "pointerup", "touchstart", "touchend"].forEach(evName =>
+      toShelf.addEventListener(evName, e => e.stopPropagation()));
+    toShelf.addEventListener("click", e => {
+      e.stopPropagation();
+      closeSheets();
+      showShelf();
+      pokeUI();
+    });
+    inner.appendChild(toShelf);
     el.appendChild(inner);
     return el;
   }
@@ -1908,6 +2018,65 @@ function renderWindow(){
   track.style.transform = "translateX(" + trackOffset() + "px)";
   if (mangaState) prefetchMangaAround(S.page);
   afterNav();
+  scheduleAdjacentPrefetch();
+}
+/* ---------------- 話跨ぎの先行組版 ----------------
+   話の境界を越えるページ送りだけ感触が違った原因は、遷移先の話の組版
+   （paginate）とページ要素の構築が、タップされた瞬間に同期的に走って
+   アニメーションの開始を遅らせていたこと（話の中の送りは構築済みの
+   トラックを滑らせるだけで即座に始まる）。そこで、現在の話を読んでいる
+   間にアイドル時間を使って前後の話を先に組版し、境界のページ群は要素
+   まで作って控えておく。跨ぎのタップでは控えを取り出すだけになり、
+   話の中と同じ応答・アニメーションになる */
+const prebuiltPages = new Map(); /* "ep:page" -> 構築済みページ要素 */
+let prebuiltPanelW = null;
+let adjacentPrefetchTimer = null;
+function clearPrebuiltPages(){
+  prebuiltPages.clear();
+  prebuiltPanelW = null;
+}
+function takePrebuiltPage(ep, page){
+  if (prebuiltPanelW !== null && prebuiltPanelW !== panelW()) {
+    clearPrebuiltPages();
+    return null;
+  }
+  const k = ep + ":" + page;
+  const el = prebuiltPages.get(k);
+  if (el) prebuiltPages.delete(k);
+  return el || null;
+}
+function scheduleAdjacentPrefetch(){
+  if (adjacentPrefetchTimer !== null) return;
+  const run = () => { adjacentPrefetchTimer = null; prefetchAdjacent(); };
+  if (typeof window.requestIdleCallback === "function")
+    adjacentPrefetchTimer = window.requestIdleCallback(run, { timeout: 1500 });
+  else adjacentPrefetchTimer = setTimeout(run, 400);
+}
+function prefetchAdjacent(){
+  if (!S.episodes.length || animating) return;
+  prebuiltPanelW = panelW();
+  const jobs = [];
+  if (S.ep + 1 < S.episodes.length) {
+    const pages = paginate(S.ep + 1);
+    for (let i = 0; i < Math.min(pages.length, ppv); i++) jobs.push([S.ep + 1, i]);
+  }
+  if (S.ep > 0) {
+    const pages = paginate(S.ep - 1);
+    const start = alignPage(pages.length - 1, pages.length);
+    for (let i = start; i < pages.length; i++) jobs.push([S.ep - 1, i]);
+  }
+  jobs.forEach(([ep, page]) => {
+    const k = ep + ":" + page;
+    if (prebuiltPages.has(k)) return;
+    const pd = paginate(ep)[page];
+    /* 漫画ページは画像の先読み（prefetchMangaAround）側に任せる */
+    if (!pd || (pd.manga !== undefined && pd.manga !== null)) return;
+    prebuiltPages.set(k, buildPageEl(pd));
+  });
+  /* 控えは隣接話の分だけに絞る（読み進めて遠くなった話の分は捨てる） */
+  const keep = {};
+  jobs.forEach(([ep, page]) => { keep[ep + ":" + page] = true; });
+  prebuiltPages.forEach((el, k) => { if (!keep[k]) prebuiltPages.delete(k); });
 }
 function renderCurrent(dir){ renderWindow(); }
 /* 同じ話の中：トラックごと1ページ分（見開き時は2ページ分）スライドして切り替える */
@@ -1935,13 +2104,25 @@ function animateGroupTo(newPage, done){
    方式は廃止し、章内・章またぎで同じ動きにした） */
 function slideGroupTo(dir, tgt){
   animating = true;
-  renderWindow(); /* ドラッグ追随でずれたトラック位置を現在ページへ戻してから帯を作る */
+  /* ドラッグ追随でずれたトラック位置だけを現在ページへ戻してから帯を作る。
+     以前はここで renderWindow() を丸ごと回していたが、現在ページ群の
+     再構築は跨ぎの応答を遅らせるだけなので、トランスフォームの
+     リセットに留める（位置の保存は遷移完了後の renderWindow が行う） */
+  track.style.transition = "none";
+  track.style.transform = "translateX(" + trackOffset() + "px)";
   stage.classList.add("sliding");
   const groupW = ppv * panelW();
   const curPages = paginate(S.ep), tgtPages = paginate(tgt.ep);
   const curEls = [], tgtEls = [];
-  for (let i = S.page; i < Math.min(curPages.length, S.page + ppv); i++) curEls.push(buildPageEl(curPages[i]));
-  for (let i = tgt.page; i < Math.min(tgtPages.length, tgt.page + ppv); i++) tgtEls.push(buildPageEl(tgtPages[i]));
+  /* 現在群は表示中の要素の複製で済ませ、遷移先群は先行組版の控えを
+     取り出して使う。どちらもタップ時点で新規に組版・構築しない */
+  for (let i = S.page; i < Math.min(curPages.length, S.page + ppv); i++) {
+    const child = track.children[i - winStart];
+    curEls.push(child ? child.cloneNode(true) : buildPageEl(curPages[i]));
+  }
+  for (let i = tgt.page; i < Math.min(tgtPages.length, tgt.page + ppv); i++) {
+    tgtEls.push(takePrebuiltPage(tgt.ep, i) || buildPageEl(tgtPages[i]));
+  }
   const wrap = document.createElement("div");
   wrap.className = "slidewrap";
   /* row-reverse なので先頭の群が右端に来る。
@@ -1973,7 +2154,7 @@ function overlayGroup(dir, tgt, flip){
   const wrap = document.createElement("div");
   wrap.className = "flipwrap";
   const end = Math.min(pages.length, tgt.page + ppv);
-  for (let i = tgt.page; i < end; i++) wrap.appendChild(buildPageEl(pages[i]));
+  for (let i = tgt.page; i < end; i++) wrap.appendChild(takePrebuiltPage(tgt.ep, i) || buildPageEl(pages[i]));
   if (flip) {
     wrap.style.transformOrigin = dir === "next" ? "left bottom" : "right bottom";
     wrap.style.transform = dir === "next" ? "rotateY(-72deg)" : "rotateY(72deg)";
@@ -2141,7 +2322,7 @@ function setLoading(on){ $("#loading").classList.toggle("show", !!on); }
    内など）では pushState が例外になるので、その場合は表示切替だけで動き、
    存在しないエントリへ向けて history.back() を呼ばないようにする */
 let histView = "shelf";
-const histLive = { reading: false, sheet: false, narou: false };
+const histLive = { reading: false, sheet: false, narou: false, add: false, aozora: false };
 const sheets = ["#tocSheet", "#markSheet", "#setSheet"];
 let lastSheetSel = null;
 function openSheetUI(sel){
@@ -2373,6 +2554,7 @@ function applyTypography(repaginate){
   buildProbe();
   if (repaginate && S.episodes.length) {
     S.cache.clear();
+    clearPrebuiltPages();
     S.ep = savedEp;
     const pages = paginate(S.ep);
     S.page = findPageForPos(pages, savedPos);
@@ -2528,6 +2710,8 @@ function deleteBookFromShelf(entry){
   S.bookmarks = S.bookmarks.filter(m => m.bookKey !== entry.key);
   if (S.lastKey === entry.key) S.lastKey = S.library.length ? S.library[0].key : null;
   dropBookContent(entry.key);
+  /* なろう作品の場合は台帳側の本棚リンクも外す（台帳自体は残る） */
+  nOnBookDeleted(entry.key);
   persist();
   buildShelf();
   toast("履歴から削除しました");
@@ -2554,6 +2738,18 @@ function buildShelf(){
   if (shelfRepaired) persist();
   /* 履歴なので、最後に開いた順に並べ替える（フォルダ内を走査はしない） */
   S.library.sort((a, b) => (b.lastRead || 0) - (a.lastRead || 0));
+  /* 読書中の本は常に先頭に固定する。対象は「いま開いている本」、起動直後で
+     まだ本文を読み込んでいない間は「再開対象の本（pendingRestore）」。
+     そのカードを開く操作が、そのまま従来の「読書に戻る」＝遅延復元になる */
+  const pinKey = pendingRestore ? pendingRestore.key
+    : (S.work && S.work.key && S.work.key !== "guide" ? S.work.key : null);
+  if (pinKey) {
+    const pi = S.library.findIndex(x => x.key === pinKey);
+    if (pi > 0) {
+      const pe = S.library.splice(pi, 1)[0];
+      S.library.unshift(pe);
+    }
+  }
   const list = $("#shelfList");
   list.innerHTML = "";
   if (!S.library.length) {
@@ -2596,6 +2792,21 @@ function buildShelf(){
     card.addEventListener("click", () => openFromShelf(entry));
     /* 削除ボタンはカード上に常時表示する（「使い方」は組み込みのため付けない） */
     if (entry.kind !== "guide") {
+      const foot = card.querySelector(".bfoot");
+      /* なろうから取り込んだ本には、差分更新の「更新を確認」を出す。
+         実行はなろうモジュール側（目次だけ取得して台帳と比べ、増えた話・
+         変わった話だけを取り込む） */
+      if (entry.key.indexOf("narou:") === 0) {
+        const upd = document.createElement("button");
+        upd.className = "bupd";
+        upd.textContent = "更新を確認";
+        upd.setAttribute("aria-label", "「" + entry.title + "」の更新を確認");
+        upd.addEventListener("click", e => {
+          e.stopPropagation();
+          nCheckUpdate(entry);
+        });
+        foot.insertBefore(upd, foot.querySelector(".go"));
+      }
       const del = document.createElement("button");
       del.className = "bdel";
       del.textContent = "削除";
@@ -2604,7 +2815,6 @@ function buildShelf(){
         e.stopPropagation();
         deleteBookFromShelf(entry);
       });
-      const foot = card.querySelector(".bfoot");
       foot.insertBefore(del, foot.querySelector(".go"));
     }
     list.appendChild(card);
@@ -2618,16 +2828,22 @@ function hideShelfUI(){ shelfEl.classList.remove("show"); }
 function showShelf(){
   closeSheetsUI();
   hideNarouUI();
+  hideAddUI();
+  hideAozoraUI();
   showShelfUI();
-  if (histView === "reading" || histView === "sheet" || histView === "narou") {
+  if (histView === "reading" || histView === "sheet" || histView === "narou" || histView === "add" || histView === "aozora") {
     let backs = 0;
     if (histView === "sheet" && histLive.sheet) backs++;
-    if (histView === "narou" && histLive.narou) backs++;
+    if (histLive.narou) backs++;
+    if (histLive.add) backs++;
+    if (histLive.aozora) backs++;
     if (histLive.reading) backs++;
     histView = "shelf";
     histLive.sheet = false;
     histLive.reading = false;
     histLive.narou = false;
+    histLive.add = false;
+    histLive.aozora = false;
     try { for (let i = 0; i < backs; i++) history.back(); } catch (e) { /* noop */ }
   } else histView = "shelf";
 }
@@ -2636,6 +2852,8 @@ function showShelf(){
 function hideShelf(){
   closeSheetsUI();
   hideNarouUI();
+  hideAddUI();
+  hideAozoraUI();
   hideShelfUI();
   if (histView === "shelf") {
     histView = "reading";
@@ -2647,6 +2865,16 @@ function hideShelf(){
       histLive.sheet = false;
       try { history.back(); } catch (e) { /* noop */ }
     }
+  } else if (histView === "add" || histView === "aozora" || histView === "narou") {
+    /* サブ画面から直接本を開いた場合：その画面の履歴エントリを
+       読書エントリに置き換え、戻る操作で本棚へ帰れる形にする */
+    const liveKey = histView;
+    histView = "reading";
+    if (histLive[liveKey]) {
+      histLive[liveKey] = false;
+      try { history.replaceState({ v: "reading" }, ""); histLive.reading = true; }
+      catch (e) { histLive.reading = false; }
+    }
   }
 }
 /* 端末・ブラウザの戻る／進む：履歴エントリの指す画面に表示を合わせる。
@@ -2655,14 +2883,18 @@ function hideShelf(){
 window.addEventListener("popstate", e => {
   const v = (e.state && e.state.v) || "shelf";
   histView = v;
-  histLive.reading = v !== "shelf" && v !== "narou";
+  histLive.reading = v === "reading" || v === "sheet";
   histLive.sheet = v === "sheet";
   histLive.narou = v === "narou";
+  histLive.add = v === "add";
+  histLive.aozora = v === "aozora";
   persistNow();
-  if (v === "shelf") { closeSheetsUI(); hideNarouUI(); showShelfUI(); }
-  else if (v === "narou") { hideShelfUI(); closeSheetsUI(); showNarouUI(); }
-  else if (v === "sheet") { hideShelfUI(); hideNarouUI(); if (lastSheetSel) openSheetUI(lastSheetSel); else closeSheetsUI(); }
-  else { hideShelfUI(); hideNarouUI(); closeSheetsUI(); }
+  if (v === "shelf") { closeSheetsUI(); hideNarouUI(); hideAddUI(); hideAozoraUI(); showShelfUI(); }
+  else if (v === "narou") { hideShelfUI(); closeSheetsUI(); hideAddUI(); hideAozoraUI(); showNarouUI(); }
+  else if (v === "add") { hideShelfUI(); hideNarouUI(); hideAozoraUI(); closeSheetsUI(); showAddUI(); }
+  else if (v === "aozora") { hideShelfUI(); hideNarouUI(); hideAddUI(); closeSheetsUI(); showAozoraUI(); }
+  else if (v === "sheet") { hideShelfUI(); hideNarouUI(); hideAddUI(); hideAozoraUI(); if (lastSheetSel) openSheetUI(lastSheetSel); else closeSheetsUI(); }
+  else { hideShelfUI(); hideNarouUI(); hideAddUI(); hideAozoraUI(); closeSheetsUI(); }
 });
 async function openFromShelf(entry){
   if (entry.key === S.work.key && S.episodes.length) { hideShelf(); return; }
@@ -2718,14 +2950,7 @@ $("#btnReload").addEventListener("click", () => {
     setTimeout(go, 1000);
   } else go();
 });
-$("#btnShelfClose").addEventListener("click", () => {
-  /* 起動直後は前回の本がまだ読み込まれていない（遅延復元）。その場合は
-     ここで初めて本文を読み込んで開く。失敗したら openFromShelf が
-     エラーを出して本棚に留まる */
-  if (pendingRestore) { const e = pendingRestore; pendingRestore = null; openFromShelf(e); }
-  else hideShelf();
-});
-$("#btnShelfOpen").addEventListener("click", () => { $("#fileInput").click(); });
+$("#btnAddBook").addEventListener("click", () => showAddBook());
 
 /* ---------------- 本を開く ---------------- */
 /* 旧形式で保存された本は挿絵の実寸（全面表示の判定材料）を持たないことがある。
@@ -2751,6 +2976,7 @@ async function repairIllusDims(key, episodes){
   if (!changed || S.work.key !== key || S.episodes !== episodes) return;
   const pos = currentPos(), ep = S.ep;
   S.cache.clear();
+  clearPrebuiltPages();
   const pages = paginate(ep);
   S.page = findPageForPos(pages, pos);
   renderCurrent(null);
@@ -2778,6 +3004,7 @@ function setBook(work, episodes, key, opts){
   else if (!isMangaBook) clearMangaState();
   S.episodes = episodes;
   S.cache.clear();
+  clearPrebuiltPages();
   buildProbe();
   registerBook(key, work.title, work.note || "",
     opts.kind || (key === "guide" ? "guide" : "file"),
@@ -3441,6 +3668,52 @@ async function parseZipBook(buf, fileName){
      pairs は { rel: 剥がし後の相対パス, orig: zip内の実エントリ名 } で、
      グループ化とタイトル付けは rel、実データの読み出しは orig で行う */
   let pairs = items.map(n => ({ rel: n, orig: n }));
+  /* ゴミ項目に強いラッパー判定：ルートに「複数テキストを持つフォルダ」が
+     1つだけあり、それ以外のルート項目がすべて話を生まない（中身が空白の
+     txt、テキストを含まないzip等）場合、それらは同居する実ユニットでは
+     なく付属のゴミとみなし、本体フォルダだけを剥がしの対象にする。
+     以前は、画像だけのおまけzipや空の付属txtが1つあるだけで下の厳密な
+     「フォルダ1つだけ」条件から外れ、本体フォルダ全体が1話に潰れて
+     しまっていた。実テキストを持つ項目が同居する場合は従来どおり
+     剥がさない（フォルダ＝1話という確定仕様を維持する） */
+  {
+    const rootGroups = new Map();
+    pairs.forEach(p => {
+      const seg = p.rel.split("/")[0];
+      if (!rootGroups.has(seg)) rootGroups.set(seg, []);
+      rootGroups.get(seg).push(p);
+    });
+    if (rootGroups.size > 1) {
+      const infos = [];
+      for (const [seg, members] of rootGroups) {
+        infos.push({ seg, members, isFolder: members.some(p => p.rel.includes("/")) });
+      }
+      /* そのルート項目が実際に生むテキストの数（0ならゴミ扱い） */
+      const textCount = async info => {
+        let n = 0;
+        for (const p of info.members) {
+          if (/\.txt$/i.test(p.rel)) {
+            if (!info.isFolder && info.members.length === 1) {
+              const b = await zip.files[p.orig].async("arraybuffer");
+              if (decodeTxtBytes(b).trim()) n++;
+            } else n++;
+          } else {
+            let nz = null;
+            try { nz = await loadZipBuf(await zip.files[p.orig].async("arraybuffer")); }
+            catch (e) { nz = null; }
+            if (nz) n += (await readSubTexts(nz)).length;
+          }
+        }
+        return n;
+      };
+      const counts = new Map();
+      for (const info of infos) counts.set(info.seg, await textCount(info));
+      const mains = infos.filter(i => i.isFolder && counts.get(i.seg) >= 2);
+      if (mains.length === 1 && infos.every(i => i === mains[0] || counts.get(i.seg) === 0)) {
+        pairs = mains[0].members.slice();
+      }
+    }
+  }
   let wrapperName = "";
   for (;;) {
     const segs = new Set(pairs.map(p => p.rel.split("/")[0]));
@@ -3869,7 +4142,7 @@ const nNovelStore = {}; /* ncode(大文字) -> APIの作品オブジェクト */
 const ndl = {
   downloading: false, cancelled: false, novel: null,
   total: 0, done: 0, startDone: 0, startedAt: 0,
-  lastBook: null
+  lastBook: null, mode: "download", pendingFull: null
 };
 function nSleep(ms){ return new Promise(r => setTimeout(r, ms)); }
 function nFmtNum(n){ return Number(n || 0).toLocaleString("ja-JP"); }
@@ -3936,7 +4209,10 @@ function hideNarouUI(){ narouEl.classList.remove("show"); }
 function showNarou(){
   closeSheetsUI();
   hideShelfUI();
+  hideAddUI();
+  hideAozoraUI();
   showNarouUI();
+  nRenderPartials();
   if (histView !== "narou") {
     histView = "narou";
     try { history.pushState({ v: "narou" }, ""); histLive.narou = true; }
@@ -3949,18 +4225,10 @@ function backToShelfFromNarou(){
     return;
   }
   closeNProgress();
-  hideNarouUI();
-  showShelfUI();
-  buildShelf();
-  if (histView === "narou") {
-    histView = "shelf";
-    if (histLive.narou) {
-      histLive.narou = false;
-      try { history.back(); } catch (e) { /* noop */ }
-    }
-  }
+  /* 本棚へ戻る。なろう画面が「本を追加」経由で開かれていた場合は、
+     積まれた履歴（本を追加→なろう）をまとめて畳む */
+  showShelf();
 }
-$("#btnShelfNarou").addEventListener("click", () => showNarou());
 $("#btnNarouBack").addEventListener("click", () => backToShelfFromNarou());
 
 /* ---------- 作品カード ---------- */
@@ -4261,10 +4529,22 @@ function nParseToc(html, initialChapter){
       } else {
         const href = el.getAttribute("href") || "";
         const m = href.match(/\/(\d+)\/?(?:\?.*)?$/);
+        /* 目次に載る更新日（.p-eplist__update）を話ごとに控える。差分取得では
+           この日付が前回取得時の控えと違う話だけを本文取得し直す。改稿マーク
+           （（改））が付く場合は日付が同じでも拾えるよう、印も含めて控える */
+        let date = "";
+        const upd = el.parentElement ? el.parentElement.querySelector(".p-eplist__update") : null;
+        if (upd) {
+          const t = upd.textContent || "";
+          const dm = t.match(/(\d{4}\/\d{1,2}\/\d{1,2}(?:\s+\d{1,2}:\d{2})?)/);
+          if (dm) date = dm[1].replace(/\s+/g, " ");
+          if (t.indexOf("改") >= 0) date += "（改）";
+        }
         episodes.push({
           no: m ? parseInt(m[1], 10) : episodes.length + 1,
           title: el.textContent.trim(),
-          chapter
+          chapter,
+          date
         });
       }
     });
@@ -4349,7 +4629,8 @@ async function nCollectEpisodes(novel, base){
        取り込む。判定は「話リンクが無い」ことに加え、トップページから
        実際に本文が抽出できること（抽出関数そのもので確認する）で行う */
     if (first.hasText || nEpisodeText(firstHTML, novel.title) != null) {
-      return { episodes: [{ no: 1, title: novel.title, chapter: "", html: firstHTML }] };
+      /* 短編も台帳上は1話として扱う。更新日の控えはAPIの最終更新日時で代用する */
+      return { episodes: [{ no: 1, title: novel.title, chapter: "", date: novel.general_lastup || "", html: firstHTML }] };
     }
     throw new Error("目次が取得できませんでした。");
   }
@@ -4385,6 +4666,7 @@ function openNProgress(novel){
   $("#nprogMainActions").style.display = "";
   $("#nprogDoneActions").style.display = "none";
   $("#nprogErrActions").style.display = "none";
+  $("#nprogFullActions").style.display = "none";
   const cancel = $("#nprogCancel");
   cancel.textContent = "中止する";
   cancel.disabled = false;
@@ -4417,6 +4699,7 @@ function nProgressDone(novel, key, stored){
   $("#nprogText").textContent = ndl.total + " / " + ndl.total + "話の取得が完了しました。";
   $("#nprogMainActions").style.display = "none";
   $("#nprogErrActions").style.display = "none";
+  $("#nprogFullActions").style.display = "none";
   $("#nprogDoneActions").style.display = "";
   $("#nprogDoneNote").textContent = stored
     ? "『" + novel.title + "』を本棚に登録しました。"
@@ -4428,17 +4711,57 @@ function nProgressDone(novel, key, stored){
   nInitAdSlots();
 }
 function nProgressCancelled(){
-  $("#nprogText").textContent = "中止しました。";
+  $("#nprogText").textContent = "中止しました。取得済みの話は保存してあるので、なろう画面の「取得途中の作品」から続きを取得できます。";
   $("#nprogMainActions").style.display = "none";
   $("#nprogDoneActions").style.display = "none";
+  $("#nprogFullActions").style.display = "none";
   $("#nprogErrActions").style.display = "";
 }
 function nProgressError(msg){
   $("#nprogText").textContent = msg;
   $("#nprogMainActions").style.display = "none";
   $("#nprogDoneActions").style.display = "none";
+  $("#nprogFullActions").style.display = "none";
   $("#nprogErrActions").style.display = "";
 }
+/* 結果だけを知らせる完了表示（更新なし／差分取り込み完了など）。
+   アクションは「閉じる」のみで、下にある画面（本棚またはなろう画面）へ戻る */
+function nProgressPlainDone(msg){
+  $("#nprogFill").style.width = "100%";
+  $("#nprogText").textContent = msg;
+  $("#nprogMainActions").style.display = "none";
+  $("#nprogDoneActions").style.display = "none";
+  $("#nprogFullActions").style.display = "none";
+  $("#nprogErrActions").style.display = "";
+}
+/* 台帳と目次が大きく食い違い、そのままでは取り込めない場合の表示。
+   全話再取得（現在の本を新しい取得結果で置き換える）を提案する */
+function nProgressDrift(novel){
+  $("#nprogText").textContent =
+    "話の構成が、取得したときの控えと大きく変わっているため、そのままでは更新を取り込めません。" +
+    "全話再取得すると、現在の本は新しい取得結果で置き換わります（読書位置は話番号ベースで引き継がれます）。";
+  $("#nprogMainActions").style.display = "none";
+  $("#nprogDoneActions").style.display = "none";
+  $("#nprogErrActions").style.display = "none";
+  $("#nprogFullActions").style.display = "";
+  ndl.pendingFull = novel;
+}
+$("#nprogFullClose").addEventListener("click", () => closeNProgress());
+$("#nprogFull").addEventListener("click", async () => {
+  const novel = ndl.pendingFull;
+  if (!novel) { closeNProgress(); return; }
+  ndl.pendingFull = null;
+  closeNProgress();
+  /* 台帳と取得済み本文を破棄して、まっさらな状態から取り直す */
+  const ncodeU = String(novel.ncode).toUpperCase();
+  const m = await nLoadManifest(ncodeU);
+  if (m) {
+    await nsClearWorkTexts(ncodeU, m.episodes);
+    await nsDel(NS_MAN_STORE, ncodeU);
+  }
+  if (histView !== "narou") showNarou();
+  nStartDownload(novel);
+});
 $("#nprogCancel").addEventListener("click", () => {
   if (ndl.downloading) {
     ndl.cancelled = true;
@@ -4452,12 +4775,9 @@ $("#nprogRead").addEventListener("click", async () => {
   const lb = ndl.lastBook;
   closeNProgress();
   if (!lb) { backToShelfFromNarou(); return; }
-  hideNarouUI();
-  /* 履歴を [本棚, 読書] の形に整えてから開く（戻るボタンで本棚へ帰れるように） */
-  histView = "shelf";
-  histLive.narou = false;
-  try { history.replaceState({ v: "shelf" }, ""); } catch (e) { /* noop */ }
-  showShelfUI();
+  /* 履歴を [本棚, 読書] の形に整えてから開く（戻るボタンで本棚へ帰れるように）。
+     サブ画面の履歴は showShelf でまとめて畳む */
+  showShelf();
   if (lb.stored) {
     const entry = S.library.find(x => x.key === lb.key);
     if (entry) { await openFromShelf(entry); return; }
@@ -4468,64 +4788,711 @@ $("#nprogRead").addEventListener("click", async () => {
   toast(resumed ? "前回の続きから開きました" : "『" + lb.title + "』を開きました");
 });
 
-/* ---------- 全話取得 → 本棚へ直接登録 ---------- */
-async function nStartDownload(novel){
+/* ---------- 同期ストア（差分取得＝レジュームの土台） ----------
+   本の本文ストア（tategaki-viewer-db）とは別の専用DBに、作品ごとの台帳と
+   取得済み本文を逐次保存する。既存の保存経路には一切触らない。
+   - manifests（キー: ncode）: 台帳。書名・著者・話リスト（話番号・サブ
+     タイトル・目次に載る更新日・状態・本の中の位置）・最終確認日時・
+     登録済みなら本棚の bookId・再開用の作品情報スナップショット
+   - eptexts（キー: ncode:話番号）: 変換済み本文（青空文庫形式テキスト）。
+     1話取るごとに即保存するので、中断しても取れた分は残る
+   話の状態（state）:
+   - "none"   : 未取得
+   - "stored" : 本文は同期ストアにある（本へ未反映）
+   - "inbook" : 本棚の本に取り込み済み（bookIndex が本の中の位置） */
+const NSYNC_DB_NAME = "tategaki-narou-sync", NS_MAN_STORE = "manifests", NS_EP_STORE = "eptexts", AOZORA_STORE = "aozora";
+let nsDb = null, nsOpening = null;
+function nsOpen(){
+  if (!("indexedDB" in window)) return Promise.resolve(null);
+  if (nsDb) return Promise.resolve(nsDb);
+  if (nsOpening) return nsOpening;
+  nsOpening = new Promise(res => {
+    let req;
+    try { req = indexedDB.open(NSYNC_DB_NAME, 2); }
+    catch (e) { nsOpening = null; res(null); return; }
+    req.onupgradeneeded = () => {
+      try {
+        const db = req.result;
+        if (!db.objectStoreNames.contains(NS_MAN_STORE)) db.createObjectStore(NS_MAN_STORE);
+        if (!db.objectStoreNames.contains(NS_EP_STORE)) db.createObjectStore(NS_EP_STORE);
+        /* 青空文庫の作品インデックスのキャッシュ置き場 */
+        if (!db.objectStoreNames.contains(AOZORA_STORE)) db.createObjectStore(AOZORA_STORE);
+      } catch (e) { /* noop */ }
+    };
+    req.onsuccess = () => {
+      nsOpening = null;
+      nsDb = req.result;
+      nsDb.onversionchange = () => {
+        try { nsDb.close(); } catch (e) { /* noop */ }
+        nsDb = null;
+      };
+      res(nsDb);
+    };
+    req.onerror = () => { nsOpening = null; res(null); };
+    req.onblocked = () => { nsOpening = null; res(null); };
+  });
+  return nsOpening;
+}
+async function nsGet(store, key){
+  const db = await nsOpen();
+  if (!db) return null;
+  return new Promise(res => {
+    try {
+      const rq = db.transaction(store, "readonly").objectStore(store).get(key);
+      rq.onsuccess = () => res(rq.result != null ? rq.result : null);
+      rq.onerror = () => res(null);
+    } catch (e) { res(null); }
+  });
+}
+async function nsPut(store, key, val){
+  const db = await nsOpen();
+  if (!db) return false;
+  return new Promise(res => {
+    try {
+      const tx = db.transaction(store, "readwrite");
+      tx.objectStore(store).put(val, key);
+      tx.oncomplete = () => res(true);
+      tx.onerror = () => res(false);
+      tx.onabort = () => res(false);
+    } catch (e) { res(false); }
+  });
+}
+async function nsDel(store, key){
+  const db = await nsOpen();
+  if (!db) return;
+  try { db.transaction(store, "readwrite").objectStore(store).delete(key); } catch (e) { /* noop */ }
+}
+async function nsAllManifests(){
+  const db = await nsOpen();
+  if (!db) return [];
+  return new Promise(res => {
+    try {
+      const rq = db.transaction(NS_MAN_STORE, "readonly").objectStore(NS_MAN_STORE).getAll();
+      rq.onsuccess = () => res(Array.isArray(rq.result) ? rq.result : []);
+      rq.onerror = () => res([]);
+    } catch (e) { res([]); }
+  });
+}
+function nsEpKey(ncodeU, no){ return ncodeU + ":" + no; }
+/* 同期ストアに実在する本文の話番号集合（台帳の "stored" が実物と合っているか確認する） */
+async function nsStoredNos(ncodeU){
+  const db = await nsOpen();
+  const set = {};
+  if (!db) return set;
+  const keys = await new Promise(res => {
+    try {
+      const rq = db.transaction(NS_EP_STORE, "readonly").objectStore(NS_EP_STORE).getAllKeys();
+      rq.onsuccess = () => res(rq.result || []);
+      rq.onerror = () => res([]);
+    } catch (e) { res([]); }
+  });
+  const prefix = ncodeU + ":";
+  keys.forEach(k => {
+    if (typeof k === "string" && k.indexOf(prefix) === 0) set[k.slice(prefix.length)] = true;
+  });
+  return set;
+}
+async function nsClearWorkTexts(ncodeU, episodes){
+  for (const e of (episodes || [])) await nsDel(NS_EP_STORE, nsEpKey(ncodeU, e.no));
+}
+/* ---------- 台帳 ---------- */
+function nNovelSnapshot(novel){
+  return {
+    ncode: novel.ncode, title: novel.title, writer: novel.writer || "",
+    novel_type: novel.novel_type, end: novel.end, genre: novel.genre,
+    general_all_no: novel.general_all_no, length: novel.length,
+    general_lastup: novel.general_lastup || ""
+  };
+}
+function nNewManifest(novel){
+  return {
+    ncode: String(novel.ncode).toUpperCase(),
+    title: novel.title, writer: novel.writer || "",
+    novel: nNovelSnapshot(novel),
+    episodes: [], bookId: null, lastCheck: 0, updatedAt: Date.now()
+  };
+}
+async function nLoadManifest(ncodeU){
+  const m = await nsGet(NS_MAN_STORE, ncodeU);
+  if (!m || !Array.isArray(m.episodes)) return null;
+  return m;
+}
+async function nSaveManifest(m){
+  m.updatedAt = Date.now();
+  await nsPut(NS_MAN_STORE, m.ncode, m);
+}
+/* 本棚から本が削除されたときの後始末（buildShelf 側の削除処理から呼ばれる）。
+   台帳自体は残し、本棚リンクと「本に入っている」状態だけを外す */
+function nOnBookDeleted(key){
+  if (typeof key !== "string" || key.indexOf("narou:") !== 0) return;
+  const ncodeU = key.slice(6).toUpperCase();
+  nLoadManifest(ncodeU).then(m => {
+    if (!m || m.bookId !== key) return;
+    m.bookId = null;
+    m.episodes.forEach(e => {
+      if (e.state === "inbook") e.state = "none";
+      e.bookIndex = null;
+    });
+    nSaveManifest(m);
+  }).catch(() => { /* noop */ });
+}
+/* 差分マージ後に本棚エントリの話情報だけをその場で更新する。
+   registerBook と違い、並び順・最終読書・読書位置・しおり・読了には触らない */
+function nUpdateLibraryEntry(key, episodes){
+  const e = S.library.find(x => x.key === key);
+  if (!e) return;
+  e.epTitles = episodes.map(ep => ep.title);
+  const counts = epCharCounts(episodes);
+  e.epChars = counts;
+  e.totalChars = counts.reduce((a, b) => a + b, 0);
+  e.stored = true;
+  persist();
+}
+
+/* ---------- 取得途中の作品リスト（レジューム導線） ---------- */
+async function nRenderPartials(){
+  const box = $("#npartialBox"), list = $("#npartialList");
+  if (!box || !list) return;
+  const mans = await nsAllManifests();
+  const items = [];
+  mans.forEach(m => {
+    if (!m || !Array.isArray(m.episodes) || !m.episodes.length) return;
+    if (m.bookId) return; /* 本棚登録済みは差分更新側の担当 */
+    const have = m.episodes.filter(e => e.state !== "none").length;
+    if (!have) return;
+    items.push({ m, have, total: m.episodes.length, pending: have >= m.episodes.length });
+  });
+  items.sort((a, b) => (b.m.updatedAt || 0) - (a.m.updatedAt || 0));
+  if (!items.length) { box.hidden = true; list.innerHTML = ""; return; }
+  box.hidden = false;
+  list.innerHTML = "";
+  items.forEach(it => {
+    const card = document.createElement("div");
+    card.className = "npartial-card";
+    card.innerHTML =
+      '<div class="pt">' + esc(it.m.title || "なろう作品") + "</div>" +
+      '<div class="pm">' + esc(it.m.writer || "") + "／" +
+      (it.pending ? "全話の取得が済んでいます（本棚への登録待ち）"
+                  : "途中まで取得済み（" + it.have + " / " + it.total + "話）") + "</div>";
+    const acts = document.createElement("div");
+    acts.className = "pactions";
+    const resume = document.createElement("button");
+    resume.type = "button";
+    resume.className = "nbtn primary";
+    resume.textContent = it.pending ? "本棚へ登録する" : "続きから再開";
+    resume.addEventListener("click", () => {
+      if (it.m.novel) nStartDownload(it.m.novel);
+    });
+    const drop = document.createElement("button");
+    drop.type = "button";
+    drop.className = "nbtn";
+    drop.textContent = "破棄";
+    drop.addEventListener("click", async () => {
+      await nsClearWorkTexts(it.m.ncode, it.m.episodes);
+      await nsDel(NS_MAN_STORE, it.m.ncode);
+      nRenderPartials();
+      toast("取得途中のデータを破棄しました");
+    });
+    acts.appendChild(resume);
+    acts.appendChild(drop);
+    card.appendChild(acts);
+    list.appendChild(card);
+  });
+}
+
+/* ---------- 同期エンジン（全話取得・レジューム・差分更新を一本化） ----------
+   流れ: 目次取得 → 台帳と照合 → 足りない話・更新日が進んだ話だけ本文取得
+   （1話ごとに同期ストアへ保存） → 本棚の本があれば差分マージ、無ければ
+   全文から組み立てて登録。レジュームは「照合で足りない分だけ取る」こと
+   そのもので、差分更新は「登録済みの本へのマージ」として同じ土台に乗る */
+async function nRunSync(novel, opts){
+  opts = opts || {};
+  const fromCheck = !!opts.fromCheck;
   if (ndl.downloading) { toast("別の作品を取得中です"); return; }
   const ncodeU = String(novel.ncode).toUpperCase();
   const base = "https://ncode.syosetu.com/" + ncodeU.toLowerCase() + "/";
+  const key = "narou:" + ncodeU;
+  const note = (novel.writer ? novel.writer + "／" : "") + "小説家になろう";
   ndl.downloading = true;
   ndl.cancelled = false;
   ndl.novel = novel;
+  ndl.mode = fromCheck ? "update" : "download";
+  ndl.pendingFull = null;
   ndl.total = 0; ndl.done = 0; ndl.startDone = 0;
   ndl.startedAt = Date.now();
   openNProgress(novel);
+  if (fromCheck) $("#nprogText").textContent = "目次を確認しています…";
   try {
     const collected = await nCollectEpisodes(novel, base);
     if (ndl.cancelled) { nProgressCancelled(); return; }
     const toc = collected.episodes;
+    const tocByNo = {};
+    toc.forEach(e => { tocByNo[e.no] = e; });
+
+    let m = await nLoadManifest(ncodeU);
+    const hadManifest = !!m;
+    if (!m) m = nNewManifest(novel);
+    m.title = novel.title;
+    m.writer = novel.writer || "";
+    m.novel = nNovelSnapshot(novel);
+
+    /* 登録済みの本の本文が端末から消えている場合は、本棚リンクを無効として
+       全話取り直し→組み立て直しの経路に倒す（位置・しおりはキーに紐づくので残る） */
+    let existingBook = null;
+    if (m.bookId === key) {
+      existingBook = await loadBookContent(key);
+      if (!existingBook) m.bookId = null;
+    }
+
+    /* 台帳が無い本棚の本（この機能より前に取り込んだ本）は、目次と話数が
+       一致すれば「いまの目次＝取得時の状態」として台帳を起こし、次回から
+       差分更新できるようにする */
+    if (fromCheck && !hadManifest && !m.bookId) {
+      const entry = S.library.find(x => x.key === key);
+      if (entry && entry.stored && Array.isArray(entry.epTitles) && entry.epTitles.length === toc.length) {
+        m.episodes = toc.map((te, i) => ({
+          no: te.no, title: te.title, chapter: te.chapter || "", date: te.date || "",
+          state: "inbook", bookIndex: i
+        }));
+        m.bookId = key;
+        m.lastCheck = Date.now();
+        await nSaveManifest(m);
+        ndl.total = toc.length;
+        nProgressPlainDone("『" + novel.title + "』の更新はありませんでした（全" + toc.length + "話・最新です）。次回から差分だけを確認できます。");
+        return;
+      }
+      if (entry) { nProgressDrift(novel); return; }
+      /* 本棚に無い場合は通常の取得として続行する */
+    }
+
+    /* 台帳と目次を照合する。残すのは「更新日が同じで、本文の所在が確かな話」だけ */
+    const prevByNo = {};
+    (m.episodes || []).forEach(e => { prevByNo[e.no] = e; });
+    const tocNos = {};
+    toc.forEach(e => { tocNos[e.no] = true; });
+    const removed = (m.episodes || []).filter(e => !tocNos[e.no]);
+    /* 本棚の本があるのに話が消えている＝構成が大きく変わった。無理にマージしない */
+    if (m.bookId && removed.length) { nProgressDrift(novel); return; }
+    let storedNos = null;
+    if ((m.episodes || []).some(e => e.state === "stored")) storedNos = await nsStoredNos(ncodeU);
+    const merged = toc.map(te => {
+      const prev = prevByNo[te.no];
+      const e = {
+        no: te.no, title: te.title, chapter: te.chapter || "", date: te.date || "",
+        state: "none",
+        bookIndex: prev && prev.bookIndex != null ? prev.bookIndex : null
+      };
+      if (prev && (prev.date || "") === e.date) {
+        if (prev.state === "inbook" && m.bookId === key && existingBook) e.state = "inbook";
+        else if (prev.state === "stored" && storedNos && storedNos[te.no]) e.state = "stored";
+      }
+      return e;
+    });
+    m.episodes = merged;
+    m.lastCheck = Date.now();
+    await nSaveManifest(m);
+
+    const needFetch = merged.filter(e => e.state === "none");
+    const pendingStored = merged.filter(e => e.state === "stored");
+
+    /* 差分チェックで差分ゼロなら、本文取得は一切しない */
+    if (fromCheck && !needFetch.length && !pendingStored.length && m.bookId) {
+      ndl.total = toc.length;
+      nProgressPlainDone("『" + novel.title + "』の更新はありませんでした（全" + toc.length + "話・最新です）。");
+      return;
+    }
+    /* 取得起動で、登録済み・最新ならそのまま完了表示にする */
+    if (!fromCheck && !needFetch.length && !pendingStored.length && m.bookId) {
+      ndl.total = toc.length;
+      ndl.lastBook = { key, title: novel.title, note, episodes: [], stored: true };
+      nProgressDone(novel, key, true);
+      $("#nprogDoneNote").textContent = "『" + novel.title + "』は最新の状態で本棚に登録済みです。";
+      return;
+    }
+
+    /* 本文取得フェーズ：足りない話だけを取り、1話ごとに即保存する */
     ndl.total = toc.length;
-    ndl.done = 0;
+    ndl.done = merged.length - needFetch.length;
+    ndl.startDone = ndl.done;
     ndl.startedAt = Date.now();
     nProgressUpdate();
-    const texts = new Map();
-    for (let i = 0; i < toc.length; i++) {
+    for (let i = 0; i < needFetch.length; i++) {
       if (ndl.cancelled) break;
-      const ep = toc[i];
-      const html = ep.html != null ? ep.html : await nFetchText(base + ep.no + "/", 3);
+      const e = needFetch[i];
+      const te = tocByNo[e.no];
+      const html = te.html != null ? te.html : await nFetchText(base + e.no + "/", 3);
       if (ndl.cancelled) break;
-      const heading = ep.chapter ? ep.chapter + "　" + ep.title : ep.title;
+      const heading = e.chapter ? e.chapter + "　" + e.title : e.title;
       const content = nEpisodeText(html, heading);
-      if (content == null) throw new Error("第" + ep.no + "話の本文が見つかりませんでした。");
-      texts.set(ep.no, content);
-      ndl.done = texts.size;
-      nProgressUpdate(ep.title);
-      if (i < toc.length - 1) await nSleep(700); /* 各話の間隔は礼儀正しく空ける */
+      if (content == null) throw new Error("第" + e.no + "話の本文が見つかりませんでした。");
+      await nsPut(NS_EP_STORE, nsEpKey(ncodeU, e.no), content);
+      e.state = "stored";
+      await nSaveManifest(m);
+      ndl.done++;
+      nProgressUpdate(e.title);
+      if (i < needFetch.length - 1) await nSleep(700); /* 各話の間隔は礼儀正しく空ける */
     }
     if (ndl.cancelled) { nProgressCancelled(); return; }
-    /* 全話そろった：ZIP取り込みと同じ経路（parseTextBook）で本データ化し、
-       ファイルや inbox を介さず本棚へ直接登録する */
-    $("#nprogText").textContent = "本棚へ登録しています…";
-    const episodes = toc.map(ep => {
-      const heading = ep.chapter ? ep.chapter + "　" + ep.title : ep.title;
-      return mergeParsedEpisodes(parseTextBook(texts.get(ep.no), heading + ".txt"), heading);
-    }).filter(ep => ep.paragraphs.length);
+
+    /* 反映フェーズ */
+    $("#nprogText").textContent = m.bookId ? "本へ反映しています…" : "本棚へ登録しています…";
+    const headingOf = e => (e.chapter ? e.chapter + "　" + e.title : e.title);
+    const parseStored = async e => {
+      const text = await nsGet(NS_EP_STORE, nsEpKey(ncodeU, e.no));
+      if (text == null) return null;
+      const heading = headingOf(e);
+      return mergeParsedEpisodes(parseTextBook(text, heading + ".txt"), heading);
+    };
+
+    if (m.bookId && existingBook) {
+      /* 差分マージ：同じ話番号は差し替え、新しい話は末尾に追加だけ。
+         読書位置・しおり・読了は話の位置（インデックス）に紐づくので壊れない */
+      const book = existingBook.slice();
+      let drift = false;
+      merged.forEach(e => {
+        if (e.state === "inbook" && e.bookIndex != null && e.bookIndex >= book.length) drift = true;
+      });
+      let added = 0, replaced = 0;
+      if (!drift) {
+        for (const e of merged) {
+          if (e.state !== "stored") continue;
+          const parsed = await parseStored(e);
+          if (!parsed || !parsed.paragraphs.length) { drift = true; break; }
+          if (e.bookIndex != null && e.bookIndex < book.length) { book[e.bookIndex] = parsed; replaced++; }
+          else { e.bookIndex = book.length; book.push(parsed); added++; }
+          e.state = "inbook";
+        }
+      }
+      if (drift) { nProgressDrift(novel); return; }
+      const storedOk = await saveBookContent(key, book);
+      if (!storedOk) throw new Error("更新した本を保存できませんでした（容量不足など）。取得した本文は残してあるので、再試行できます。");
+      nUpdateLibraryEntry(key, book);
+      /* 本へ取り込んだ話の同期ストア側コピーは片付ける（台帳は残す） */
+      for (const e of merged) if (e.state === "inbook") await nsDel(NS_EP_STORE, nsEpKey(ncodeU, e.no));
+      m.episodes = merged;
+      await nSaveManifest(m);
+      buildShelf();
+      ndl.total = toc.length;
+      if (!added && !replaced) {
+        nProgressPlainDone("『" + novel.title + "』の更新はありませんでした（全" + toc.length + "話・最新です）。");
+      } else if (fromCheck) {
+        nProgressPlainDone("『" + novel.title + "』を更新しました：" +
+          (added ? added + "話を追加" : "") + (added && replaced ? "、" : "") +
+          (replaced ? replaced + "話を差し替え" : "") + "（全" + book.length + "話）。読書位置としおりはそのままです。");
+      } else {
+        ndl.lastBook = { key, title: novel.title, note, episodes: [], stored: true };
+        nProgressDone(novel, key, true);
+        $("#nprogDoneNote").textContent = "『" + novel.title + "』を更新しました：" +
+          (added ? added + "話を追加" : "") + (added && replaced ? "、" : "") +
+          (replaced ? replaced + "話を差し替え" : "") + "（全" + book.length + "話）。";
+      }
+      return;
+    }
+
+    /* 新規登録：保存済み本文から全話を組み立てる（ZIP取り込みと同じ解析経路） */
+    const episodes = [];
+    for (const e of merged) {
+      const parsed = await parseStored(e);
+      if (!parsed) throw new Error("保存済みの本文が見つかりませんでした。もう一度取得してください。");
+      if (parsed.paragraphs.length) {
+        e.bookIndex = episodes.length;
+        episodes.push(parsed);
+      } else {
+        e.bookIndex = null; /* 空の話は本に入れない（台帳上は取得済みとして扱う） */
+        e.state = "inbook";
+      }
+    }
     if (!episodes.length) throw new Error("本文を取り込めませんでした。");
-    const key = "narou:" + ncodeU;
     const stored = await saveBookContent(key, episodes);
-    const note = (novel.writer ? novel.writer + "／" : "") + "小説家になろう";
     registerBook(key, novel.title, note, "file", "", episodes, stored);
     ndl.lastBook = { key, title: novel.title, note, episodes, stored };
+    if (stored) {
+      m.bookId = key;
+      merged.forEach(e => { if (e.bookIndex != null) e.state = "inbook"; });
+      m.episodes = merged;
+      await nSaveManifest(m);
+      for (const e of merged) if (e.state === "inbook") await nsDel(NS_EP_STORE, nsEpKey(ncodeU, e.no));
+    } else {
+      /* 登録できなかった場合は本文を同期ストアに保持し、登録待ちとして残す */
+      m.episodes = merged;
+      await nSaveManifest(m);
+    }
     buildShelf();
     nProgressDone(novel, key, stored);
-    toast("『" + novel.title + "』を本棚に追加しました", 3000);
+    if (stored) toast("『" + novel.title + "』を本棚に追加しました", 3000);
   } catch (err) {
     if (ndl.cancelled) nProgressCancelled();
     else nProgressError(err && err.message ? err.message : "取得に失敗しました。時間をおいて再試行してください。");
   } finally {
     ndl.downloading = false;
+    nRenderPartials();
   }
 }
+/* 作品カードの「全話取得して本棚へ」／レジュームの入口 */
+function nStartDownload(novel){ nRunSync(novel, {}); }
+/* 本棚カードの「更新を確認」：台帳の作品情報で差分チェックとして同期する */
+async function nCheckUpdate(entry){
+  if (ndl.downloading) { toast("別の作品を取得中です"); return; }
+  const ncodeU = entry.key.slice(6).toUpperCase();
+  const m = await nLoadManifest(ncodeU);
+  let novel = m && m.novel ? m.novel : null;
+  if (!novel) {
+    /* 台帳が無い本は、作品情報を取り直してから台帳起こし込みでチェックする */
+    try {
+      const res = await nApiFetch({ ncode: ncodeU.toLowerCase(), lim: 1 });
+      if (res.novels.length) novel = res.novels[0];
+    } catch (e) { /* noop */ }
+  }
+  if (!novel) { toast("作品情報を取得できませんでした。時間をおいて再試行してください"); return; }
+  nRunSync(novel, { fromCheck: true });
+}
 nInitAdSlots();
+
+/* ---------------- 本を追加（入口の集約画面） ----------------
+   本棚トップは本のリストに専念させ、追加の入口はこの画面に集約した。
+   履歴上は本棚の上に積む1画面として扱う（なろう・青空も同じ作法） */
+const addEl = $("#addbook"), aozoraEl = $("#aozora");
+function showAddUI(){ addEl.classList.add("show"); }
+function hideAddUI(){ addEl.classList.remove("show"); }
+function showAozoraUI(){ aozoraEl.classList.add("show"); }
+function hideAozoraUI(){ aozoraEl.classList.remove("show"); }
+function showAddBook(){
+  closeSheetsUI();
+  hideShelfUI();
+  hideNarouUI();
+  hideAozoraUI();
+  showAddUI();
+  if (histView !== "add") {
+    histView = "add";
+    try { history.pushState({ v: "add" }, ""); histLive.add = true; }
+    catch (e) { histLive.add = false; }
+  }
+}
+function showAozora(){
+  closeSheetsUI();
+  hideShelfUI();
+  hideNarouUI();
+  hideAddUI();
+  showAozoraUI();
+  if (histView !== "aozora") {
+    histView = "aozora";
+    try { history.pushState({ v: "aozora" }, ""); histLive.aozora = true; }
+    catch (e) { histLive.aozora = false; }
+  }
+  /* インデックスは裏で用意しておく（キャッシュがあれば即返る） */
+  aEnsureIndex(false).then(() => aRenderIndexStatus())
+    .catch(() => aRenderIndexStatus("インデックスの取得に失敗しました。「インデックスを更新」で再試行できます。"));
+}
+function backFromAozora(){
+  hideAozoraUI();
+  showAddUI();
+  if (histView === "aozora") {
+    histView = "add";
+    if (histLive.aozora) {
+      histLive.aozora = false;
+      try { history.back(); } catch (e) { /* noop */ }
+    }
+  }
+}
+$("#btnAddBack").addEventListener("click", () => showShelf());
+$("#btnAozoraBack").addEventListener("click", () => backFromAozora());
+$("#btnAddFile").addEventListener("click", () => { $("#fileInput").click(); });
+$("#btnAddNarou").addEventListener("click", () => showNarou());
+$("#btnAddAozora").addEventListener("click", () => showAozora());
+
+/* ---------------- 青空文庫ダウンローダー ----------------
+   公式の作品一覧インデックス（list_person_all_extended_utf8.zip）を
+   中継経由で取得し、端末内で検索できる形にして同期DBへキャッシュする。
+   検索は作品名・著者名（読みも含む）への部分一致。選んだ作品は
+   テキストzipを取得し、既存の zip 取り込み（parseZipBook）でそのまま
+   本棚へ直接登録する。青空の作品は単体完結のため、なろう式の台帳・
+   差分更新の対象にはしない */
+const AOZORA_INDEX_URL = "https://www.aozora.gr.jp/index_pages/list_person_all_extended_utf8.zip";
+let aozoraItems = null;   /* [{t:作品名, a:著者, u:テキストzip URL, s:検索用文字列}] */
+let aozoraIndexAt = 0;
+let aozoraLoading = null;
+let aozoraResults = [];
+function aFetchBinary(target, tries){
+  tries = tries || 2;
+  let attempt = 0;
+  const go = () => {
+    attempt++;
+    return fetch(nRelayURL(target)).then(res => {
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      return res.arrayBuffer();
+    }).catch(err => {
+      if (attempt < tries) return nSleep(1200 * attempt).then(go);
+      throw err;
+    });
+  };
+  return go();
+}
+/* 引用符とカンマを含むCSVを1行ずつ読む（このインデックスは1行＝1レコード） */
+function aCsvParseLine(line){
+  const out = [];
+  let cur = "", inQ = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (inQ) {
+      if (c === '"') {
+        if (line[i + 1] === '"') { cur += '"'; i++; }
+        else inQ = false;
+      } else cur += c;
+    } else if (c === '"') inQ = true;
+    else if (c === ",") { out.push(cur); cur = ""; }
+    else cur += c;
+  }
+  out.push(cur);
+  return out;
+}
+async function aFetchIndex(){
+  const buf = await aFetchBinary(AOZORA_INDEX_URL, 2);
+  const zip = await loadZipBuf(buf);
+  const csvName = Object.keys(zip.files).find(n => /\.csv$/i.test(n));
+  if (!csvName) throw new Error("indexcsv");
+  const csvText = (await zip.files[csvName].async("text")).replace(/^﻿/, "");
+  const lines = csvText.split(/\r\n|\r|\n/);
+  if (lines.length < 2) throw new Error("indexcsv");
+  const header = aCsvParseLine(lines[0]);
+  const iTitle = header.indexOf("作品名"), iUrl = header.indexOf("テキストファイルURL"),
+    iFlag = header.indexOf("作品著作権フラグ"),
+    iLast = header.indexOf("姓"), iFirst = header.indexOf("名"),
+    iTitleY = header.indexOf("作品名読み"), iLastY = header.indexOf("姓読み"), iFirstY = header.indexOf("名読み");
+  if (iTitle < 0 || iUrl < 0 || iLast < 0) throw new Error("indexcsv");
+  const byUrl = new Map();
+  for (let li = 1; li < lines.length; li++) {
+    if (!lines[li]) continue;
+    const r = aCsvParseLine(lines[li]);
+    if (r.length <= iUrl) continue;
+    if (iFlag >= 0 && r[iFlag] !== "なし") continue; /* 著作権の消滅した作品のみ */
+    const u = (r[iUrl] || "").trim();
+    if (!u || byUrl.has(u)) continue; /* 同じテキストへの複数人物行は先勝ち */
+    const t = (r[iTitle] || "").trim();
+    const a = ((r[iLast] || "") + (r[iFirst] || "")).trim();
+    if (!t) continue;
+    const yomi = (r[iTitleY] || "") + " " + (iLastY >= 0 ? r[iLastY] || "" : "") + (iFirstY >= 0 ? r[iFirstY] || "" : "");
+    byUrl.set(u, { t, a, u, s: (t + " " + a + " " + yomi).toLowerCase() });
+  }
+  aozoraItems = Array.from(byUrl.values());
+  aozoraIndexAt = Date.now();
+  await nsPut(AOZORA_STORE, "index", { at: aozoraIndexAt, items: aozoraItems });
+  return aozoraItems;
+}
+async function aLoadIndexFromCache(){
+  const rec = await nsGet(AOZORA_STORE, "index");
+  if (rec && Array.isArray(rec.items) && rec.items.length) {
+    aozoraItems = rec.items;
+    aozoraIndexAt = rec.at || 0;
+    return true;
+  }
+  return false;
+}
+function aEnsureIndex(force){
+  if (aozoraLoading) return aozoraLoading;
+  if (aozoraItems && !force) return Promise.resolve(aozoraItems);
+  aozoraLoading = (async () => {
+    try {
+      if (!force && await aLoadIndexFromCache()) return aozoraItems;
+      return await aFetchIndex();
+    } finally { aozoraLoading = null; }
+  })();
+  return aozoraLoading;
+}
+function aRenderIndexStatus(msg){
+  const el = $("#aozoraIndexStatus");
+  if (!el) return;
+  if (msg) { el.textContent = msg; return; }
+  if (aozoraItems) {
+    const d = new Date(aozoraIndexAt || Date.now());
+    el.textContent = "インデックス：" + nFmtNum(aozoraItems.length) + "件（" +
+      (d.getMonth() + 1) + "/" + d.getDate() + " 取得）";
+  } else {
+    el.textContent = "インデックスは未取得です。検索すると自動で取得します。";
+  }
+}
+$("#btnAozoraIndexUpdate").addEventListener("click", async () => {
+  const btn = $("#btnAozoraIndexUpdate");
+  btn.disabled = true;
+  aRenderIndexStatus("インデックスを取得しています…");
+  try {
+    await aEnsureIndex(true);
+    aRenderIndexStatus();
+    toast("インデックスを更新しました（" + nFmtNum(aozoraItems.length) + "件）", 2600);
+  } catch (e) {
+    aRenderIndexStatus("インデックスの取得に失敗しました。時間をおいて再試行してください。");
+  } finally { btn.disabled = false; }
+});
+$("#aozoraSearchForm").addEventListener("submit", async ev => {
+  ev.preventDefault();
+  const q = $("#aozoraWord").value.trim();
+  const box = $("#aozoraResults"), btn = $("#aozoraSearchSubmit");
+  if (!q) { toast("作品名か著者名を入力してください"); return; }
+  btn.disabled = true; btn.textContent = "検索中…";
+  try {
+    if (!aozoraItems) {
+      box.innerHTML = '<div class="nempty">インデックスを取得しています…</div>';
+      await aEnsureIndex(false);
+    }
+    const words = q.toLowerCase().split(/[\s　]+/).filter(Boolean);
+    aozoraResults = [];
+    for (const it of aozoraItems) {
+      if (words.every(w => it.s.indexOf(w) >= 0)) {
+        aozoraResults.push(it);
+        if (aozoraResults.length >= 60) break;
+      }
+    }
+    if (!aozoraResults.length) {
+      box.innerHTML = '<div class="nempty">条件に合う作品がありませんでした。</div>';
+      return;
+    }
+    box.innerHTML =
+      '<div class="nresults-head"><h3>検索結果</h3><span>' +
+      (aozoraResults.length >= 60 ? "60件まで表示" : aozoraResults.length + "件") + "</span></div>" +
+      aozoraResults.map((it, i) =>
+        '<article class="ncard">' +
+          '<div class="ntop"><div style="flex:1;min-width:0;">' +
+            '<h3 class="ntitle">' + esc(it.t) + "</h3>" +
+            '<div class="nwriter">' + esc(it.a) + "</div>" +
+          "</div></div>" +
+          '<div class="nactions">' +
+            '<button type="button" class="nbtn primary" data-aozora-dl="' + i + '">取得して本棚へ</button>' +
+          "</div>" +
+        "</article>").join("");
+  } catch (e) {
+    box.innerHTML = '<div class="nempty">検索に失敗しました。時間をおいて再試行してください。</div>';
+  } finally {
+    btn.disabled = false; btn.textContent = "検索する";
+  }
+});
+aozoraEl.addEventListener("click", ev => {
+  const dl = ev.target.closest("[data-aozora-dl]");
+  if (!dl) return;
+  const item = aozoraResults[Number(dl.dataset.aozoraDl)];
+  if (item) aImportAozora(item, dl);
+});
+async function aImportAozora(item, btn){
+  if (btn) { btn.disabled = true; btn.textContent = "取得しています…"; }
+  try {
+    const buf = await aFetchBinary(item.u, 2);
+    const fileName = item.u.split("/").pop() || "aozora.zip";
+    const book = await parseZipBook(buf, fileName);
+    const key = book.title + ":" + buf.byteLength;
+    const stored = await saveBookContent(key, book.episodes);
+    const thumb = await thumbFromEpisodes(book.episodes, false);
+    registerBook(key, book.title, "青空文庫ZIP", "file", fileName, book.episodes, stored);
+    if (thumb) {
+      const e = S.library.find(x => x.key === key);
+      if (e) { e.thumb = thumb; e.thumbSize = THUMB_MAX_DIM; persist(); }
+    }
+    buildShelf();
+    toast(stored ? "『" + book.title + "』を本棚に追加しました"
+                 : "『" + book.title + "』を取り込みましたが、この端末に保存できませんでした", 3200);
+    if (btn) btn.textContent = "本棚に追加しました";
+  } catch (e) {
+    toast("取得に失敗しました。時間をおいて再試行してください", 3000);
+    if (btn) { btn.disabled = false; btn.textContent = "取得して本棚へ"; }
+  }
+}
 
 /* ---------------- 初期化 ---------------- */
 const hadSave = persistLoad();
@@ -4538,8 +5505,8 @@ applyTypography(false);
 ensureGuideEntry();
 /* 起動時は本棚（履歴）をすぐ表示する。前回読んでいた本は起動時には
    読み込まない（全文の復元と組版が起動を重くしていたため）。本棚エントリ
-   だけを pendingRestore に控え、「読書に戻る」を押した時点で初めて
-   本文を読み込んで開く。本棚で本を選んだ場合も従来どおり続きから開く。
+   だけを pendingRestore に控え、その本は本棚の先頭に固定される。
+   先頭のカードを開いた時点で初めて本文を読み込んで続きから開く。
    本ごとの最終ページ・しおりは従来どおり保持される。 */
 (async () => {
   requestPersistence();
@@ -4570,6 +5537,8 @@ ensureGuideEntry();
   /* なろうダウンローダーからの受け渡しは、起動時に確認し、その後も
      アプリが前面に戻るたびに再確認する（上のリスナー側） */
   checkDownloaderInbox();
+  /* 取得途中の作品リストも起動時に用意しておく（なろう画面を開いたときに見える） */
+  nRenderPartials();
   if (!lsOK) {
     /* 保存できない環境では止めずに、保存なしモードとして読書を続けられるようにする */
     setTimeout(() => toast("この環境では保存できないため、保存なしモードで動作します"), 600);
@@ -4588,7 +5557,7 @@ if (S.ipaDl) loadIpaFont(false);
 "use strict";
 /* ---------------- PWA（Service Worker登録と即時更新） ----------------
    アプリ本体をキャッシュしてオフラインでも開けるようにする（取得方針は
-   data:application/javascript;base64,InVzZSBzdHJpY3QiOwovKiA9PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT0KICAg57im5pu444GN5bCP6Kqs44OT44Ol44O844Ov44O8IFNlcnZpY2UgV29ya2VyCiAgIC0g44Ki44OX44Oq5pys5L2T77yI44OJ44Kt44Ol44Oh44Oz44OI77yL44Ki44K744OD44OI77yJ44KS44Kt44Oj44OD44K344Ol44GX44CB44Kq44OV44Op44Kk44Oz44Gn44KC6ZaL44GR44KL44KI44GG44Gr44GZ44KLCiAgIC0g5pu05paw5pa56Yed77ya5paw44GX44GE54mI44Gv44CB44Gd44Gu44K744OD44K344On44Oz5YaF44Gn5Yq544GP44GT44GoCiAgICAgICAqIOODieOCreODpeODoeODs+ODiO+8iOeUu+mdoumBt+enu++8ieOBr+ODjeODg+ODiOODr+ODvOOCr+WEquWFiO+8iEhUVFDjgq3jg6Pjg4Pjgrfjg6XjgoLlho3mpJzoqLzjgZnjgovvvInjgIIKICAgICAgICAg44Kq44Oz44Op44Kk44Oz44Gq44KJ5bi444Gr5pyA5paw54mI44GM6L+U44KK44CB5aSx5pWX44GX44Gf44Go44GN44Gg44GR44Kt44Oj44OD44K344Ol44Gr44OV44Kp44O844Or44OQ44OD44KvCiAgICAgICAgIOOBmeOCi+OBruOBp+OAgeOCquODleODqeOCpOODs+i1t+WLleOBp+acrOajmuOBjOmWi+OBkeOCi+OBk+OBqOOCgue2reaMgeOBleOCjOOCiwogICAgICAgKiDlkIzkuIDjgqrjg6rjgrjjg7Pjga7pnZnnmoTjgqLjgrvjg4Pjg4jjga8gc3RhbGUtd2hpbGUtcmV2YWxpZGF0Ze+8iOihqOekuuOBr+OCreODo+ODg+OCt+ODpeOAgQogICAgICAgICDoo4/jgafmm7TmlrDvvInjgILnhaflkIjjga/jg5Xjg6tVUkzjgafooYzjgYTjgIHjgq/jgqjjg6rpgZXjgYTjgpLlj5bjgorpgZXjgYjjgarjgYQKICAgICAgICogc2tpcFdhaXRpbmcgKyBjbGllbnRzLmNsYWltIOOBp+aWsOOBl+OBhOeJiOOCkumAn+OChOOBi+OBq+acieWKueWMluOBl+OAgeODmuODvOOCuOWBtOOBrwogICAgICAgICBjb250cm9sbGVyY2hhbmdlIOOBpzHlm57jgaDjgZHoh6rli5Xjg6rjg63jg7zjg4njgZfjgabmlrDniYjjgpLjgZ3jga7loLTjgafooajnpLrjgZnjgosKICAgLSDku5bjgqrjg6rjgrjjg7Pjgbjjga7jg6rjgq/jgqjjgrnjg4jjgavjga/kuIDliIfku4vlhaXjgZfjgarjgYTjgILjgarjgo3jgYbkuK3ntpnjga7jgojjgYbjgavlr77osaHjgYwKICAgICDjgq/jgqjjg6rvvIg/dXJsPe+8ieOBp+axuuOBvuOCi+mAmuS/oeOCkiBTV1Ig44Kt44Oj44OD44K344Ol77yL44Kv44Ko44Oq54Sh6KaW54Wn5ZCI44Gn5qiq5Y+W44KK44GZ44KL44Go44CBCiAgICAg5Yil5a++6LGh44Gu5b+c562U77yI5qSc57SiQVBJ44GuSlNPTuOBquOBqe+8ieOBjOebruasoeOChOacrOaWh+OBruODquOCr+OCqOOCueODiOOBq+i/lOOBo+OBpuOBl+OBvuOBhOOAgQogICAgIOWPluW+l+OBjOOAjOebruasoeOBjOWPluW+l+OBp+OBjeOBvuOBm+OCk+OBp+OBl+OBn+OAjeOBp+WkseaVl+OBmeOCi+S6i+aVheOBjOi1t+OBjeOBn+OBn+OCgQogICAtIOOBk+OBruODleOCoeOCpOODq+OBryBhc3NldHMvIOmFjeS4i+OBq+e9ruOBi+OCjOOCi+OBn+OCgeOAgeWItuW+oeevhOWbsu+8iHNjb3Bl77yJ44GvIGFzc2V0cy8g44Gr44Gq44KL44CCCiAgICAg44Ob44K544OG44Kj44Oz44Kw5YG044Gu6YO95ZCI44Gn44Oa44O844K45pys5L2T44KS5Yi25b6h44Gn44GN44Gq44GE55Kw5aKD44Gn44Gv44CB44GT44GuU1fjga/lrp/os6rlvoXmqZ/nirbmhYvjgajjgarjgorjgIEKICAgICDjg5rjg7zjgrjjga/pgJrluLjjga5XZWLjg5rjg7zjgrjjgajjgZfjgabjgZ3jga7jgb7jgb7li5XjgY/vvIjjg5Xjgqnjg7zjg6vjg5Djg4Pjgq/vvInjgIIKICAgICDjg6vjg7zjg4jnm7TkuIvjgavnva7jgZHjgbDjgZ3jga7jgb7jgb7jg6vjg7zjg4jjgrnjgrPjg7zjg5fniYjjgajjgZfjgabjgoLli5XjgY/vvIjjg5Hjgrnjga8gc2NvcGUg44GL44KJ566X5Ye644GZ44KL77yJ44CCCiAgID09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PSAqLwoKdmFyIFZFUlNJT04gPSAidjQiOwp2YXIgU0hFTExfQ0FDSEUgPSAidGF0ZWdha2ktc2hlbGwtIiArIFZFUlNJT047CnZhciBSVU5USU1FX0NBQ0hFID0gInRhdGVnYWtpLXJ1bnRpbWUtIiArIFZFUlNJT047CgovKiBTV+iHqui6q+OBrlVSTO+8iC4uLi9hc3NldHMvc3cuanPvvInjgYvjgonopovjgZ/jgqLjg5fjg6rjga7jg6vjg7zjg4jjgajjgIHjgqLjg5fjg6rmnKzkvZPjga5VUkznvqQgKi8KdmFyIEFQUF9ST09UID0gbmV3IFVSTCgiLi4vIiwgc2VsZi5yZWdpc3RyYXRpb24uc2NvcGUpLmhyZWY7CnZhciBJTkRFWF9VUkwgPSBBUFBfUk9PVCArICJpbmRleC5odG1sIjsKLyogSVBB5piO5pyd44OV44Kp44Oz44OI77yIaXBhZXhtLndvZmYy44O757SEMy43TULvvInjga/otbfli5XnlKjjgq3jg6Pjg4Pjgrfjg6XjgavlhaXjgozjgarjgYTjgIIKICAg6Kit5a6a44GL44KJ5Lu75oSP44Gn44OA44Km44Oz44Ot44O844OJ44GV44KM44Gf44Go44GN44Gr5a6f6KGM5pmC44Kt44Oj44OD44K344Ol77yIU1dS77yJ44G45YWl44KK44CBCiAgIOS7peW+jOOBr+OBneOBk+OBi+OCiei/lOOCiyAqLwp2YXIgU0hFTExfVVJMUyA9IFsKICBBUFBfUk9PVCwKICBJTkRFWF9VUkwsCiAgc2VsZi5yZWdpc3RyYXRpb24uc2NvcGUgKyAibWFuaWZlc3Qud2VibWFuaWZlc3QiLAogIHNlbGYucmVnaXN0cmF0aW9uLnNjb3BlICsgImljb24tMTkyLnBuZyIsCiAgc2VsZi5yZWdpc3RyYXRpb24uc2NvcGUgKyAiaWNvbi01MTIucG5nIiwKICBzZWxmLnJlZ2lzdHJhdGlvbi5zY29wZSArICJpY29uLW1hc2thYmxlLTUxMi5wbmciCl07CgpzZWxmLmFkZEV2ZW50TGlzdGVuZXIoImluc3RhbGwiLCBmdW5jdGlvbiAoZXZlbnQpIHsKICBldmVudC53YWl0VW50aWwoCiAgICBjYWNoZXMub3BlbihTSEVMTF9DQUNIRSkudGhlbihmdW5jdGlvbiAoY2FjaGUpIHsKICAgICAgLyogMeOBpOWkseaVl+OBl+OBpuOCguOCpOODs+OCueODiOODvOODq+WFqOS9k+OCkuiQveOBqOOBleOBquOBhOOCiOOBhuOAgeWAi+WIpeOBq+i/veWKoOOBmeOCiyAqLwogICAgICByZXR1cm4gUHJvbWlzZS5hbGwoU0hFTExfVVJMUy5tYXAoZnVuY3Rpb24gKHVybCkgewogICAgICAgIHJldHVybiBjYWNoZS5hZGQodXJsKS5jYXRjaChmdW5jdGlvbiAoKSB7IC8qIOWPluOCjOOBquOBhOOCguOBruOBr+Wun+ihjOaZguOCreODo+ODg+OCt+ODpeOBq+S7u+OBm+OCiyAqLyB9KTsKICAgICAgfSkpOwogICAgfSkudGhlbihmdW5jdGlvbiAoKSB7CiAgICAgIC8qIOaWsOOBl+OBhOeJiOOBjOeUqOaEj+OBp+OBjeOBn+OCieOAgeW+heOBn+OBmuOBq+acieWKueWMluOBuOmAsuOCgCAqLwogICAgICByZXR1cm4gc2VsZi5za2lwV2FpdGluZygpOwogICAgfSkKICApOwp9KTsKCnNlbGYuYWRkRXZlbnRMaXN0ZW5lcigiYWN0aXZhdGUiLCBmdW5jdGlvbiAoZXZlbnQpIHsKICBldmVudC53YWl0VW50aWwoCiAgICBjYWNoZXMua2V5cygpLnRoZW4oZnVuY3Rpb24gKGtleXMpIHsKICAgICAgcmV0dXJuIFByb21pc2UuYWxsKGtleXMubWFwKGZ1bmN0aW9uIChrZXkpIHsKICAgICAgICAvKiDml6fjg5Djg7zjgrjjg6fjg7Pjga7jgq3jg6Pjg4Pjgrfjg6Xjga/jgZnjgbnjgabmtojjgZnjgILml6fniYjjgavjga/jgq/jgqjjg6rnhKHoppbnhaflkIjjgacKICAgICAgICAgICDkuK3ntpnlv5znrZTjgpLlj5bjgorpgZXjgYjjgovjgq3jg6Pjg4Pjgrfjg6XjgYzmrovjgaPjgabjgYTjgovjgZPjgajjgYzjgYLjgorjgIHmrovjgZnjgagKICAgICAgICAgICDmlrDniYjjgafjgoLlkIzjgZjkuovmlYXjgpLlvJXjgY3jgZrjgosgKi8KICAgICAgICBpZiAoa2V5ICE9PSBTSEVMTF9DQUNIRSAmJiBrZXkgIT09IFJVTlRJTUVfQ0FDSEUpIHJldHVybiBjYWNoZXMuZGVsZXRlKGtleSk7CiAgICAgICAgcmV0dXJuIG51bGw7CiAgICAgIH0pKTsKICAgIH0pLnRoZW4oZnVuY3Rpb24gKCkgewogICAgICAvKiDplovjgYTjgabjgYTjgovjg5rjg7zjgrjjgpLjgZ/jgaDjgaHjgavmlrDjgZfjgYRTV+OBruWItuW+oeS4i+OBq+e9ruOBjyAqLwogICAgICByZXR1cm4gc2VsZi5jbGllbnRzLmNsYWltKCk7CiAgICB9KQogICk7Cn0pOwoKLyog44Oa44O844K45YG044GL44KJ44Gu44CM5b6F44Gf44Ga44Gr5pyJ5Yq55YyW44CN5L6d6aC877yI5pu05paw56K66KqN44OV44Ot44O877yJICovCnNlbGYuYWRkRXZlbnRMaXN0ZW5lcigibWVzc2FnZSIsIGZ1bmN0aW9uIChldmVudCkgewogIGlmIChldmVudC5kYXRhICYmIGV2ZW50LmRhdGEudHlwZSA9PT0gIlNLSVBfV0FJVElORyIpIHsKICAgIHNlbGYuc2tpcFdhaXRpbmcoKTsKICB9Cn0pOwoKc2VsZi5hZGRFdmVudExpc3RlbmVyKCJmZXRjaCIsIGZ1bmN0aW9uIChldmVudCkgewogIHZhciByZXEgPSBldmVudC5yZXF1ZXN0OwogIGlmIChyZXEubWV0aG9kICE9PSAiR0VUIikgcmV0dXJuOwoKICB2YXIgdXJsOwogIHRyeSB7IHVybCA9IG5ldyBVUkwocmVxLnVybCk7IH0gY2F0Y2ggKGUpIHsgcmV0dXJuOyB9CiAgLyog5LuW44Kq44Oq44K444Oz77yI44Gq44KN44GG5Lit57aZ44O75YWs5byPQVBJ44O744OV44Kp44Oz44OIQ0RO44O7SlNaaXAgQ0RO44Gq44Gp77yJ44Gr44GvCiAgICAg5LuL5YWl44GX44Gq44GE44CC44OW44Op44Km44K244Gu6YCa5bi444Gu6YCa5L+h44Gr5Lu744Gb44KLICovCiAgaWYgKHVybC5vcmlnaW4gIT09IHNlbGYubG9jYXRpb24ub3JpZ2luKSByZXR1cm47CgogIC8qIOODieOCreODpeODoeODs+ODiO+8muODjeODg+ODiOODr+ODvOOCr+WEquWFiO+8iOabtOaWsOOBjOOBneOBruOCu+ODg+OCt+ODp+ODs+OBp+WxiuOBj++8ieOAgQogICAgIOWkseaVl+OBl+OBn+OCieOCreODo+ODg+OCt+ODpeOAgj92aWV3PW5hcm91IOOBruOCiOOBhuOBquOCr+OCqOODqumBleOBhOOBr+WQjOS4gOODieOCreODpeODoeODs+ODiAogICAgIOOBqOOBl+OBpuaJseOBhuOBn+OCgeOAgeODleOCqeODvOODq+ODkOODg+OCr+eFp+WQiOOBqOS/neWtmOWFiOOBr+OCr+OCqOODquOBquOBl+OBruato+imj1VSTOOBq+WvhOOBm+OCiyAqLwogIGlmIChyZXEubW9kZSA9PT0gIm5hdmlnYXRlIiB8fCByZXEuZGVzdGluYXRpb24gPT09ICJkb2N1bWVudCIpIHsKICAgIGV2ZW50LnJlc3BvbmRXaXRoKAogICAgICBmZXRjaChyZXEsIHsgY2FjaGU6ICJuby1jYWNoZSIgfSkudGhlbihmdW5jdGlvbiAocmVzKSB7CiAgICAgICAgaWYgKHJlcyAmJiByZXMuc3RhdHVzID09PSAyMDApIHsKICAgICAgICAgIC8qIGNsb25l44Gv5pys5paH44GM5raI6LK744GV44KM44KL5YmN44Gr5ZCM5pyf44Gn5Y+W44KL77yI6Z2e5ZCM5pyf44Gr5Zue44GZ44Go5L2/55So5riI44G/44Gn5aSx5pWX44GZ44KL77yJICovCiAgICAgICAgICB2YXIgY29weUluZGV4ID0gcmVzLmNsb25lKCk7CiAgICAgICAgICB2YXIgY29weVJvb3QgPSByZXMuY2xvbmUoKTsKICAgICAgICAgIGNhY2hlcy5vcGVuKFNIRUxMX0NBQ0hFKS50aGVuKGZ1bmN0aW9uIChjYWNoZSkgewogICAgICAgICAgICBjYWNoZS5wdXQoSU5ERVhfVVJMLCBjb3B5SW5kZXgpOwogICAgICAgICAgICBjYWNoZS5wdXQoQVBQX1JPT1QsIGNvcHlSb290KTsKICAgICAgICAgIH0pOwogICAgICAgIH0KICAgICAgICByZXR1cm4gcmVzOwogICAgICB9KS5jYXRjaChmdW5jdGlvbiAoKSB7CiAgICAgICAgcmV0dXJuIGNhY2hlcy5tYXRjaChJTkRFWF9VUkwpLnRoZW4oZnVuY3Rpb24gKGhpdCkgewogICAgICAgICAgcmV0dXJuIGhpdCB8fCBjYWNoZXMubWF0Y2goQVBQX1JPT1QpOwogICAgICAgIH0pOwogICAgICB9KQogICAgKTsKICAgIHJldHVybjsKICB9CgogIC8qIOWQjOS4gOOCquODquOCuOODs+OBrumdmeeahOOCouOCu+ODg+ODiO+8iOODleOCqeODs+ODiOODu+OCouOCpOOCs+ODs+OBquOBqe+8ie+8mnN0YWxlLXdoaWxlLXJldmFsaWRhdGXjgIIKICAgICDnhaflkIjjga/jg5Xjg6tVUkzvvIjjgq/jgqjjg6rovrzjgb/vvInjgafooYzjgYYgKi8KICBldmVudC5yZXNwb25kV2l0aCgKICAgIGNhY2hlcy5tYXRjaChyZXEpLnRoZW4oZnVuY3Rpb24gKGhpdCkgewogICAgICB2YXIgbmV0d29yayA9IGZldGNoKHJlcSkudGhlbihmdW5jdGlvbiAocmVzKSB7CiAgICAgICAgaWYgKHJlcyAmJiAocmVzLnN0YXR1cyA9PT0gMjAwIHx8IHJlcy50eXBlID09PSAib3BhcXVlIikpIHsKICAgICAgICAgIHZhciBjb3B5ID0gcmVzLmNsb25lKCk7CiAgICAgICAgICBjYWNoZXMub3BlbihSVU5USU1FX0NBQ0hFKS50aGVuKGZ1bmN0aW9uIChjYWNoZSkgeyBjYWNoZS5wdXQocmVxLCBjb3B5KTsgfSk7CiAgICAgICAgfQogICAgICAgIHJldHVybiByZXM7CiAgICAgIH0pLmNhdGNoKGZ1bmN0aW9uICgpIHsgcmV0dXJuIGhpdDsgfSk7CiAgICAgIHJldHVybiBoaXQgfHwgbmV0d29yazsKICAgIH0pCiAgKTsKfSk7Cg== 側：ドキュメントはネットワーク優先、失敗時のみキャッシュ）。
+   data:application/javascript;base64,InVzZSBzdHJpY3QiOwovKiA9PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT0KICAg57im5pu444GN5bCP6Kqs44OT44Ol44O844Ov44O8IFNlcnZpY2UgV29ya2VyCiAgIC0g44Ki44OX44Oq5pys5L2T77yI44OJ44Kt44Ol44Oh44Oz44OI77yL44Ki44K744OD44OI77yJ44KS44Kt44Oj44OD44K344Ol44GX44CB44Kq44OV44Op44Kk44Oz44Gn44KC6ZaL44GR44KL44KI44GG44Gr44GZ44KLCiAgIC0g5pu05paw5pa56Yed77ya5paw44GX44GE54mI44Gv44CB44Gd44Gu44K744OD44K344On44Oz5YaF44Gn5Yq544GP44GT44GoCiAgICAgICAqIOODieOCreODpeODoeODs+ODiO+8iOeUu+mdoumBt+enu++8ieOBr+ODjeODg+ODiOODr+ODvOOCr+WEquWFiO+8iEhUVFDjgq3jg6Pjg4Pjgrfjg6XjgoLlho3mpJzoqLzjgZnjgovvvInjgIIKICAgICAgICAg44Kq44Oz44Op44Kk44Oz44Gq44KJ5bi444Gr5pyA5paw54mI44GM6L+U44KK44CB5aSx5pWX44GX44Gf44Go44GN44Gg44GR44Kt44Oj44OD44K344Ol44Gr44OV44Kp44O844Or44OQ44OD44KvCiAgICAgICAgIOOBmeOCi+OBruOBp+OAgeOCquODleODqeOCpOODs+i1t+WLleOBp+acrOajmuOBjOmWi+OBkeOCi+OBk+OBqOOCgue2reaMgeOBleOCjOOCiwogICAgICAgKiDlkIzkuIDjgqrjg6rjgrjjg7Pjga7pnZnnmoTjgqLjgrvjg4Pjg4jjga8gc3RhbGUtd2hpbGUtcmV2YWxpZGF0Ze+8iOihqOekuuOBr+OCreODo+ODg+OCt+ODpeOAgQogICAgICAgICDoo4/jgafmm7TmlrDvvInjgILnhaflkIjjga/jg5Xjg6tVUkzjgafooYzjgYTjgIHjgq/jgqjjg6rpgZXjgYTjgpLlj5bjgorpgZXjgYjjgarjgYQKICAgICAgICogc2tpcFdhaXRpbmcgKyBjbGllbnRzLmNsYWltIOOBp+aWsOOBl+OBhOeJiOOCkumAn+OChOOBi+OBq+acieWKueWMluOBl+OAgeODmuODvOOCuOWBtOOBrwogICAgICAgICBjb250cm9sbGVyY2hhbmdlIOOBpzHlm57jgaDjgZHoh6rli5Xjg6rjg63jg7zjg4njgZfjgabmlrDniYjjgpLjgZ3jga7loLTjgafooajnpLrjgZnjgosKICAgLSDku5bjgqrjg6rjgrjjg7Pjgbjjga7jg6rjgq/jgqjjgrnjg4jjgavjga/kuIDliIfku4vlhaXjgZfjgarjgYTjgILjgarjgo3jgYbkuK3ntpnjga7jgojjgYbjgavlr77osaHjgYwKICAgICDjgq/jgqjjg6rvvIg/dXJsPe+8ieOBp+axuuOBvuOCi+mAmuS/oeOCkiBTV1Ig44Kt44Oj44OD44K344Ol77yL44Kv44Ko44Oq54Sh6KaW54Wn5ZCI44Gn5qiq5Y+W44KK44GZ44KL44Go44CBCiAgICAg5Yil5a++6LGh44Gu5b+c562U77yI5qSc57SiQVBJ44GuSlNPTuOBquOBqe+8ieOBjOebruasoeOChOacrOaWh+OBruODquOCr+OCqOOCueODiOOBq+i/lOOBo+OBpuOBl+OBvuOBhOOAgQogICAgIOWPluW+l+OBjOOAjOebruasoeOBjOWPluW+l+OBp+OBjeOBvuOBm+OCk+OBp+OBl+OBn+OAjeOBp+WkseaVl+OBmeOCi+S6i+aVheOBjOi1t+OBjeOBn+OBn+OCgQogICAtIOOBk+OBruODleOCoeOCpOODq+OBryBhc3NldHMvIOmFjeS4i+OBq+e9ruOBi+OCjOOCi+OBn+OCgeOAgeWItuW+oeevhOWbsu+8iHNjb3Bl77yJ44GvIGFzc2V0cy8g44Gr44Gq44KL44CCCiAgICAg44Ob44K544OG44Kj44Oz44Kw5YG044Gu6YO95ZCI44Gn44Oa44O844K45pys5L2T44KS5Yi25b6h44Gn44GN44Gq44GE55Kw5aKD44Gn44Gv44CB44GT44GuU1fjga/lrp/os6rlvoXmqZ/nirbmhYvjgajjgarjgorjgIEKICAgICDjg5rjg7zjgrjjga/pgJrluLjjga5XZWLjg5rjg7zjgrjjgajjgZfjgabjgZ3jga7jgb7jgb7li5XjgY/vvIjjg5Xjgqnjg7zjg6vjg5Djg4Pjgq/vvInjgIIKICAgICDjg6vjg7zjg4jnm7TkuIvjgavnva7jgZHjgbDjgZ3jga7jgb7jgb7jg6vjg7zjg4jjgrnjgrPjg7zjg5fniYjjgajjgZfjgabjgoLli5XjgY/vvIjjg5Hjgrnjga8gc2NvcGUg44GL44KJ566X5Ye644GZ44KL77yJ44CCCiAgID09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PSAqLwoKdmFyIFZFUlNJT04gPSAidjUiOwp2YXIgU0hFTExfQ0FDSEUgPSAidGF0ZWdha2ktc2hlbGwtIiArIFZFUlNJT047CnZhciBSVU5USU1FX0NBQ0hFID0gInRhdGVnYWtpLXJ1bnRpbWUtIiArIFZFUlNJT047CgovKiBTV+iHqui6q+OBrlVSTO+8iC4uLi9hc3NldHMvc3cuanPvvInjgYvjgonopovjgZ/jgqLjg5fjg6rjga7jg6vjg7zjg4jjgajjgIHjgqLjg5fjg6rmnKzkvZPjga5VUkznvqQgKi8KdmFyIEFQUF9ST09UID0gbmV3IFVSTCgiLi4vIiwgc2VsZi5yZWdpc3RyYXRpb24uc2NvcGUpLmhyZWY7CnZhciBJTkRFWF9VUkwgPSBBUFBfUk9PVCArICJpbmRleC5odG1sIjsKLyogSVBB5piO5pyd44OV44Kp44Oz44OI77yIaXBhZXhtLndvZmYy44O757SEMy43TULvvInjga/otbfli5XnlKjjgq3jg6Pjg4Pjgrfjg6XjgavlhaXjgozjgarjgYTjgIIKICAg6Kit5a6a44GL44KJ5Lu75oSP44Gn44OA44Km44Oz44Ot44O844OJ44GV44KM44Gf44Go44GN44Gr5a6f6KGM5pmC44Kt44Oj44OD44K344Ol77yIU1dS77yJ44G45YWl44KK44CBCiAgIOS7peW+jOOBr+OBneOBk+OBi+OCiei/lOOCiyAqLwp2YXIgU0hFTExfVVJMUyA9IFsKICBBUFBfUk9PVCwKICBJTkRFWF9VUkwsCiAgc2VsZi5yZWdpc3RyYXRpb24uc2NvcGUgKyAibWFuaWZlc3Qud2VibWFuaWZlc3QiLAogIHNlbGYucmVnaXN0cmF0aW9uLnNjb3BlICsgImljb24tMTkyLnBuZyIsCiAgc2VsZi5yZWdpc3RyYXRpb24uc2NvcGUgKyAiaWNvbi01MTIucG5nIiwKICBzZWxmLnJlZ2lzdHJhdGlvbi5zY29wZSArICJpY29uLW1hc2thYmxlLTUxMi5wbmciCl07CgpzZWxmLmFkZEV2ZW50TGlzdGVuZXIoImluc3RhbGwiLCBmdW5jdGlvbiAoZXZlbnQpIHsKICBldmVudC53YWl0VW50aWwoCiAgICBjYWNoZXMub3BlbihTSEVMTF9DQUNIRSkudGhlbihmdW5jdGlvbiAoY2FjaGUpIHsKICAgICAgLyogMeOBpOWkseaVl+OBl+OBpuOCguOCpOODs+OCueODiOODvOODq+WFqOS9k+OCkuiQveOBqOOBleOBquOBhOOCiOOBhuOAgeWAi+WIpeOBq+i/veWKoOOBmeOCiyAqLwogICAgICByZXR1cm4gUHJvbWlzZS5hbGwoU0hFTExfVVJMUy5tYXAoZnVuY3Rpb24gKHVybCkgewogICAgICAgIHJldHVybiBjYWNoZS5hZGQodXJsKS5jYXRjaChmdW5jdGlvbiAoKSB7IC8qIOWPluOCjOOBquOBhOOCguOBruOBr+Wun+ihjOaZguOCreODo+ODg+OCt+ODpeOBq+S7u+OBm+OCiyAqLyB9KTsKICAgICAgfSkpOwogICAgfSkudGhlbihmdW5jdGlvbiAoKSB7CiAgICAgIC8qIOaWsOOBl+OBhOeJiOOBjOeUqOaEj+OBp+OBjeOBn+OCieOAgeW+heOBn+OBmuOBq+acieWKueWMluOBuOmAsuOCgCAqLwogICAgICByZXR1cm4gc2VsZi5za2lwV2FpdGluZygpOwogICAgfSkKICApOwp9KTsKCnNlbGYuYWRkRXZlbnRMaXN0ZW5lcigiYWN0aXZhdGUiLCBmdW5jdGlvbiAoZXZlbnQpIHsKICBldmVudC53YWl0VW50aWwoCiAgICBjYWNoZXMua2V5cygpLnRoZW4oZnVuY3Rpb24gKGtleXMpIHsKICAgICAgcmV0dXJuIFByb21pc2UuYWxsKGtleXMubWFwKGZ1bmN0aW9uIChrZXkpIHsKICAgICAgICAvKiDml6fjg5Djg7zjgrjjg6fjg7Pjga7jgq3jg6Pjg4Pjgrfjg6Xjga/jgZnjgbnjgabmtojjgZnjgILml6fniYjjgavjga/jgq/jgqjjg6rnhKHoppbnhaflkIjjgacKICAgICAgICAgICDkuK3ntpnlv5znrZTjgpLlj5bjgorpgZXjgYjjgovjgq3jg6Pjg4Pjgrfjg6XjgYzmrovjgaPjgabjgYTjgovjgZPjgajjgYzjgYLjgorjgIHmrovjgZnjgagKICAgICAgICAgICDmlrDniYjjgafjgoLlkIzjgZjkuovmlYXjgpLlvJXjgY3jgZrjgosgKi8KICAgICAgICBpZiAoa2V5ICE9PSBTSEVMTF9DQUNIRSAmJiBrZXkgIT09IFJVTlRJTUVfQ0FDSEUpIHJldHVybiBjYWNoZXMuZGVsZXRlKGtleSk7CiAgICAgICAgcmV0dXJuIG51bGw7CiAgICAgIH0pKTsKICAgIH0pLnRoZW4oZnVuY3Rpb24gKCkgewogICAgICAvKiDplovjgYTjgabjgYTjgovjg5rjg7zjgrjjgpLjgZ/jgaDjgaHjgavmlrDjgZfjgYRTV+OBruWItuW+oeS4i+OBq+e9ruOBjyAqLwogICAgICByZXR1cm4gc2VsZi5jbGllbnRzLmNsYWltKCk7CiAgICB9KQogICk7Cn0pOwoKLyog44Oa44O844K45YG044GL44KJ44Gu44CM5b6F44Gf44Ga44Gr5pyJ5Yq55YyW44CN5L6d6aC877yI5pu05paw56K66KqN44OV44Ot44O877yJICovCnNlbGYuYWRkRXZlbnRMaXN0ZW5lcigibWVzc2FnZSIsIGZ1bmN0aW9uIChldmVudCkgewogIGlmIChldmVudC5kYXRhICYmIGV2ZW50LmRhdGEudHlwZSA9PT0gIlNLSVBfV0FJVElORyIpIHsKICAgIHNlbGYuc2tpcFdhaXRpbmcoKTsKICB9Cn0pOwoKc2VsZi5hZGRFdmVudExpc3RlbmVyKCJmZXRjaCIsIGZ1bmN0aW9uIChldmVudCkgewogIHZhciByZXEgPSBldmVudC5yZXF1ZXN0OwogIGlmIChyZXEubWV0aG9kICE9PSAiR0VUIikgcmV0dXJuOwoKICB2YXIgdXJsOwogIHRyeSB7IHVybCA9IG5ldyBVUkwocmVxLnVybCk7IH0gY2F0Y2ggKGUpIHsgcmV0dXJuOyB9CiAgLyog5LuW44Kq44Oq44K444Oz77yI44Gq44KN44GG5Lit57aZ44O75YWs5byPQVBJ44O744OV44Kp44Oz44OIQ0RO44O7SlNaaXAgQ0RO44Gq44Gp77yJ44Gr44GvCiAgICAg5LuL5YWl44GX44Gq44GE44CC44OW44Op44Km44K244Gu6YCa5bi444Gu6YCa5L+h44Gr5Lu744Gb44KLICovCiAgaWYgKHVybC5vcmlnaW4gIT09IHNlbGYubG9jYXRpb24ub3JpZ2luKSByZXR1cm47CgogIC8qIOODieOCreODpeODoeODs+ODiO+8muODjeODg+ODiOODr+ODvOOCr+WEquWFiO+8iOabtOaWsOOBjOOBneOBruOCu+ODg+OCt+ODp+ODs+OBp+WxiuOBj++8ieOAgQogICAgIOWkseaVl+OBl+OBn+OCieOCreODo+ODg+OCt+ODpeOAgj92aWV3PW5hcm91IOOBruOCiOOBhuOBquOCr+OCqOODqumBleOBhOOBr+WQjOS4gOODieOCreODpeODoeODs+ODiAogICAgIOOBqOOBl+OBpuaJseOBhuOBn+OCgeOAgeODleOCqeODvOODq+ODkOODg+OCr+eFp+WQiOOBqOS/neWtmOWFiOOBr+OCr+OCqOODquOBquOBl+OBruato+imj1VSTOOBq+WvhOOBm+OCiyAqLwogIGlmIChyZXEubW9kZSA9PT0gIm5hdmlnYXRlIiB8fCByZXEuZGVzdGluYXRpb24gPT09ICJkb2N1bWVudCIpIHsKICAgIGV2ZW50LnJlc3BvbmRXaXRoKAogICAgICBmZXRjaChyZXEsIHsgY2FjaGU6ICJuby1jYWNoZSIgfSkudGhlbihmdW5jdGlvbiAocmVzKSB7CiAgICAgICAgaWYgKHJlcyAmJiByZXMuc3RhdHVzID09PSAyMDApIHsKICAgICAgICAgIC8qIGNsb25l44Gv5pys5paH44GM5raI6LK744GV44KM44KL5YmN44Gr5ZCM5pyf44Gn5Y+W44KL77yI6Z2e5ZCM5pyf44Gr5Zue44GZ44Go5L2/55So5riI44G/44Gn5aSx5pWX44GZ44KL77yJICovCiAgICAgICAgICB2YXIgY29weUluZGV4ID0gcmVzLmNsb25lKCk7CiAgICAgICAgICB2YXIgY29weVJvb3QgPSByZXMuY2xvbmUoKTsKICAgICAgICAgIGNhY2hlcy5vcGVuKFNIRUxMX0NBQ0hFKS50aGVuKGZ1bmN0aW9uIChjYWNoZSkgewogICAgICAgICAgICBjYWNoZS5wdXQoSU5ERVhfVVJMLCBjb3B5SW5kZXgpOwogICAgICAgICAgICBjYWNoZS5wdXQoQVBQX1JPT1QsIGNvcHlSb290KTsKICAgICAgICAgIH0pOwogICAgICAgIH0KICAgICAgICByZXR1cm4gcmVzOwogICAgICB9KS5jYXRjaChmdW5jdGlvbiAoKSB7CiAgICAgICAgcmV0dXJuIGNhY2hlcy5tYXRjaChJTkRFWF9VUkwpLnRoZW4oZnVuY3Rpb24gKGhpdCkgewogICAgICAgICAgcmV0dXJuIGhpdCB8fCBjYWNoZXMubWF0Y2goQVBQX1JPT1QpOwogICAgICAgIH0pOwogICAgICB9KQogICAgKTsKICAgIHJldHVybjsKICB9CgogIC8qIOWQjOS4gOOCquODquOCuOODs+OBrumdmeeahOOCouOCu+ODg+ODiO+8iOODleOCqeODs+ODiOODu+OCouOCpOOCs+ODs+OBquOBqe+8ie+8mnN0YWxlLXdoaWxlLXJldmFsaWRhdGXjgIIKICAgICDnhaflkIjjga/jg5Xjg6tVUkzvvIjjgq/jgqjjg6rovrzjgb/vvInjgafooYzjgYYgKi8KICBldmVudC5yZXNwb25kV2l0aCgKICAgIGNhY2hlcy5tYXRjaChyZXEpLnRoZW4oZnVuY3Rpb24gKGhpdCkgewogICAgICB2YXIgbmV0d29yayA9IGZldGNoKHJlcSkudGhlbihmdW5jdGlvbiAocmVzKSB7CiAgICAgICAgaWYgKHJlcyAmJiAocmVzLnN0YXR1cyA9PT0gMjAwIHx8IHJlcy50eXBlID09PSAib3BhcXVlIikpIHsKICAgICAgICAgIHZhciBjb3B5ID0gcmVzLmNsb25lKCk7CiAgICAgICAgICBjYWNoZXMub3BlbihSVU5USU1FX0NBQ0hFKS50aGVuKGZ1bmN0aW9uIChjYWNoZSkgeyBjYWNoZS5wdXQocmVxLCBjb3B5KTsgfSk7CiAgICAgICAgfQogICAgICAgIHJldHVybiByZXM7CiAgICAgIH0pLmNhdGNoKGZ1bmN0aW9uICgpIHsgcmV0dXJuIGhpdDsgfSk7CiAgICAgIHJldHVybiBoaXQgfHwgbmV0d29yazsKICAgIH0pCiAgKTsKfSk7Cg== 側：ドキュメントはネットワーク優先、失敗時のみキャッシュ）。
    更新を「次回起動まで届かない」状態にしないため、ここでは能動的に更新を
    確認し、待機中の新版があれば有効化して、そのセッション内で1回だけ
    自動リロードする（controllerchange）。
