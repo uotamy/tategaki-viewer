@@ -740,6 +740,15 @@
     </div>
 
     <div class="setgroup">
+      <div class="lab">全画面表示</div>
+      <div class="seg" id="fsSeg">
+        <button data-v="on">使う</button>
+        <button data-v="off">使わない</button>
+      </div>
+      <p class="worknote" style="margin:8px 0 0;">「使う」にすると、本を開いたときだけ全画面表示になり、本棚に戻ると解除されます。ページ送りや設定などの開閉で全画面に入り直すことはありません。読書中に端末の操作で全画面を抜けた場合は、その読書中はそのまま表示され、次に本を開いたときから再び全画面になります。</p>
+    </div>
+
+    <div class="setgroup">
       <div class="lab">保存について</div>
       <p class="worknote" style="margin:0;">読書位置・しおり・表示設定はこの端末の保存領域（localStorage）に、開いた本の本文は端末内データベース（IndexedDB）に保存されます。サーバーには送信されません。</p>
       <p class="worknote" style="margin:8px 0 0;">PWA対応：ブラウザのメニューに「アプリをインストール」や「ホーム画面に追加」が出る環境では、ホーム画面のアイコンからアプリのように起動できます。オンライン時は起動や本棚のリロードのたびに新しい版を確認し、あればその場で切り替わります。オフラインでも、保存済みの版で本棚からそのまま読めます（ホスティング環境により、追加ができない場合があります）。</p>
@@ -1019,7 +1028,9 @@ const GUIDE_EPISODES = [
       "段組みは、上下二段組みと一段組みを切り替えられます。ページ送りの方式は「スライド」（ページ単位で滑って切り替わる）と「めくり」（綴じ目を軸にページがめくれる動き）と「なし」（アニメーションせず即時に切り替わる）から選べます。",
       "「進行方向」は、画面下のバーの進み具合・スライダー・「前の話／次の話」の並びの向きです。「右から左」（本の進行）では進み具合が右端から埋まり、スライダーは右端が開始・左端が終わり、「次の話」が左に来ます。「左から右」は一般的なアプリと同じ並びです。ページ送りのタップやスワイプの方向は、どちらの設定でも変わりません。",
       { t: "背景テーマ", cls: "head" },
-      "背景は白・セピア・黒の3テーマに加えて、背景色と文字色を自由に選ぶカスタム色も使えます。夜に読むときは黒が目に優しくなります。"
+      "背景は白・セピア・黒の3テーマに加えて、背景色と文字色を自由に選ぶカスタム色も使えます。夜に読むときは黒が目に優しくなります。",
+      { t: "全画面表示", cls: "head" },
+      "設定の「全画面表示」を「使う」にすると、本を開いたときだけ端末の全画面表示になり、本文の表示領域が広がります。本棚に戻ると全画面は終わります。ページをめくるたびに全画面へ入り直すことはありません。読書中に端末の操作で全画面を抜けた場合は、その読書中はそのままの表示で読み続けられ、次に本を開いたときからまた全画面になります。"
     ]
   },
   {
@@ -1091,6 +1102,7 @@ const S = {
   pageDir: "rtl",           // 下部バーの進行方向: "rtl"=右から左（本の進行） / "ltr"=左から右（標準）
   theme: "light", customBg: "#f7f1e3", customInk: "#33302a",
   showThumbs: true,         // 本棚サムネイルの表示ON/OFF（設定で切り替え）
+  fullscreen: false,        // 全画面表示：ONのとき本を開く流れで1回だけ全画面へ入る（設定で切り替え、既定OFF）
   bookmarks: [],            // {bookKey, ep, pos:{pi,off}, epTitle, label}
   positions: {},            // bookKey -> {ep, pos, charInEp}（現在位置のみ。読了は finished 側で保持）
   finished: {},             // bookKey -> true（一度読了したら消えないラッチ。位置とは独立に永続化）
@@ -1124,7 +1136,7 @@ function persistNow(){
     localStorage.setItem(LS_KEY, JSON.stringify({
       font: S.font, fsIdx: S.fsIdx, lhIdx: S.lhIdx, marginIdx: S.marginIdx, mode: S.mode,
       turnStyle: S.turnStyle, pageDir: S.pageDir, theme: S.theme, customBg: S.customBg, customInk: S.customInk,
-      showThumbs: S.showThumbs,
+      showThumbs: S.showThumbs, fullscreen: S.fullscreen,
       positions: S.positions, bookmarks: S.bookmarks, finished: S.finished,
       /* 遅延復元中（前回の本をまだ開いていない）は、その本を lastKey として
          保持する。今ガイドを表示しているからといって上書きしない */
@@ -1139,13 +1151,14 @@ function persistLoad(){
     const raw = localStorage.getItem(LS_KEY);
     if (!raw) return false;
     const d = JSON.parse(raw);
-    ["font","fsIdx","lhIdx","marginIdx","mode","turnStyle","pageDir","theme","customBg","customInk","showThumbs"]
+    ["font","fsIdx","lhIdx","marginIdx","mode","turnStyle","pageDir","theme","customBg","customInk","showThumbs","fullscreen"]
       .forEach(k => { if (d[k] !== undefined) S[k] = d[k]; });
     /* 廃止したIPA明朝が選ばれたまま保存されている場合は端末の明朝へ戻す。
        任意フォント（"u…" で始まるキー）は起動後にIndexedDBから登録し直すので、
        ここでは未知のキーとして弾かない */
     if (S.font === "ipaex") S.font = "device";
     if (S.pageDir !== "rtl" && S.pageDir !== "ltr") S.pageDir = "rtl";
+    S.fullscreen = !!S.fullscreen;
     if (d.positions) S.positions = d.positions;
     if (d.finished && typeof d.finished === "object") {
       Object.keys(d.finished).forEach(k => { if (d.finished[k]) S.finished[k] = true; });
@@ -3508,6 +3521,20 @@ function syncThumbSeg(){
     b.classList.toggle("on", (b.dataset.v === "on") === !!S.showThumbs));
 }
 syncThumbSeg();
+$("#fsSeg").addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  S.fullscreen = b.dataset.v === "on";
+  syncFsSeg(); persistNow();
+  /* 読書中に「使わない」へ変えたら、その場で全画面を抜ける（こちらから
+     入った全画面だけが対象）。「使う」へ変えても入り直すのは次に本を
+     開いたときで、この読書中には入らない（開いた時だけ入る原則） */
+  if (!S.fullscreen && fsEntered) { fsEntered = false; fsExitNow(); }
+});
+function syncFsSeg(){
+  document.querySelectorAll("#fsSeg button").forEach(b =>
+    b.classList.toggle("on", (b.dataset.v === "on") === !!S.fullscreen));
+}
+syncFsSeg();
 $("#themeSeg").addEventListener("click", e => {
   const b = e.target.closest("button"); if (!b) return;
   S.theme = b.dataset.v; applyTheme();
@@ -4159,6 +4186,58 @@ function buildShelf(){
     list.appendChild(card);
   });
 }
+/* ---------------- 全画面表示（設定トグル制） ----------------
+   設定「全画面表示」がONのときだけ、本を開く流れの中で1回だけ
+   Fullscreen API で全画面へ入る。過去に没入表示を廃止した理由は、
+   入るたびに端末側の注意書きが繰り返し出て読書の邪魔になったためで、
+   その再発防止がこの実装の最重要点:
+   - リクエストは「本棚／サブ画面から読書へ入る遷移」（hideShelf で
+     遷移元が shelf／add／aozora／narou のとき）でのみ行う。ページ送り・
+     話移動・各種シートの開閉では絶対に呼ばない
+   - 読書ごとに fsDecided ラッチを立て、同じ読書中は二度とリクエスト
+     しない。ユーザーが端末操作で全画面を抜けても入り直さない。ラッチは
+     本を閉じる（本棚へ戻る）ときにだけ解除され、次に本を開くときから
+     再び適用される
+   - こちらから入った全画面（fsEntered）だけを、本棚へ戻るときに抜ける。
+     設定OFFのときは入ることも抜けることも一切せず、従来挙動と同一になる
+   全画面の出入りで画面サイズが変わるが、高さ同期（--vvh）と再組版は
+   既存の仕組み（resize／visualViewport のリスナー）に加えて
+   fullscreenchange でも明示的に回し、本文下端が切れないようにする */
+let fsDecided = false; /* この読書で全画面の要否を決定済みか（1回だけリクエストするためのラッチ） */
+let fsEntered = false; /* この読書でこちらから全画面へ入ったか（本棚へ戻るときに抜ける対象の判定） */
+function fsExitNow(){
+  if (!document.fullscreenElement || !document.exitFullscreen) return;
+  try {
+    const p = document.exitFullscreen();
+    if (p && typeof p.catch === "function") p.catch(() => {});
+  } catch (e) { /* noop */ }
+}
+function enterFullscreenForBook(){
+  if (fsDecided) return;
+  fsDecided = true;
+  if (!S.fullscreen) return;
+  if (document.fullscreenElement) return;
+  const el = document.documentElement;
+  if (!el || typeof el.requestFullscreen !== "function") return;
+  fsEntered = true;
+  try {
+    const p = el.requestFullscreen();
+    if (p && typeof p.catch === "function") p.catch(() => { fsEntered = false; });
+  } catch (e) { fsEntered = false; /* 対応しない環境等では通常表示のまま読む */ }
+}
+function leaveFullscreenForShelf(){
+  fsDecided = false;
+  if (!fsEntered) return;
+  fsEntered = false;
+  fsExitNow();
+}
+document.addEventListener("fullscreenchange", () => {
+  /* 全画面の出入りで可視サイズが変わるので、高さ同期と再組版を既存の
+     仕組みへ明示的に流す。ここで全画面へ入り直すことは絶対にしない */
+  syncViewportH();
+  scheduleReflowCheck();
+});
+
 /* ---------------- 本を閉じる（本棚へ戻るとき） ----------------
    本棚に戻ったら、今開いている本は閉じる（閉じる優先）。保持していた
    本文（S.episodes）・組版キャッシュ（S.cache）・先行組版済みのページ
@@ -4171,6 +4250,9 @@ function buildShelf(){
    起動直後の仮表示（使い方）を閉じる場合は pendingRestore を消さない
    （再開対象の本はまだ本文を読み込んでいない＝閉じた状態と同じため） */
 function closeCurrentBook(){
+  /* 本棚へ戻る＝こちらから入った全画面はここで抜け、次に本を開くときに
+     再び入れるようラッチも解除する。開いている本が無い場合でも先に行う */
+  leaveFullscreenForShelf();
   const closedKey = S.work && S.work.key ? S.work.key : null;
   if (!closedKey && !S.episodes.length && !mangaState) return;
   persistNow();
@@ -4246,6 +4328,9 @@ function hideShelf(){
      本を開く経路はすべて setBook の後にここへ来るので、このガードに
      引っかかるのは「本が無いのに閉じようとした」場合だけ */
   if (!S.work.key || !S.episodes.length) { showShelfUI(); return; }
+  /* 遷移元を控える：本棚／サブ画面から読書へ入る遷移かどうかを、
+     全画面へ入る判定（末尾）に使う */
+  const fromView = histView;
   closeSheetsUI();
   hideNarouUI();
   hideAddUI();
@@ -4271,6 +4356,12 @@ function hideShelf(){
       try { history.replaceState({ v: "reading" }, ""); histLive.reading = true; }
       catch (e) { histLive.reading = false; }
     }
+  }
+  /* 本を開いて読書へ入る遷移のときだけ、全画面へ1回入る（設定ON時）。
+     シートを閉じて読書へ戻る遷移（fromView が "sheet"／"reading"）は
+     同じ読書の続きなので、ここでは入らない */
+  if (fromView === "shelf" || fromView === "add" || fromView === "aozora" || fromView === "narou") {
+    enterFullscreenForBook();
   }
 }
 /* 端末・ブラウザの戻る／進む：履歴エントリの指す画面に表示を合わせる。
@@ -6065,14 +6156,17 @@ if (window.visualViewport) {
 }
 syncViewportH();
 
-/* ---------------- 全画面は使わない ----------------
-   読書中も全画面（Fullscreen API）の要求は一切しない。全画面にすると
-   端末側の警告が繰り返し出て読書の邪魔になるため、以前の修理で入れた
-   没入表示は廃止した。本文の下端がシステムナビバーの裏に隠れないように
-   する対策は、高さ計算の是正（CSSの 100vh → 100dvh → visualViewport
-   実測値 --vvh の順に勝たせる宣言順）と、高さが変わったときの再組版
-   （syncViewportH ＋ scheduleReflowCheck）だけで担う。バーが表示された
-   状態でも、アプリの高さは「実際に見えている範囲」に一致する */
+/* ---------------- 全画面表示との関係 ----------------
+   全画面（Fullscreen API）は、設定「全画面表示」がONのときに限り、
+   本を開く流れの中で1回だけ要求する（実装は closeCurrentBook の前の
+   「全画面表示（設定トグル制）」の節）。ページ送りやシートの開閉では
+   要求しないため、端末側の注意書きが読書中に繰り返し出ることはない。
+   本文の下端がシステムナビバーの裏に隠れないようにする対策は従来どおり
+   高さ計算の是正（CSSの 100vh → 100dvh → visualViewport 実測値 --vvh
+   の順に勝たせる宣言順）と、高さが変わったときの再組版
+   （syncViewportH ＋ scheduleReflowCheck）で担い、全画面の出入りでも
+   fullscreenchange 経由で同じ再組版が回る。バーが表示された状態でも、
+   アプリの高さは「実際に見えている範囲」に一致する */
 
 /* ---------------- なろうダウンローダーからの自動受け取り ----------------
    ダウンローダー（同一オリジン https://uotamy.github.io/narou-dl/）は、
@@ -7764,6 +7858,7 @@ $("#customBg").value = S.customBg;
 $("#customInk").value = S.customInk;
 syncTurnSeg();
 syncThumbSeg();
+syncFsSeg();
 applyPageDir();
 applyTheme();
 applyTypography(false);
