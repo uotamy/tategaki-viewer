@@ -347,10 +347,8 @@
   .bookcard .bfoot { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--sub); }
   .bookcard .bfoot > button:first-of-type { margin-left: auto; }
   .bookcard .bneed { color: var(--accent); border: 1px solid var(--accent); border-radius: 999px; padding: 1px 8px; font-size: 11px; white-space: nowrap; }
-  .bookcard .bdel { border: 0; background: transparent; color: var(--sub); font: inherit; font-size: 12px; cursor: pointer; padding: 4px 6px; flex: none; }
   .bookcard { user-select: none; -webkit-user-select: none; }
   .bookcard:active { background: var(--tint); }
-  .bookcard .bdel:active { color: var(--accent); }
 
   /* ---------- なろう画面（タテヨミ内蔵ダウンローダー） ---------- */
   #narou {
@@ -463,17 +461,23 @@
   .additem .dl-title { display: block; font-size: 16px; font-weight: 600; }
   .additem .dl-sub { display: block; font-size: 11.5px; font-weight: 400; color: var(--sub); margin-top: 2px; }
   .additem:active { background: var(--tint); }
-  /* 本棚カードの「更新を確認／続きを取得」ボタン（なろう作品のみ） */
-  .bookcard .bupd {
-    border: 0; background: transparent; color: var(--accent); font: inherit;
-    font-size: 12px; font-weight: 600; cursor: pointer; padding: 4px 6px; flex: none; white-space: nowrap;
+  /* 本棚カードの操作は右下のメニューボタン1つに集約する。押すと
+     その本に適用できる操作だけを並べたシート（#bookSheet）が開く */
+  .bookcard .bmenu {
+    border: 1px solid var(--line); background: transparent; color: var(--ink); font: inherit;
+    font-size: 14px; line-height: 1; cursor: pointer; padding: 6px 12px; border-radius: 999px;
+    flex: none; white-space: nowrap; letter-spacing: .1em;
   }
-  /* 本棚カードの「ダウンロード」ボタン */
-  .bookcard .bdl {
-    border: 0; background: transparent; color: var(--accent); font: inherit;
-    font-size: 12px; font-weight: 600; cursor: pointer; padding: 4px 6px; flex: none; white-space: nowrap;
+  .bookcard .bmenu:active { background: var(--tint); }
+  /* 本の操作シートの項目 */
+  .bookact {
+    display: block; width: 100%; text-align: left; border: 0; border-bottom: 1px solid var(--line);
+    background: transparent; color: var(--ink); font: inherit; font-size: 14.5px;
+    padding: 14px 2px; cursor: pointer;
   }
-  .bookcard .bdl:disabled { opacity: .45; }
+  .bookact:last-child { border-bottom: 0; }
+  .bookact:active { background: var(--tint); }
+  .bookact.danger { color: var(--accent); }
   /* 取得進捗シート（なろう画面の上に重ねる） */
   #nprog {
     position: fixed; left: 0; right: 0; bottom: 0; z-index: 47; margin: 0 auto; max-width: 620px;
@@ -655,6 +659,13 @@
       <p class="worknote" style="margin:0;">読書位置・しおり・表示設定はこの端末の保存領域（localStorage）に、開いた本の本文は端末内データベース（IndexedDB）に保存されます。サーバーには送信されません。</p>
       <p class="worknote" style="margin:8px 0 0;">PWA対応：ブラウザのメニューに「アプリをインストール」や「ホーム画面に追加」が出る環境では、ホーム画面のアイコンからアプリのように起動できます。オンライン時は起動や本棚のリロードのたびに新しい版を確認し、あればその場で切り替わります。オフラインでも、保存済みの版で本棚からそのまま読めます（ホスティング環境により、追加ができない場合があります）。</p>
     </div>
+  </section>
+
+  <section class="sheet" id="bookSheet" aria-label="本の操作">
+    <div class="grab"></div>
+    <h2 id="bookSheetTitle"></h2>
+    <p class="worknote" id="bookSheetNote"></p>
+    <div id="bookSheetActions"></div>
   </section>
 
   <div id="shelf" aria-label="本棚">
@@ -882,7 +893,7 @@ const GUIDE_EPISODES = [
       "このビューワーは、日本語の小説を読むための縦書きビューワーです。縦書き・右から左へのページ送り、上下二段組みの組版で、紙の文庫本を読む感覚に寄せてあります。",
       "この文章は、ビューワーの使い方そのものです。サンプル小説の代わりに入っています。まずはこのまま読み進めながら、ページ送りやメニューの操作を試してみてください。",
       "読めるファイルは、テキストファイル（.txt）、Markdown（.md）、EPUB（.epub）、青空文庫の配布形式（.zip）です。Shift_JISのテキストや、青空文庫形式のルビ記法、EPUB内のルビにも対応しています。青空文庫の注記（改ページ・改段・見出し・傍点など）も処理され、.zipに画像が同梱されていれば挿絵も表示されます。挿絵は画像の大きさで自動的に切り替わり、本文に収まる小さい画像は本文の流れの中に、大きな画像（口絵など）は改ページして1ページ全面に表示されます。",
-      "テキストファイルが複数入った.zipも開けます。その場合は1冊に連結して扱い、「話」の区切りはzipのルート直下で決まります。ルート直下にフォルダがある場合はフォルダごとに1話になり、フォルダ内のファイルはその話の中でファイル名の順に連結されます（「次の話／前の話」ではフォルダの先頭へ移動します）。フォルダに入っていないファイルは1ファイルで1話、zipの中にzipがある場合はそのzip全体で1話になり、1階層まで開いて連結します。ルート直下にフォルダが1つだけの場合は、そのフォルダの中身がルートとして扱われます（フォルダが入れ子に続く場合も同様で、書名には一番外側のフォルダ名が使われます）。",
+      "テキストファイルが複数入った.zipも開けます。その場合は1冊に連結して扱い、「話」の区切りはzipのルート直下で決まります。ルート直下にフォルダがある場合はフォルダごとに1話になり、フォルダ内のファイルはその話の中でファイル名の順に連結されます（「次の話／前の話」ではフォルダの先頭へ移動します）。フォルダに入っていないファイルは1ファイルで1話、zipの中にzipがある場合はそのzip全体で1話になり、1階層まで開いて連結します。ルートに本体フォルダ（複数のテキストを持つ唯一のフォルダ）がある場合は、そのフォルダの中身がルートとして扱われます。横に説明テキストなどの小さなファイルが入っていても本体フォルダは剥がされ、同居したファイルは独立した話として残ります（フォルダが入れ子に続く場合も同様で、書名には一番外側のフォルダ名が使われます）。",
       "画像だけが入った.zip（漫画のアーカイブ）も開けます。その場合は「画像の本」として扱われ、画像1枚が1ページになり、ファイル名の数値順（1、2、…、10の順）に並びます。ページ送りの方向や方式は小説と同じで、本棚・進み具合・しおりもそのまま使えます。画像はページを表示するタイミングで1枚ずつ読み出されるので、大きなzipでもまとめて展開はしません。",
       "なお、Kindle本のようなDRM（コピー防止）付きの本は開けません。対象は、自分の原稿や青空文庫など、DRMのないファイルです。"
     ]
@@ -918,14 +929,14 @@ const GUIDE_EPISODES = [
       { t: "本棚（履歴）", cls: "head" },
       "本棚は、端末のフォルダを読み込むものではなく、これまでに開いた本の履歴です。最近開いた順に並び、本を選ぶと読んでいた位置からそのまま開きます。進み具合もパーセントで表示されます。本の最後まで読むと、最終ページの後ろに「読了」のページが現れ、本棚では「読了」と表示されます。",
       "各本の左側にはサムネイルが付きます。EPUBでは表紙画像、テキストやzipでは本文で最初に現れる画像、漫画zipでは先頭ページの画像が使われ、画像のない本はアイコン表示になります。サムネイルは本を取り込むときに小さく作って保存されるので、本棚を開くたびに作り直すことはありません。表示は設定の「本棚のサムネイル」で切り替えられます。",
-      "履歴の本は、各カードの「削除」ボタンから履歴を削除できます。削除すると、その本の読書位置・しおり・端末に保存した本文も一緒に消えます（元のファイル自体は消えません）。この「使い方」は組み込みのため、削除ボタンは付きません。",
-      "各カードの「ダウンロード」からは、その本をファイルとして端末へ保存できます。ダウンローダーやテキストから取り込んだ本は、話ごとのテキストファイル（Shift_JIS）をまとめた青空文庫形式のzip（ファイル名は書名）になり、このビューワーでそのまま開き直せます。取り込み時の原本ファイルが端末に残っている本（漫画zipなど）は、原本がそのまま保存されます。",
+      "履歴の本の操作は、各カードの右下にあるメニューボタン（⋯）に集約されています。押すと、その本に使える操作（ダウンロード／削除など）だけが並んだシートが開きます。「削除」を選ぶと、その本の読書位置・しおり・端末に保存した本文も一緒に消えます（元のファイル自体は消えません）。この「使い方」は組み込みのため、メニューボタン自体が付きません。",
+      "操作シートの「ダウンロード」からは、その本をファイルとして端末へ保存できます。ダウンローダーやテキストから取り込んだ本は、話ごとのテキストファイル（Shift_JIS）をまとめた青空文庫形式のzip（ファイル名は書名）になり、このビューワーでそのまま開き直せます。取り込み時の原本ファイルが端末に残っている本（漫画zipなど）は、原本がそのまま保存されます。",
       { t: "なろうダウンローダー", cls: "head" },
       "本の追加は、本棚の「本追加」ボタンから開く「本を追加」画面に集約されています。ファイルを開く（端末内のファイルの取り込み）、なろうダウンローダー、青空文庫ダウンローダーの3つが並びます。",
       "「なろうダウンローダー」からは、「小説家になろう」の作品を検索・ランキング・おすすめ・URL指定で探し、全話を取得してそのまま本棚へ登録できます。話数が多い作品は、取得に時間がかかります。別ページのダウンローダーで登録した本も、従来どおり前面に戻ったときに自動で本棚へ追加されます。",
       "「青空文庫ダウンローダー」からは、青空文庫の作品を作品名・著者名で検索し、テキストzipを取得してそのまま本棚へ登録できます。作品リスト（インデックス）は青空文庫の公式のものを使い、端末内にキャッシュされます。「インデックスを更新」で最新のリストに取り直せます。掲載は著作権の消滅した作品のみです。",
       "取得は1話ごとに端末へ保存されます。途中で中断しても、取得済みの話だけで本として本棚へ登録されます。その本は本棚で「取得途中 n/総話」と表示され、取得済み範囲の末尾まで読んでも読了にはならず、続きを案内するページが出ます。",
-      "本棚のなろう作品のカードには「更新を確認」があります（取得途中の本では「続きを取得」になります）。実行すると目次だけを取得して手元の控えと比べ、増えた話と、更新日が変わった（書き換えられた）話だけを取得して本へ取り込みます。新しい話は末尾へ追加され、読書位置やしおりはそのまま残ります。差分がなければ「更新はありません」と表示されます。",
+      "本棚のなろう作品は、カードのメニューボタン（⋯）から「更新を確認」を実行できます（取得途中の本では「続きを取得」になります）。実行すると目次だけを取得して手元の控えと比べ、増えた話と、更新日が変わった（書き換えられた）話だけを取得して本へ取り込みます。新しい話は末尾へ追加され、読書位置やしおりはそのまま残ります。差分がなければ「更新はありません」と表示されます。",
       { t: "しおり", cls: "head" },
       "メニューの「しおり」から、今開いているページにしおりを挟めます。しおりは本ごとに保存され、一覧からいつでもそのページへ戻れます。",
       { t: "保存のしくみ", cls: "head" },
@@ -2367,7 +2378,7 @@ function setLoading(on){ $("#loading").classList.toggle("show", !!on); }
    存在しないエントリへ向けて history.back() を呼ばないようにする */
 let histView = "shelf";
 const histLive = { reading: false, sheet: false, narou: false, add: false, aozora: false };
-const sheets = ["#tocSheet", "#markSheet", "#setSheet"];
+const sheets = ["#tocSheet", "#markSheet", "#setSheet", "#bookSheet"];
 let lastSheetSel = null;
 function openSheetUI(sel){
   clearTimeout(uiHideTimer);
@@ -2735,7 +2746,7 @@ async function ensureShelfThumb(key){
 }
 
 /* ---------------- 本棚からのダウンロード（端末へファイルを保存） ----------------
-   本棚の各カードの「ダウンロード」から、端末内DBに保存されている本を
+   本棚カードの操作メニューの「ダウンロード」から、端末内DBに保存されている本を
    ブラウザのダウンロードとして端末へ保存する。
    - 原本アーカイブ（漫画zipなど、取り込み時にファイル自体を保存した本）が
      あれば、その原本をそのまま出す
@@ -2932,9 +2943,40 @@ function fmtReadDate(ts){
     String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
 }
 /* 本棚はフォルダスキャンではなく「開いた本の履歴」。並びは最近開いた順。
-   履歴の削除は、各カードに常時表示する「削除」ボタンから行う（長押しメニューは廃止）。
+   履歴の削除は、各カードのメニューボタンから開く操作シートの「削除」から行う。
    削除すると、その本の読書位置・しおり・端末に保存した本文も一緒に消える。
    元のファイル自体は消えない。「使い方」（組み込み）は削除対象外。 */
+/* 本棚カードの操作シート：その本に適用できる操作だけを並べる。
+   なろう未完＝続きを取得／ダウンロード／削除、なろう完結＝更新を確認／
+   ダウンロード／削除、通常の本＝ダウンロード／削除。
+   シートは履歴に積まない（本棚表示中に端末の戻るボタンでアプリを終える
+   従来の作法を変えないため）。開閉は openSheetUI／closeSheetsUI を使い、
+   背景タップ（scrim）でも閉じる */
+function openBookMenu(entry){
+  if (!entry || entry.kind === "guide") return;
+  $("#bookSheetTitle").textContent = entry.title;
+  $("#bookSheetNote").textContent = entry.note || entry.fileName || "";
+  const box = $("#bookSheetActions");
+  box.innerHTML = "";
+  const addAct = (label, fn, danger) => {
+    const b = document.createElement("button");
+    b.className = "bookact" + (danger ? " danger" : "");
+    b.textContent = label;
+    b.addEventListener("click", () => { closeSheetsUI(); fn(); });
+    box.appendChild(b);
+  };
+  if (entry.key.indexOf("narou:") === 0) {
+    /* 取得途中のなろう作品では、差分取得を「続きを取得」として出す。
+       実行はなろうモジュール側（目次だけ取得して台帳と比べ、増えた話・
+       変わった話だけを取り込む） */
+    const incomplete = isEntryIncomplete(entry);
+    addAct(incomplete ? "続きを取得" : "更新を確認", () => nCheckUpdate(entry));
+  }
+  /* ダウンロード：端末内DBの本をファイルとして端末へ保存する */
+  addAct("ダウンロード", () => downloadBookFromShelf(entry, null));
+  addAct("削除", () => deleteBookFromShelf(entry), true);
+  openSheetUI("#bookSheet");
+}
 function deleteBookFromShelf(entry){
   if (!entry || entry.kind === "guide") return;
   S.library = S.library.filter(x => x.key !== entry.key);
@@ -3027,45 +3069,21 @@ function buildShelf(){
       "</div>";
     /* カードのタップで、その本を最後に読んでいたページから開く */
     card.addEventListener("click", () => openFromShelf(entry));
-    /* アクションボタンはカード上に常時表示する（「使い方」は組み込みのため削除は付けない） */
-    {
+    /* 操作（更新を確認／続きを取得／ダウンロード／削除）は、カード右下の
+       メニューボタン1つに集約する。押すと操作シートが開く。
+       「使い方」は組み込みでダウンロード・削除・更新の対象にしないため、
+       メニュー自体を付けない */
+    if (entry.kind !== "guide") {
       const foot = card.querySelector(".bfoot");
-      /* なろうから取り込んだ本には、差分更新の「更新を確認」を出す。
-         実行はなろうモジュール側（目次だけ取得して台帳と比べ、増えた話・
-         変わった話だけを取り込む） */
-      if (entry.kind !== "guide" && entry.key.indexOf("narou:") === 0) {
-        const upd = document.createElement("button");
-        upd.className = "bupd";
-        /* 取得途中の本では、同じ差分取得を「続きを取得」として出す */
-        upd.textContent = incomplete ? "続きを取得" : "更新を確認";
-        upd.setAttribute("aria-label", "「" + entry.title + "」の" + (incomplete ? "続きを取得" : "更新を確認"));
-        upd.addEventListener("click", e => {
-          e.stopPropagation();
-          nCheckUpdate(entry);
-        });
-        foot.insertBefore(upd, foot.querySelector(".go"));
-      }
-      /* ダウンロード：端末内DBの本をファイルとして端末へ保存する（全ての本に付ける） */
-      const dl = document.createElement("button");
-      dl.className = "bdl";
-      dl.textContent = "ダウンロード";
-      dl.setAttribute("aria-label", "「" + entry.title + "」をダウンロード");
-      dl.addEventListener("click", e => {
+      const menu = document.createElement("button");
+      menu.className = "bmenu";
+      menu.textContent = "⋯";
+      menu.setAttribute("aria-label", "「" + entry.title + "」の操作メニュー");
+      menu.addEventListener("click", e => {
         e.stopPropagation();
-        downloadBookFromShelf(entry, dl);
+        openBookMenu(entry);
       });
-      foot.insertBefore(dl, foot.querySelector(".go"));
-      if (entry.kind !== "guide") {
-        const del = document.createElement("button");
-        del.className = "bdel";
-        del.textContent = "削除";
-        del.setAttribute("aria-label", "「" + entry.title + "」を履歴から削除");
-        del.addEventListener("click", e => {
-          e.stopPropagation();
-          deleteBookFromShelf(entry);
-        });
-        foot.insertBefore(del, foot.querySelector(".go"));
-      }
+      foot.appendChild(menu);
     }
     list.appendChild(card);
   });
@@ -3863,9 +3881,11 @@ function decodeTxtBytes(bytes){
    ルート直下のフォルダはフォルダ全体で1話（フォルダ内のtxtは自然順に
    連結し、ファイルの継ぎ目には見出しを入れる；多重フォルダは親フォルダの
    話へ連結）、ルート直下のtxtファイルは1ファイルで1話、zipの中のzipは
-   1階層だけ展開してそのzip全体で1話。ただし、ルート直下にフォルダが
-   1つだけの場合はそのフォルダの中身をルートとして扱い、単独フォルダが
-   続く場合は再帰的に剥がす（書名は最外のフォルダ名）。
+   1階層だけ展開してそのzip全体で1話。ただし、ルートの本体フォルダ
+   （複数テキストを持つ唯一のフォルダ）は、その中身をルートとして扱い
+   剥がす。横に説明テキスト等の小さなファイルが同居していても本体は
+   剥がし、同居分は独立の話として残す。単独フォルダが続く場合は再帰
+   的に剥がす（書名は最外のフォルダ名）。
    目次と「次の話／前の話」はこの単位で動き、話の先頭はフォルダの先頭になる */
 function mergeParsedEpisodes(parsed, title){
   const paras = [];
@@ -3910,68 +3930,76 @@ async function parseZipBook(buf, fileName){
     }
     return subs;
   };
-  /* 単独ラッパーフォルダの剥がし：ルート直下にフォルダが1つだけあり、
-     ファイルやzipが同居していない場合は、そのフォルダの中身をルートと
-     して扱う。単独フォルダが続く場合は再帰的に剥がし、書名には最外の
-     フォルダ名を使う。フォルダ＋txt同居のような場合は剥がさない
-     （フォルダは1話、txtは独立の1話のまま）。
-     pairs は { rel: 剥がし後の相対パス, orig: zip内の実エントリ名 } で、
-     グループ化とタイトル付けは rel、実データの読み出しは orig で行う */
-  let pairs = items.map(n => ({ rel: n, orig: n }));
-  /* ゴミ項目に強いラッパー判定：ルートに「複数テキストを持つフォルダ」が
-     1つだけあり、それ以外のルート項目がすべて話を生まない（中身が空白の
-     txt、テキストを含まないzip等）場合、それらは同居する実ユニットでは
-     なく付属のゴミとみなし、本体フォルダだけを剥がしの対象にする。
-     以前は、画像だけのおまけzipや空の付属txtが1つあるだけで下の厳密な
-     「フォルダ1つだけ」条件から外れ、本体フォルダ全体が1話に潰れて
-     しまっていた。実テキストを持つ項目が同居する場合は従来どおり
-     剥がさない（フォルダ＝1話という確定仕様を維持する） */
-  {
+  /* 単独ラッパーフォルダの剥がし：ルートの本体フォルダの中身をルートと
+     して扱い、単独フォルダが続く場合は再帰的に剥がす（書名は最外の
+     フォルダ名）。pairs は { rel: 剥がし後の相対パス, orig: zip内の実
+     エントリ名 } で、グループ化とタイトル付けは rel、実データの読み
+     出しは orig で行う。rel はここで正規化しておく（Windows製zipの
+     「\」区切りや、先頭の「./」「/」が付いた名前でもフォルダとして
+     認識できるように）。
+     本体フォルダの判定は2段階：
+     (a) ルート項目がフォルダ1つだけなら無条件に剥がす。
+     (b) ルートに他の項目が同居していても、「複数テキストを持つ
+         フォルダ」が1つだけで、他の項目がどれもテキスト1つ分以下
+         （説明・readme等のtxt、空txt、テキストを含まないzip、
+         1話だけの小フォルダ等）なら、そのフォルダを本体とみなして
+         そのフォルダだけを剥がす。同居項目は捨てず、それぞれ独立の
+         話として残す。
+     以前の判定は同居項目に「テキスト0」を要求していたため、本文の
+     ある readme.txt が1つ横にあるだけで剥がしが丸ごと無効になり、
+     本体フォルダ全体が1話に潰れてしまっていた（実ファイルでの
+     「単一フォルダ除去が効いていない」の主因）。テキストを複数持つ
+     項目が2つ以上ある場合（複数巻フォルダ等）は従来どおり剥がさ
+     ない（フォルダ＝1話という確定仕様を維持する） */
+  let pairs = items.map(n => ({
+    rel: n.replace(/\\/g, "/").replace(/^\/+/, "").replace(/^(\.\/)+/, ""),
+    orig: n
+  })).filter(p => p.rel);
+  /* そのルート項目が実際に生むテキストの数 */
+  const rootTextCount = async (members, isFolder) => {
+    let n = 0;
+    for (const p of members) {
+      if (/\.txt$/i.test(p.rel)) {
+        if (!isFolder && members.length === 1) {
+          const b = await zip.files[p.orig].async("arraybuffer");
+          if (decodeTxtBytes(b).trim()) n++;
+        } else n++;
+      } else {
+        let nz = null;
+        try { nz = await loadZipBuf(await zip.files[p.orig].async("arraybuffer")); }
+        catch (e) { nz = null; }
+        if (nz) n += (await readSubTexts(nz)).length;
+      }
+    }
+    return n;
+  };
+  let wrapperName = "";
+  for (;;) {
     const rootGroups = new Map();
     pairs.forEach(p => {
       const seg = p.rel.split("/")[0];
       if (!rootGroups.has(seg)) rootGroups.set(seg, []);
       rootGroups.get(seg).push(p);
     });
-    if (rootGroups.size > 1) {
-      const infos = [];
-      for (const [seg, members] of rootGroups) {
-        infos.push({ seg, members, isFolder: members.some(p => p.rel.includes("/")) });
-      }
-      /* そのルート項目が実際に生むテキストの数（0ならゴミ扱い） */
-      const textCount = async info => {
-        let n = 0;
-        for (const p of info.members) {
-          if (/\.txt$/i.test(p.rel)) {
-            if (!info.isFolder && info.members.length === 1) {
-              const b = await zip.files[p.orig].async("arraybuffer");
-              if (decodeTxtBytes(b).trim()) n++;
-            } else n++;
-          } else {
-            let nz = null;
-            try { nz = await loadZipBuf(await zip.files[p.orig].async("arraybuffer")); }
-            catch (e) { nz = null; }
-            if (nz) n += (await readSubTexts(nz)).length;
-          }
-        }
-        return n;
-      };
-      const counts = new Map();
-      for (const info of infos) counts.set(info.seg, await textCount(info));
-      const mains = infos.filter(i => i.isFolder && counts.get(i.seg) >= 2);
-      if (mains.length === 1 && infos.every(i => i === mains[0] || counts.get(i.seg) === 0)) {
-        pairs = mains[0].members.slice();
-      }
+    const infos = [];
+    for (const [seg, members] of rootGroups) {
+      infos.push({ seg, members, isFolder: members.some(p => p.rel.includes("/")) });
     }
-  }
-  let wrapperName = "";
-  for (;;) {
-    const segs = new Set(pairs.map(p => p.rel.split("/")[0]));
-    if (segs.size !== 1) break;
-    const seg = [...segs][0];
-    if (!pairs.every(p => p.rel.startsWith(seg + "/"))) break;
-    if (!wrapperName) wrapperName = seg;
-    pairs = pairs.map(p => ({ rel: p.rel.slice(seg.length + 1), orig: p.orig }));
+    let target = null;
+    if (infos.length === 1) {
+      const only = infos[0];
+      if (only.isFolder && only.members.every(p => p.rel.startsWith(only.seg + "/"))) target = only;
+    } else if (infos.length > 1) {
+      const counts = new Map();
+      for (const info of infos) counts.set(info.seg, await rootTextCount(info.members, info.isFolder));
+      const mains = infos.filter(i => i.isFolder && counts.get(i.seg) >= 2);
+      if (mains.length === 1 && infos.every(i => i === mains[0] || counts.get(i.seg) <= 1)) target = mains[0];
+    }
+    if (!target) break;
+    if (!wrapperName) wrapperName = target.seg;
+    const prefix = target.seg + "/";
+    pairs = pairs.map(p => (p.rel.startsWith(prefix) ? { rel: p.rel.slice(prefix.length), orig: p.orig } : p))
+      .filter(p => p.rel);
   }
   const groups = new Map(); /* ルート直下の名前 -> その配下のエントリ（自然順） */
   pairs.forEach(p => {
@@ -3983,22 +4011,25 @@ async function parseZipBook(buf, fileName){
   for (const [seg, members] of groups) {
     const isFolder = members.some(p => p.rel.includes("/"));
     if (!isFolder) {
-      const p = members[0];
-      if (/\.txt$/i.test(p.rel)) {
-        const b = await zip.files[p.orig].async("arraybuffer");
-        /* 話タイトルは「NNN_話タイトル.txt」形式の連番接頭辞を取り除いて取る
-           （フォルダ内ファイルの head と同じ扱い。本棚から書き出したzipを
-           そのまま開き直したときに、話タイトルへ連番が残らないようにする） */
-        const rawTitle = baseName(p.rel).replace(/\.txt$/i, "");
-        const partTitle = rawTitle.replace(/^\d+[_＿\s]+/, "") || rawTitle;
-        parts.push({ title: partTitle, text: decodeTxtBytes(b) });
-      } else {
-        let nz = null;
-        try { nz = await loadZipBuf(await zip.files[p.orig].async("arraybuffer")); }
-        catch (e) { nz = null; }
-        if (!nz) continue;
-        const subTexts = await readSubTexts(nz);
-        if (subTexts.length) parts.push({ title: baseName(p.rel).replace(/\.zip$/i, ""), subTexts });
+      /* 通常は1グループ1ファイル。ラッパーを剥がした結果、同名ファイルが
+         ルート直下で重なった場合も落とさないよう、全メンバーを処理する */
+      for (const p of members) {
+        if (/\.txt$/i.test(p.rel)) {
+          const b = await zip.files[p.orig].async("arraybuffer");
+          /* 話タイトルは「NNN_話タイトル.txt」形式の連番接頭辞を取り除いて取る
+             （フォルダ内ファイルの head と同じ扱い。本棚から書き出したzipを
+             そのまま開き直したときに、話タイトルへ連番が残らないようにする） */
+          const rawTitle = baseName(p.rel).replace(/\.txt$/i, "");
+          const partTitle = rawTitle.replace(/^\d+[_＿\s]+/, "") || rawTitle;
+          parts.push({ title: partTitle, text: decodeTxtBytes(b) });
+        } else {
+          let nz = null;
+          try { nz = await loadZipBuf(await zip.files[p.orig].async("arraybuffer")); }
+          catch (e) { nz = null; }
+          if (!nz) continue;
+          const subTexts = await readSubTexts(nz);
+          if (subTexts.length) parts.push({ title: baseName(p.rel).replace(/\.zip$/i, ""), subTexts });
+        }
       }
       continue;
     }
@@ -5586,7 +5617,7 @@ async function nRunSync(novel, opts){
 }
 /* 作品カードの「全話取得して本棚へ」／レジュームの入口 */
 function nStartDownload(novel){ nRunSync(novel, {}); }
-/* 本棚カードの「更新を確認」：台帳の作品情報で差分チェックとして同期する */
+/* 本棚カードの操作メニューの「更新を確認／続きを取得」：台帳の作品情報で差分チェックとして同期する */
 async function nCheckUpdate(entry){
   if (ndl.downloading) { toast("別の作品を取得中です"); return; }
   const ncodeU = entry.key.slice(6).toUpperCase();
