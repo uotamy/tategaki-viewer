@@ -224,6 +224,12 @@
     opacity: 0; pointer-events: none; transition: opacity .25s ease;
   }
   #scrim.show { opacity: 1; pointer-events: auto; }
+  /* 本の操作シートは本棚（z-index:44）の上から開くため、その間だけ
+     スクリムとシートを本棚より前面へ持ち上げる（通常のシートは読書画面の
+     上に出るので従来の 30/31 のままでよい）。これを忘れるとシートが
+     本棚の裏で開いて「ボタンを押しても反応がない」状態になる */
+  #scrim.book { z-index: 47; }
+  #bookSheet { z-index: 48; }
   .sheet {
     position: fixed; left: 0; right: 0; bottom: 0; z-index: 31; margin: 0 auto; max-width: 620px;
     max-height: 80dvh; overflow-y: auto; overscroll-behavior: contain;
@@ -2405,11 +2411,14 @@ function openSheetUI(sel){
   clearTimeout(uiHideTimer);
   closeSheetsUI(true);
   $(sel).classList.add("open");
-  $("#scrim").classList.add("show");
+  const scrim = $("#scrim");
+  scrim.classList.add("show");
+  /* 本の操作シートのときだけ、スクリムを本棚より前面へ持ち上げる */
+  scrim.classList.toggle("book", sel === "#bookSheet");
 }
 function closeSheetsUI(keepScrim){
   sheets.forEach(s => $(s).classList.remove("open"));
-  if (!keepScrim) $("#scrim").classList.remove("show");
+  if (!keepScrim) $("#scrim").classList.remove("show", "book");
 }
 /* シートを開く操作は履歴にも積む：端末の戻るボタンで、まずシートが閉じる */
 function openSheet(sel){
