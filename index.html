@@ -148,11 +148,6 @@
   .page.manga {
     align-items: center; justify-content: center; padding: 0; overflow: hidden;
   }
-  .page.manga .manga-ph {
-    position: absolute; inset: 0;
-    font-size: 12.5px; color: var(--sub); letter-spacing: .08em;
-    display: flex; align-items: center; justify-content: center;
-  }
   .page.manga img {
     display: block; width: 100%; height: 100%; object-fit: contain;
   }
@@ -1721,6 +1716,11 @@ function fillTierProbe(paras, pos, prefix){
 let mangaState = null; /* {key, zip, entries:[{name, entry}]} */
 const mangaURLCache = new Map(); /* 画像index -> objectURL（LRU） */
 const mangaPending = new Map();  /* 画像index -> Promise<objectURL> */
+/* 画像index -> {w,h}：先読みでデコードして確定させた実寸。
+   ページ送りの前に隣接ページの実寸が分かっていると、見開きの
+   中央寄せを送り開始前に計算でき、送った後に画像がずれない */
+const mangaDims = new Map();
+const mangaDecoding = new Map(); /* 画像index -> Promise（デコード中） */
 const MANGA_IMG_RE = /\.(jpe?g|png|webp|gif|bmp|avif|jfif)$/i;
 function mimeForImageName(name){
   const ext = name.split(".").pop().toLowerCase();
@@ -1765,6 +1765,8 @@ function clearMangaState(){
   mangaURLCache.forEach(url => { try { URL.revokeObjectURL(url); } catch (e) { /* noop */ } });
   mangaURLCache.clear();
   mangaPending.clear();
+  mangaDims.clear();
+  mangaDecoding.clear();
   mangaState = null;
 }
 function setMangaState(state, key){
@@ -1800,6 +1802,37 @@ function getMangaURL(idx){
   mangaPending.set(idx, p);
   return p;
 }
+/* オブジェクトURLが用意済みなら同期で返す。ページ要素の構築時に
+   その場で src を差せるため、再構築のたびに起きていた一瞬の空白が消える */
+function peekMangaURL(idx){
+  return mangaURLCache.get(idx) || null;
+}
+/* 画像を画面外で読み込んでデコードし、実寸を mangaDims に確定させる。
+   先読みの段階でここまで済ませておくのが「送った後に画像が動かない」
+   ための要：寸法が未確定のまま表示すると、読み込み完了のタイミングで
+   中央寄せの再計算が走り、絵が横にずれて見える（ちらつきの主因だった） */
+function decodeMangaImage(idx){
+  if (!mangaState || !mangaState.entries[idx]) return;
+  if (mangaDims.has(idx) || mangaDecoding.has(idx)) return;
+  const st = mangaState;
+  const p = (async () => {
+    try {
+      const url = await getMangaURL(idx);
+      if (!url || mangaState !== st) return;
+      const im = new Image();
+      im.src = url;
+      if (im.decode) { try { await im.decode(); } catch (e) { /* 実寸だけ取れればよい */ } }
+      if (!im.naturalWidth && !im.complete) {
+        await new Promise(res => { im.onload = res; im.onerror = res; });
+      }
+      if (im.naturalWidth && mangaState === st)
+        mangaDims.set(idx, { w: im.naturalWidth, h: im.naturalHeight });
+    } catch (e) { /* 先読みの失敗は表示側の通常読み込みに任せる */ }
+  })();
+  mangaDecoding.set(idx, p);
+  const done = () => mangaDecoding.delete(idx);
+  p.then(done, done);
+}
 async function loadMangaImageInto(idx, imgEl){
   const url = await getMangaURL(idx);
   if (url && imgEl.isConnected) imgEl.src = url;
@@ -1807,8 +1840,16 @@ async function loadMangaImageInto(idx, imgEl){
 }
 function prefetchMangaAround(center){
   if (!mangaState) return;
-  [center + ppv, center + ppv * 2, center - ppv].forEach(i => {
-    if (i >= 0 && i < mangaState.entries.length) getMangaURL(i);
+  /* 次・前の見開きは組の2枚とも、もう1組先まで先読みしてデコードまで
+     済ませ、実寸を確定させておく（URLだけ先に作っても、デコードと
+     実寸の確定が表示タイミングに残ると送りの後に絵が動くため） */
+  const idxs = [];
+  [center + ppv, center - ppv, center + ppv * 2].forEach(b => {
+    idxs.push(b);
+    if (ppv > 1) idxs.push(b + 1);
+  });
+  idxs.forEach(i => {
+    if (i >= 0 && i < mangaState.entries.length) decodeMangaImage(i);
   });
 }
 /* zip目録から、実ファイルだけの名前一覧を返す（解凍はしない） */
@@ -1952,7 +1993,7 @@ function paginate(epIdx){
     /* 大きな挿絵は、本文の段組みから外して全面表示の専用ページにする */
     if (pos.off === 0 && isFullIllus(ep.paragraphs[pos.pi])) {
       const fp = ep.paragraphs[pos.pi];
-      pages.push({ tiers: [], start: { pi: pos.pi, off: 0 }, fullImg: { src: fp.src, name: fp.img } });
+      pages.push({ tiers: [], start: { pi: pos.pi, off: 0 }, fullImg: { src: fp.src, name: fp.img, iw: fp.imgW || 0, ih: fp.imgH || 0 } });
       pos = { pi: pos.pi + 1, off: 0 };
       first = false;
       continue;
@@ -2084,7 +2125,10 @@ function buildPageEl(pageData){
     return el;
   }
   /* 漫画ページ：画像を全面に1枚だけ置く。実データは表示のこのタイミングで
-     エントリ単位に解凍して差し込む（先読みぶんはキャッシュに乗る） */
+     エントリ単位に解凍して差し込む（先読みぶんはキャッシュに乗る）。
+     読み込み中は無言で待つ：以前は「Nページ目を読み込み中…」という
+     プレースホルダ文をページ中央に出していたが、縦画面では画面中央に
+     文字が浮いて見えて煩わしいため廃止した（紙の背景のまま黙って待つ） */
   if (pageData.manga !== undefined && pageData.manga !== null) {
     el.classList.add("manga");
     el.dataset.imgpage = "1";
@@ -2092,13 +2136,22 @@ function buildPageEl(pageData){
     img.alt = mangaState && mangaState.entries[pageData.manga]
       ? mangaState.entries[pageData.manga].name.split("/").pop() : "漫画のページ";
     img.draggable = false;
-    const ph = document.createElement("div");
-    ph.className = "manga-ph";
-    ph.textContent = (pageData.manga + 1) + "ページ目を読み込み中…";
-    img.addEventListener("load", () => { ph.remove(); applyImgCenter(el); });
-    el.appendChild(ph);
+    /* 先読みで実寸が確定していれば要素へ刻んでおく。中央寄せは
+       ページ構築の時点（ページ送りが始まる前）にこの寸法で計算され、
+       読み込み完了後に位置が決まることはない */
+    const dim = mangaDims.get(pageData.manga);
+    if (dim) { el.dataset.iw = String(dim.w); el.dataset.ih = String(dim.h); }
+    img.addEventListener("load", () => {
+      if (img.naturalWidth)
+        mangaDims.set(pageData.manga, { w: img.naturalWidth, h: img.naturalHeight });
+      applyImgCenter(el);
+    });
     el.appendChild(img);
-    loadMangaImageInto(pageData.manga, img);
+    /* オブジェクトURLが用意済みなら同期で差す。非同期に差すと
+       renderWindow の再構築のたびに一瞬空白になってちらつく */
+    const readyUrl = peekMangaURL(pageData.manga);
+    if (readyUrl) img.src = readyUrl;
+    else loadMangaImageInto(pageData.manga, img);
     return el;
   }
   /* 全面表示の挿絵ページ：段組みを持たず、画像をページ全体にフィットさせる */
@@ -2108,6 +2161,12 @@ function buildPageEl(pageData){
     const img = document.createElement("img");
     img.alt = "挿絵" + (pageData.fullImg.name ? "（" + pageData.fullImg.name + "）" : "");
     img.draggable = false;
+    /* 実寸が分かっていれば漫画ページと同様に要素へ刻み、中央寄せを
+       構築時点で確定させる（読み込み完了後にずれないように） */
+    if (pageData.fullImg.iw && pageData.fullImg.ih) {
+      el.dataset.iw = String(pageData.fullImg.iw);
+      el.dataset.ih = String(pageData.fullImg.ih);
+    }
     img.addEventListener("load", () => applyImgCenter(el));
     img.src = pageData.fullImg.src;
     if (img.complete && img.naturalWidth) applyImgCenter(el);
@@ -2180,15 +2239,26 @@ function trackOffset(){ return (S.page - winStart) * panelW(); }
    半余白ぶんずらす。2枚は綴じ目で接し、組全体が中央に来る（左右の余白が
    均等になる）。画像の縦横比やページ内での扱いは従来どおりで、ずらすのは
    組としての配置だけ。単独の画像ページ・テキストページは動かさない */
+/* 画像の実寸を取る：表示中の画像そのものの実寸を優先し、まだ読み込みが
+   済んでいなければ、先読み（デコード）や組版時点で要素へ刻まれた寸法を使う。
+   寸法の出所が変わっても同じ寸法が返るため、中央寄せの結果は
+   ページ構築時点から読み込み完了後まで変わらない */
+function imgDimsOf(pageEl, img){
+  if (img && img.naturalWidth && img.naturalHeight)
+    return { w: img.naturalWidth, h: img.naturalHeight };
+  const w = Number(pageEl.dataset.iw || 0), h = Number(pageEl.dataset.ih || 0);
+  return w > 0 && h > 0 ? { w, h } : null;
+}
 function applyImgCenter(pageEl){
   const img = pageEl.querySelector("img");
   if (!img) return;
-  if (pageEl.dataset.spreadpair !== "1" || !img.naturalWidth || !img.naturalHeight) {
+  const dims = imgDimsOf(pageEl, img);
+  if (pageEl.dataset.spreadpair !== "1" || !dims) {
     img.style.transform = "";
     return;
   }
   const pw = panelW(), ph = stage.clientHeight;
-  const dispW = Math.min(pw, ph * img.naturalWidth / img.naturalHeight);
+  const dispW = Math.min(pw, ph * dims.w / dims.h);
   const half = Math.max(0, (pw - dispW) / 2);
   if (half < 0.5) { img.style.transform = ""; return; }
   /* gpos=0 が右ページ（先に読む側）、gpos=1 が左ページ。綴じ目は
@@ -2398,7 +2468,8 @@ function slideGroupTo(dir, tgt){
    - 次へ：左ページ（最後に読んだページ）が右ページ側へ倒れ込む
    - 前へ：右ページが左ページ側へ倒れ戻る（逆動作）
    見開きで片側だけの組（最終ページ単独など）では、その1枚を綴じ目軸で
-   反対側へ倒す。1ページ表示では葉の中央を軸に同じ作りでめくる */
+   反対側へ倒す。1ページ表示では綴じ目が無いので、ページ自身の端
+   （次へ＝右端、戻る＝左端）を軸にして同じ作りでめくる */
 function overlayGroup(dir, tgt, flip){
   const tgtPages = paginate(tgt.ep);
   const curIdx = S.page - winStart;
@@ -2421,16 +2492,20 @@ function overlayGroup(dir, tgt, flip){
       frontEl = curRightEl; backEl = tgtEls[tgtEls.length - 1]; backIdx = tgtEls.length - 1;
       leafLeft = pw; origin = "left center"; toDeg = -180;
     } else {
+      /* 1ページ表示：綴じ目に相当するページ自身の端（右端）を軸にめくる。
+         以前はページ中央を軸にしていたため、面がその場で回る
+         「パネル回転」のような動きになっていた */
       frontEl = curRightEl; backEl = tgtEls[0]; backIdx = 0;
-      leafLeft = 0; origin = "center"; toDeg = 180;
+      leafLeft = 0; origin = "right center"; toDeg = 180;
     }
   } else {
     if (ppv > 1) {
       frontEl = curRightEl; backEl = tgtEls[tgtEls.length - 1]; backIdx = tgtEls.length - 1;
       leafLeft = pw; origin = "left center"; toDeg = -180;
     } else {
+      /* 1ページ表示の戻り：次へのめくりと対になるよう、左端を軸にめくり戻す */
       frontEl = curRightEl; backEl = tgtEls[0]; backIdx = 0;
-      leafLeft = 0; origin = "center"; toDeg = -180;
+      leafLeft = 0; origin = "left center"; toDeg = -180;
     }
   }
   if (!frontEl || !backEl) { S.ep = tgt.ep; S.page = tgt.page; renderWindow(); return; }
@@ -2450,15 +2525,9 @@ function overlayGroup(dir, tgt, flip){
   leaf.style.transform = "rotateY(0deg)";
   const faceF = document.createElement("div");
   faceF.className = "face front";
+  /* 複製は表示中の要素そのまま（src・中央寄せとも確定済み）なので、
+     葉の表は最初から完成した絵で現れる */
   const frontClone = frontEl.cloneNode(true);
-  /* 複製側には読み込み完了リスナが付かないため、漫画ページの
-     「読み込み中」表示が残っていたら複製側でも消せるようにする */
-  const cImg = frontClone.querySelector("img");
-  const cPh = frontClone.querySelector(".manga-ph");
-  if (cImg && cPh) {
-    if (cImg.complete && cImg.naturalWidth) cPh.remove();
-    else cImg.addEventListener("load", () => cPh.remove(), { once: true });
-  }
   faceF.appendChild(frontClone);
   const faceB = document.createElement("div");
   faceB.className = "face back";
