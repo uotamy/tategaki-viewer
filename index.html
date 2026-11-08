@@ -1108,7 +1108,7 @@ const FS_LABELS = ["小", "やや小", "標準", "やや大", "大"];
 const LH_STEPS = [1.7, 1.9, 2.15];
 
 const S = {
-  work: { title:"", note:"", key:"guide" },
+  work: { title:"", note:"", key:null },
   episodes: [], ep: 0, page: 0,
   font: "device", fsIdx: 2, lhIdx: 1, marginIdx: 1, mode: "double", turnStyle: "slide",
   pageDir: "rtl",           // 下部バーの進行方向: "rtl"=右から左（本の進行） / "ltr"=左から右（標準）
@@ -4398,14 +4398,23 @@ function buildShelf(){
     }
   });
   if (shelfRepaired) persist();
-  /* 履歴なので、最後に開いた順に並べ替える（フォルダ内を走査はしない） */
-  S.library.sort((a, b) => (b.lastRead || 0) - (a.lastRead || 0));
+  /* 履歴なので、最後に開いた順に並べ替える（フォルダ内を走査はしない）。
+     ただし「使い方」（組み込みガイド）は lastRead の並びから外し、常に
+     実本より後ろ（末尾側）に置く。ガイドは案内であって読書履歴ではなく、
+     ensureGuideEntry の初期値（lastRead: 0＝最下位）の設計どおりにする */
+  S.library.sort((a, b) => {
+    const ag = a.kind === "guide" || a.key === "guide";
+    const bg = b.kind === "guide" || b.key === "guide";
+    if (ag !== bg) return ag ? 1 : -1;
+    if (ag && bg) return 0;
+    return (b.lastRead || 0) - (a.lastRead || 0);
+  });
   /* 読書中の本は常に先頭に固定し、そのカードにだけ赤枠（.current）を付ける。
      先頭固定と赤枠は必ず同じ1冊を指すこと。対象は「いま開いている本」、
      起動直後でまだ本文を読み込んでいない間は「再開対象の本（pendingRestore）」。
-     起動時は裏で「使い方」を仮表示しているため、S.work.key（＝guide）を
-     そのまま赤枠の判定に使うと、先頭の本と赤枠の本が食い違ってしまう。
-     そのカードを開く操作が、そのまま従来の「読書に戻る」＝遅延復元になる */
+     起動時はどの本も読み込んでいない（S.work.key = null）ため、起動直後の
+     先頭固定・赤枠は pendingRestore 側で決まる。そのカードを開く操作が、
+     そのまま従来の「読書に戻る」＝遅延復元になる */
   const pinKey = pendingRestore ? pendingRestore.key
     : (S.work && S.work.key ? S.work.key : null);
   if (pinKey) {
@@ -4552,8 +4561,9 @@ document.addEventListener("fullscreenchange", () => {
    残るので、次に本棚から開くときは従来の開く処理（openFromShelf）が
    保存位置から再開する。閉じた本のキーは S.lastKey に残し、次回起動時の
    再開対象（pendingRestore）の判定が従来どおり働くようにする。
-   起動直後の仮表示（使い方）を閉じる場合は pendingRestore を消さない
-   （再開対象の本はまだ本文を読み込んでいない＝閉じた状態と同じため） */
+   使い方を閉じる場合は lastKey を上書きしない（組み込みガイドは再開対象に
+   しないため）。起動直後はどの本も開いていないので、この関数が空状態の
+   まま呼ばれることもある（その場合は何もしない） */
 function closeCurrentBook(){
   /* 本棚へ戻る＝こちらから入った全画面はここで抜け、次に本を開くときに
      再び入れるようラッチも解除する。開いている本が無い場合でも先に行う */
@@ -8273,7 +8283,14 @@ ensureGuideEntry();
   requestPersistence();
   const lastEntry = S.lastKey ? S.library.find(x => x.key === S.lastKey) : null;
   if (lastEntry && lastEntry.kind !== "guide") pendingRestore = lastEntry;
-  setBook(GUIDE_WORK, makeEpisodesFromGuide(), "guide");
+  /* 起動時はどの本も読み込まない。本を閉じた状態（closeCurrentBook の後と
+     同じ空状態：S.work.key = null、本文なし）で始め、そのまま本棚を出す。
+     以前は「使い方」を仮表示として読み込んでいたが、その読み込みが通常の
+     読書として記録され（registerBook／afterNav が lastRead を更新し、
+     本棚の先頭へ移動させる）、開いてもいない使い方が起動のたびに本棚の
+     上位へ来てしまっていた。仮表示自体を無くせば記録も発生しない。
+     使い方は本棚のエントリとして常駐し、タップされたときに openFromShelf が
+     通常どおり読み込む（読書位置の復元もそちらで従来どおり働く） */
   /* 起動直後の履歴エントリを本棚として確定させる（読書エントリは本を開くたびに積む） */
   /* 入口パラメータ（?view=narou または #narou）がある場合はなろう画面を
      初期表示にし、無い場合は従来どおり本棚を初期表示にする。
