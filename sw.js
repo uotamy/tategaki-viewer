@@ -20,16 +20,13 @@
      ルート直下に置けばそのままルートスコープ版としても動く（パスは scope から算出する）。
    ========================================================= */
 
-var VERSION = "v5";
+var VERSION = "v6";
 var SHELL_CACHE = "tategaki-shell-" + VERSION;
 var RUNTIME_CACHE = "tategaki-runtime-" + VERSION;
 
 /* SW自身のURL（.../assets/sw.js）から見たアプリのルートと、アプリ本体のURL群 */
 var APP_ROOT = new URL("../", self.registration.scope).href;
 var INDEX_URL = APP_ROOT + "index.html";
-/* IPA明朝フォント（ipaexm.woff2・約3.7MB）は起動用キャッシュに入れない。
-   設定から任意でダウンロードされたときに実行時キャッシュ（SWR）へ入り、
-   以後はそこから返る */
 var SHELL_URLS = [
   APP_ROOT,
   INDEX_URL,
