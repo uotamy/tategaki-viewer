@@ -346,8 +346,10 @@
     overflow-y: auto; overscroll-behavior: contain;
     display: none;
   }
-  #shelf.show { display: block; animation: shelfIn .25s ease; }
-  @keyframes shelfIn { from { opacity: 0; } to { opacity: 1; } }
+  /* 全画面の表示切替にフェードインは付けない。opacity 0 から立ち上がる間、
+     下に常駐する読書ステージ（最後に開いていたページ）が透けてちらつくため、
+     遷移は不透明な即時切替にする（本棚・なろう・本追加・青空文庫で共通） */
+  #shelf.show { display: block; }
   .shelf-inner {
     max-width: 720px; margin: 0 auto;
     padding: calc(env(safe-area-inset-top, 0px) + 22px) 18px calc(env(safe-area-inset-bottom, 0px) + 30px);
@@ -415,7 +417,7 @@
     position: fixed; inset: 0; z-index: 45; background: var(--outer);
     overflow-y: auto; overscroll-behavior: contain; display: none;
   }
-  #narou.show { display: block; animation: shelfIn .25s ease; }
+  #narou.show { display: block; }
   .narou-inner {
     max-width: 720px; margin: 0 auto;
     padding: calc(env(safe-area-inset-top, 0px) + 18px) 16px calc(env(safe-area-inset-bottom, 0px) + 40px);
@@ -512,7 +514,7 @@
     position: fixed; inset: 0; z-index: 45; background: var(--outer);
     overflow-y: auto; overscroll-behavior: contain; display: none;
   }
-  #addbook.show, #aozora.show { display: block; animation: shelfIn .25s ease; }
+  #addbook.show, #aozora.show { display: block; }
   .addlist { display: flex; flex-direction: column; gap: 10px; margin-top: 16px; }
   .additem {
     text-align: left; background: var(--sheet); border: 1px solid var(--line); border-radius: 14px;
@@ -3862,7 +3864,10 @@ function showShelf(){
     histLive.narou = false;
     histLive.add = false;
     histLive.aozora = false;
-    try { for (let i = 0; i < backs; i++) history.back(); } catch (e) { /* noop */ }
+    /* 履歴は1回のジャンプでまとめて畳む。back() を繰り返すと中間の
+       エントリ（読書・シート・サブ画面）ごとに popstate が発火し、そのつど
+       中間の画面が描画されて、最後に開いていたページが一瞬ちらつくため */
+    if (backs > 0) { try { history.go(-backs); } catch (e) { /* noop */ } }
   } else histView = "shelf";
 }
 /* 本棚を閉じて読書へ戻る。履歴に読書エントリを積み、次に端末の戻るボタンを
