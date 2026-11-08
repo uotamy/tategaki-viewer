@@ -973,7 +973,7 @@ const GUIDE_EPISODES = [
       "この文章は、ビューワーの使い方そのものです。サンプル小説の代わりに入っています。まずはこのまま読み進めながら、ページ送りやメニューの操作を試してみてください。",
       "読めるファイルは、テキストファイル（.txt）、Markdown（.md）、EPUB（.epub）、青空文庫の配布形式（.zip）、漫画アーカイブの .cbz／.rar／.cbr です。.cbz は .zip と中身が同じ形式、.rar／.cbr は RAR 形式のアーカイブで、どちらも .zip と同じ扱いで開けます。Shift_JISのテキストや、青空文庫形式のルビ記法、EPUB内のルビにも対応しています。青空文庫の注記（改ページ・改段・見出し・傍点など）も処理され、.zipに画像が同梱されていれば挿絵も表示されます。挿絵は画像の大きさで自動的に切り替わり、本文に収まる小さい画像は本文の流れの中に、大きな画像（口絵など）は改ページして1ページ全面に表示されます。",
       "テキストファイルが複数入った.zipも開けます。その場合は1冊に連結して扱い、「話」の区切りはzipのルート直下で決まります。ルート直下にフォルダがある場合はフォルダごとに1話になり、フォルダ内のファイルはその話の中でファイル名の順に連結されます（「次の話／前の話」ではフォルダの先頭へ移動します）。フォルダに入っていないファイルは1ファイルで1話、zipの中にzipがある場合はそのzip全体で1話になり、1階層まで開いて連結します。フォルダしか入っていないフォルダは包みのまま1話にはせず、内側のフォルダやファイルがそのまま話の単位になります（ルート直下かどうかは問いません）。ルートに本体フォルダ（複数のテキストを持つ唯一のフォルダ）がある場合は、そのフォルダの中身がルートとして扱われます。横に説明テキストなどの小さなファイルが入っていても本体フォルダは剥がされ、同居したファイルは独立した話として残ります（フォルダが入れ子に続く場合も同様で、書名には一番外側のフォルダ名が使われます）。",
-      "画像だけが入った.zip／.cbz（漫画のアーカイブ）も開けます。その場合は「画像の本」として扱われ、画像1枚が1ページになり、ファイル名の数値順（1、2、…、10の順）に並びます。フォルダ構成がある場合はテキストのzipと同じ考え方で話が分かれます：フォルダは配下の画像をまとめて1話、フォルダしか入っていないフォルダは内側の単位で分かれ、バラの画像はその階層で1話にまとまります。ルートがフォルダ1つだけの場合は、そのフォルダ名が書名になります。ページ送りの方向や方式は小説と同じで、本棚・進み具合・しおりもそのまま使えます。画像はページを表示するタイミングで1枚ずつ読み出されるので、大きなzipでもまとめて展開はしません。",
+      "画像だけが入った.zip／.cbz（漫画のアーカイブ）も開けます。その場合は「画像の本」として扱われ、画像1枚が1ページになり、ファイル名の数値順（1、2、…、10の順）に並びます。フォルダ構成がある場合はテキストのzipと同じ考え方で話が分かれます：フォルダは配下の画像をまとめて1話、フォルダしか入っていないフォルダは内側の単位で分かれ、バラの画像はその階層で1話にまとまります。ルートがフォルダ1つだけの場合は、そのフォルダ名が書名になります。ページ送りの方向や方式は小説と同じで、本棚・進み具合・しおりもそのまま使えます。.zip／.cbzは、取り込むときもファイル全体ではなく末尾にある目録だけを読み、画像はページを表示するタイミングで1枚ずつ読み出されるので、大きなzipでもまとめて展開はしません。メモリの少ない端末でも、大きな漫画zipを取り込めます（.rar／.cbrは従来どおりアーカイブ全体を読みます）。",
       "画像が入った .rar／.cbr も、漫画のアーカイブとしてまったく同じ扱いで開けます（テキストが入った .rar は、テキストの本としても開けます）。RAR／CBR を開くときだけ、展開用の部品（ライブラリとWASM）をその時点で読み込むため、初回だけ少し時間がかかります。なお、暗号化（パスワード付き）されたRAR／CBRと、分割されたRAR（マルチボリューム）は開けません。",
       "なお、Kindle本のようなDRM（コピー防止）付きの本は開けません。対象は、自分の原稿や青空文庫など、DRMのないファイルです。"
     ]
@@ -2034,9 +2034,12 @@ function buildMangaFromZip(zip, fileName){
   return { title, episodes, mangaState: { zip, entries } };
 }
 async function parseMangaArchive(buf, fileName){
-  /* zip／cbz は目録だけ読み、画像は解凍しない。rar／cbr は loadArchiveBuf が
-     中身の署名で判別し、RAR用の目録オブジェクト（同じ files 形式）を返す */
-  const zip = await loadArchiveBuf(buf, fileName);
+  /* zip／cbz は目録だけ読み、画像は解凍しない。原本が Blob のときは
+     loadArchiveCatalog が末尾の目録だけを切り出す方式を優先するので、
+     本棚から開き直すときもアーカイブ全体をメモリへ載せない。
+     rar／cbr は loadArchiveBuf が中身の署名で判別し、RAR用の目録
+     オブジェクト（同じ files 形式）を返す（RARは従来方式のまま） */
+  const zip = await loadArchiveCatalog(buf, fileName);
   return buildMangaFromZip(zip, fileName);
 }
 
@@ -3574,8 +3577,9 @@ async function probeArchiveSwitch(entry){
     if (!isArchiveFileName(entry.fileName)) return null;
     const arch = await loadBookArchive(entry.key);
     if (!arch) { setArchiveFlags(entry.key, { hasArchive: false }); return null; }
-    const buf = (typeof Blob !== "undefined" && arch instanceof Blob) ? await arch.arrayBuffer() : arch;
-    const zipObj = await loadArchiveBuf(buf, entry.fileName || "");
+    /* 目録確認だけなので、zip は末尾の目録だけを切り出す方式で開く
+       （大きな漫画zipでも全体をメモリへ載せない。RARは従来方式） */
+    const zipObj = await loadArchiveCatalog(arch, entry.fileName || "");
     try {
       const names = zipEntryNames(zipObj);
       const hasTxt = names.some(n => /\.txt$/i.test(n));
@@ -3610,8 +3614,13 @@ async function switchBookMode(entry, toManga){
     const isRarName = /\.(rar|cbr)$/i.test(fileName);
     const arch = await loadBookArchive(key);
     if (!arch) { toast("エラー：『" + entry.title + "』の元のファイルが端末に保持されていないため、切り替えできません", 3600); return; }
-    const buf = (typeof Blob !== "undefined" && arch instanceof Blob) ? await arch.arrayBuffer() : arch;
-    const zipObj = await loadArchiveBuf(buf, fileName);
+    /* zip は末尾の目録だけを切り出す方式で開く（漫画化ではその目録が
+       そのまま読書中の遅延読み出しに使われ、小説化では parseZipBook が
+       必要なテキスト・挿絵の断片だけを切り出す。RARは従来方式）。
+       parseZipBook へ渡す buf は preopened があるとき使われないため、
+       ここでは原本 Blob をそのまま渡しておく */
+    const buf = arch;
+    const zipObj = await loadArchiveCatalog(arch, fileName);
     switchZipObj = zipObj;
     const names = zipEntryNames(zipObj);
     const hasTxt = names.some(n => /\.txt$/i.test(n));
@@ -4712,6 +4721,220 @@ function isValidUtf8(bytes){
   try { new TextDecoder("utf-8", { fatal: true }).decode(bytes); return true; }
   catch (e) { return false; }
 }
+/* ---------------- zip（Blob）の「必要な分だけ」読み出し ----------------
+   従来の取り込みは、目録を見るためだけに file.arrayBuffer() でアーカイブ
+   全体をメモリへ載せ、さらに JSZip.loadAsync がその複製を保持していた。
+   1.4GB級の漫画zipでは、メモリの少ない端末だとこの入口で上限に当たって
+   「このファイルは読み込めません」になっていた（読書中の1枚ずつ読み出し
+   は効いていても、入口が丸ごと方式だったため）。
+   ここでは原本の Blob を丸ごと読み込まずに：
+   - 末尾の断片（最大64KB強）だけを slice で読んで EOCD（ZIP64含む）を探し、
+     セントラルディレクトリの断片だけを slice で読んで目録を作る
+   - 各エントリの実データは、async() が呼ばれたときに、そのエントリの
+     圧縮データの断片だけを slice で切り出し、無圧縮（stored）はそのまま、
+     Deflate は DecompressionStream("deflate-raw") で伸長する
+   という読み方をする。返す目録オブジェクトは JSZip と同じ形
+   （files: { 名前: { dir, async(type) } }）なので、漫画の組み立て
+   （buildMangaFromZip）もテキストzipの解析（parseZipBook）も、従来の
+   経路のまま使える。原本 Blob 自体は端末内データベースへそのまま保存
+   される（Blob はディスク backed で、保持してもメモリは食わない）。
+   対応できない形（暗号化・未対応の圧縮方式・マルチディスク・同名
+   エントリの重複・DecompressionStream が無い環境で Deflate を含む等）
+   では null を返し、呼び出し側は従来の丸ごと読み込みへフォールバック
+   する。小さいファイルでは結果は従来と同一で、ピークメモリだけが下がる */
+function readU64LE(dv, off){
+  if (typeof dv.getBigUint64 === "function") {
+    const v = dv.getBigUint64(off, true);
+    return v <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(v) : NaN;
+  }
+  return dv.getUint32(off, true) + dv.getUint32(off + 4, true) * 4294967296;
+}
+async function openLazyZip(blob, fileName){
+  try {
+    if (!blob || typeof blob.slice !== "function" || typeof blob.size !== "number") return null;
+    if (blob.size < 22) return null;
+    /* 先頭の署名で zip かどうかだけを確かめる（4バイトだけ読む）。
+       .cbz の中身も zip。RAR 等はここで弾いて従来経路へ回す */
+    const head = new Uint8Array(await blob.slice(0, 4).arrayBuffer());
+    if (!(head.length >= 4 && head[0] === 0x50 && head[1] === 0x4b
+        && head[2] === 0x03 && head[3] === 0x04)) return null;
+    /* 末尾の断片だけを読んで EOCD を後ろから探す */
+    const tailSize = Math.min(blob.size, 65557);
+    const tailOff = blob.size - tailSize;
+    const tail = new Uint8Array(await blob.slice(tailOff, blob.size).arrayBuffer());
+    const tdv = new DataView(tail.buffer, tail.byteOffset, tail.byteLength);
+    let eocd = -1;
+    for (let i = tail.length - 22; i >= 0; i--) {
+      if (tdv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+    }
+    if (eocd < 0) return null;
+    let totalEntries = tdv.getUint16(eocd + 10, true);
+    let cdSize = tdv.getUint32(eocd + 12, true);
+    let cdOffset = tdv.getUint32(eocd + 16, true);
+    const diskNo = tdv.getUint16(eocd + 4, true);
+    const cdDiskNo = tdv.getUint16(eocd + 6, true);
+    if (diskNo !== 0 || cdDiskNo !== 0) return null; /* マルチディスクは対象外 */
+    if (totalEntries === 0xffff || cdSize === 0xffffffff || cdOffset === 0xffffffff) {
+      /* ZIP64：EOCD の直前にあるロケータから ZIP64 EOCD 本体を引く */
+      const locOff = eocd - 20;
+      if (locOff < 0 || tdv.getUint32(locOff, true) !== 0x07064b50) return null;
+      const z64Off = readU64LE(tdv, locOff + 8);
+      if (!isFinite(z64Off) || z64Off < 0 || z64Off + 56 > blob.size) return null;
+      const z64 = new Uint8Array(await blob.slice(z64Off, z64Off + 56).arrayBuffer());
+      if (z64.length < 56) return null;
+      const zdv = new DataView(z64.buffer, z64.byteOffset, z64.byteLength);
+      if (zdv.getUint32(0, true) !== 0x06064b50) return null;
+      totalEntries = readU64LE(zdv, 32);
+      cdSize = readU64LE(zdv, 40);
+      cdOffset = readU64LE(zdv, 48);
+      if (!isFinite(totalEntries) || !isFinite(cdSize) || !isFinite(cdOffset)) return null;
+    }
+    if (!totalEntries || cdSize <= 0 || cdOffset < 0 || cdOffset + cdSize > blob.size) return null;
+    /* セントラルディレクトリ自体が巨大なもの（エントリ数が桁違い）は
+       従来経路へ回す。通常の漫画zipなら数百KB〜数MBに収まる */
+    if (cdSize > 64 * 1024 * 1024) return null;
+    const cd = new Uint8Array(await blob.slice(cdOffset, cdOffset + cdSize).arrayBuffer());
+    const cdv = new DataView(cd.buffer, cd.byteOffset, cd.byteLength);
+    const metas = [];
+    let off = 0;
+    while (off + 46 <= cd.length && cdv.getUint32(off, true) === 0x02014b50) {
+      const flags = cdv.getUint16(off + 8, true);
+      const method = cdv.getUint16(off + 10, true);
+      let compSize = cdv.getUint32(off + 20, true);
+      let uncompSize = cdv.getUint32(off + 24, true);
+      const nlen = cdv.getUint16(off + 28, true);
+      const elen = cdv.getUint16(off + 30, true);
+      const clen = cdv.getUint16(off + 32, true);
+      const diskStart = cdv.getUint16(off + 34, true);
+      let localOffset = cdv.getUint32(off + 42, true);
+      if (diskStart !== 0) return null;
+      const nameBytes = cd.subarray(off + 46, off + 46 + nlen);
+      /* ZIP64 拡張フィールド（ID 0x0001）：番兵値の項目だけが順に並ぶ */
+      const exStart = off + 46 + nlen, exEnd = exStart + elen;
+      let p = exStart;
+      while (p + 4 <= exEnd && p + 4 <= cd.length) {
+        const id = cdv.getUint16(p, true), len = cdv.getUint16(p + 2, true);
+        if (id === 0x0001) {
+          let q = p + 4;
+          const qEnd = Math.min(q + len, cd.length);
+          if (uncompSize === 0xffffffff) { if (q + 8 > qEnd) return null; uncompSize = readU64LE(cdv, q); q += 8; }
+          if (compSize === 0xffffffff) { if (q + 8 > qEnd) return null; compSize = readU64LE(cdv, q); q += 8; }
+          if (localOffset === 0xffffffff) { if (q + 8 > qEnd) return null; localOffset = readU64LE(cdv, q); q += 8; }
+          if (!isFinite(uncompSize) || !isFinite(compSize) || !isFinite(localOffset)) return null;
+        }
+        p += 4 + len;
+      }
+      const name = decodeZipEntryName(nameBytes, flags);
+      metas.push({ name, flags, method, compSize, uncompSize, localOffset,
+                   dir: name.endsWith("/") });
+      off = exEnd + clen;
+    }
+    if (!metas.length || metas.length !== totalEntries) return null;
+    /* 対応可否：暗号化・未対応の圧縮方式・同名重複は従来経路へ */
+    if (metas.some(m => (m.flags & 0x0001))) return null;
+    if (metas.some(m => !m.dir && m.method !== 0 && m.method !== 8)) return null;
+    if (metas.some(m => !m.dir && m.method === 8)
+        && typeof DecompressionStream === "undefined") return null;
+    const namesAll = metas.map(m => m.name);
+    if (new Set(namesAll).size !== namesAll.length) return null;
+    /* 先頭エントリのローカルヘッダ署名が目録の指す位置にあることを確かめる。
+       前置データ付き（自己解凍形式など）でオフセットがずれているものは
+       ここで弾いて従来方式へ回す（4バイトだけ読む） */
+    const firstFile = metas.find(m => !m.dir);
+    if (firstFile) {
+      const lhSig = new Uint8Array(await blob.slice(firstFile.localOffset, firstFile.localOffset + 4).arrayBuffer());
+      if (!(lhSig.length >= 4 && lhSig[0] === 0x50 && lhSig[1] === 0x4b
+          && lhSig[2] === 0x03 && lhSig[3] === 0x04)) return null;
+    }
+    /* 展開済みバイト列の小さい LRU キャッシュ（サムネイル生成と表示で
+       同じ先頭ページを二度切り出さないため。漫画側のオブジェクトURL
+       キャッシュが本命で、こちらは直近ぶんだけに絞る） */
+    const X_CACHE_MAX = 24 * 1024 * 1024;
+    const xCache = new Map(); let xBytes = 0;
+    const xPending = new Map();
+    let released = false;
+    const extractU8 = meta => {
+      if (released) return Promise.reject(new Error("zip-released"));
+      if (xCache.has(meta.name)) {
+        const hit = xCache.get(meta.name);
+        xCache.delete(meta.name); xCache.set(meta.name, hit);
+        return Promise.resolve(hit);
+      }
+      if (xPending.has(meta.name)) return xPending.get(meta.name);
+      const pr = (async () => {
+        /* ローカルヘッダの断片（30バイト＋名前＋拡張）だけを読んで
+           実データの開始位置を求める。長さはセントラル側の圧縮サイズを
+           正とする（データディスクリプタ付きでも壊れない） */
+        const lh = new Uint8Array(await blob.slice(meta.localOffset, meta.localOffset + 30).arrayBuffer());
+        if (lh.length < 30) throw new Error("badzip");
+        const ldv = new DataView(lh.buffer, lh.byteOffset, lh.byteLength);
+        if (ldv.getUint32(0, true) !== 0x04034b50) throw new Error("badzip");
+        const dataStart = meta.localOffset + 30 + ldv.getUint16(26, true) + ldv.getUint16(28, true);
+        const compBlob = blob.slice(dataStart, dataStart + meta.compSize);
+        let u8;
+        if (meta.method === 0) {
+          u8 = new Uint8Array(await compBlob.arrayBuffer());
+        } else {
+          const stream = compBlob.stream().pipeThrough(new DecompressionStream("deflate-raw"));
+          u8 = new Uint8Array(await new Response(stream).arrayBuffer());
+        }
+        if (typeof meta.uncompSize === "number" && meta.uncompSize >= 0
+            && u8.byteLength !== meta.uncompSize) {
+          /* 伸長結果の長さが目録と食い違うものは壊れているとして扱う */
+          throw new Error("badzip");
+        }
+        if (u8.byteLength <= X_CACHE_MAX) {
+          xCache.set(meta.name, u8);
+          xBytes += u8.byteLength;
+          while (xBytes > X_CACHE_MAX && xCache.size > 1) {
+            const oldest = xCache.keys().next().value;
+            xBytes -= xCache.get(oldest).byteLength;
+            xCache.delete(oldest);
+          }
+        }
+        return u8;
+      })();
+      xPending.set(meta.name, pr);
+      const done = () => xPending.delete(meta.name);
+      pr.then(done, done);
+      return pr;
+    };
+    const files = {};
+    metas.forEach(meta => {
+      files[meta.name] = {
+        name: meta.name,
+        dir: meta.dir,
+        async: async type => {
+          const u8 = await extractU8(meta);
+          if (type === "arraybuffer") return u8.slice(0).buffer;
+          if (type === "text") return new TextDecoder("utf-8").decode(u8);
+          if (type === "base64") return uint8ToBase64(u8);
+          if (type === "uint8array") return u8.slice(0);
+          if (type === "blob") return new Blob([u8.slice(0)]);
+          return u8.slice(0);
+        }
+      };
+    });
+    return { files, __isLazyZip: true, __release: () => {
+      released = true;
+      xCache.clear(); xBytes = 0; xPending.clear();
+    } };
+  } catch (e) { return null; }
+}
+/* アーカイブの目録を開く共通窓口：Blob（ファイル／端末内DBの原本）なら
+   まず「必要な分だけ」方式（openLazyZip）を試し、zip として開けない・
+   対応できない形なら従来方式（全体を読み込む loadArchiveBuf。RAR も
+   こちら）へ落とす。ArrayBuffer が渡された場合（取得済みデータ等）は
+   従来方式のまま */
+async function loadArchiveCatalog(source, fileName){
+  if (typeof Blob !== "undefined" && source instanceof Blob) {
+    const lazy = await openLazyZip(source, fileName);
+    if (lazy) return lazy;
+    return loadArchiveBuf(await source.arrayBuffer(), fileName);
+  }
+  return loadArchiveBuf(source, fileName);
+}
+
 /* JSZipは起動時には読み込まない。zip／EPUBを開く操作があって初めて
    CDNから読み込み、以後は使い回す。読み込めなければ "nozip" を投げて、
    呼び出し側の既存のエラー表示に乗せる */
@@ -5403,7 +5626,12 @@ $("#fileInput").addEventListener("change", async e => {
   try {
     /* 「読み込み中」の表示を先に描画してから、重い解析・割り付けに入る（操作が固まって見えないように） */
     await new Promise(r => setTimeout(r, 40));
-    const buf = await file.arrayBuffer();
+    /* ファイル全体の読み込みは「必要になったとき」だけにする。zip／cbz は
+       まず末尾の目録だけを切り出す方式（openLazyZip）で開くため、大きな
+       漫画zipでもここで全体をメモリへ載せない。EPUB・単体テキスト・
+       フォールバック時だけ、従来どおり全体を読む */
+    let buf = null;
+    const getBuf = async () => { if (!buf) buf = await file.arrayBuffer(); return buf; };
     /* 本のキーはファイル名とサイズで決まる。本棚の本は端末に保存された本文から開くのが
        原則で、続きを読むためにファイルを選ばせる経路は持たない（本文が無ければエラー） */
     const keyFor = () => (file.name + ":" + file.size);
@@ -5413,7 +5641,7 @@ $("#fileInput").addEventListener("change", async e => {
       if (!stored) setTimeout(() => toast("この端末に保存できませんでした（容量不足など）。この本は次回開けません"), 1200);
     };
     if (/\.epub$/i.test(file.name)) {
-      const book = await parseEpub(buf, file.name);
+      const book = await parseEpub(await getBuf(), file.name);
       const key = keyFor(book.title);
       const stored = await saveBookContent(key, book.episodes);
       const resumed = setBook({ title: book.title, note: "EPUB" }, book.episodes, key,
@@ -5431,7 +5659,10 @@ $("#fileInput").addEventListener("change", async e => {
       let peeked = null;
       let arcHasTxt = false, arcHasImg = false, arcPeeked = false;
       try {
-        peeked = await loadArchiveBuf(buf, file.name);
+        /* zip／cbz は末尾の目録だけを切り出す方式で開く（ファイル全体は
+           読まない）。RAR／CBR と、切り出し方式で開けない zip は
+           loadArchiveCatalog が従来方式へ自動で落とす */
+        peeked = await loadArchiveCatalog(file, file.name);
         const names = zipEntryNames(peeked);
         const hasTxt = names.some(n => /\.txt$/i.test(n));
         const hasImg = names.some(n => MANGA_IMG_RE.test(n));
@@ -5473,7 +5704,29 @@ $("#fileInput").addEventListener("change", async e => {
            出し済みなので、解析の成否によらずここで解放する。RAR目録を
            解放せずに捨てるとアーカイブ全バイトのコピーが残留する */
         let book = null;
-        try { book = await parseZipBook(buf, file.name, peeked); }
+        try {
+          /* 目録が切り出し方式（lazy）の場合、parseZipBook は必要な
+             テキスト・挿絵の断片だけを切り出す（buf は preopened が
+             あるとき使われないので、原本 Blob をそのまま渡す）。
+             切り出しで読めなかった場合だけ、従来の丸ごと方式で
+             読み直す（壊れかけ・特殊な zip の救済） */
+          try { book = await parseZipBook(file, file.name, peeked); }
+          catch (pe) {
+            if (!peeked || !peeked.__isLazyZip) throw pe;
+            if (typeof peeked.__release === "function") {
+              try { peeked.__release(); } catch (e) { /* noop */ }
+            }
+            peeked = null;
+            const b2 = await getBuf();
+            const zip2 = await loadArchiveBuf(b2, file.name);
+            try { book = await parseZipBook(b2, file.name, zip2); }
+            finally {
+              if (zip2 && typeof zip2.__release === "function") {
+                try { zip2.__release(); } catch (e) { /* noop */ }
+              }
+            }
+          }
+        }
         finally {
           if (peeked && typeof peeked.__release === "function") {
             try { peeked.__release(); } catch (e) { /* noop */ }
@@ -5496,9 +5749,10 @@ $("#fileInput").addEventListener("change", async e => {
         notifyNotStored(stored);
       }
     } else {
+      const textBuf = await getBuf();
       let text;
-      try { text = new TextDecoder("utf-8", { fatal: true }).decode(buf); }
-      catch (err) { text = new TextDecoder("shift_jis").decode(buf); }
+      try { text = new TextDecoder("utf-8", { fatal: true }).decode(textBuf); }
+      catch (err) { text = new TextDecoder("shift_jis").decode(textBuf); }
       const book = parseTextBook(text, file.name);
       const key = keyFor(book.title);
       const stored = await saveBookContent(key, book.episodes);
@@ -5639,10 +5893,12 @@ async function importInboxBook(rec){
   if (!blob || typeof blob.arrayBuffer !== "function") throw new Error("badrecord");
   const recTitle = (rec.title && String(rec.title)) || "なろう作品";
   const fileName = /\.(zip|cbz|rar|cbr|epub|txt|md|markdown)$/i.test(recTitle) ? recTitle : recTitle + ".zip";
-  const buf = await blob.arrayBuffer();
+  /* 「ファイルを開く」と同じく、全体の読み込みは必要になったときだけ */
+  let buf = null;
+  const getBuf = async () => { if (!buf) buf = await blob.arrayBuffer(); return buf; };
   const key = fileName + ":" + blob.size;
   if (/\.epub$/i.test(fileName)) {
-    const book = await parseEpub(buf, fileName);
+    const book = await parseEpub(await getBuf(), fileName);
     const stored = await saveBookContent(key, book.episodes);
     registerBook(key, book.title, "EPUB", "file", fileName, book.episodes, stored);
     if (book.thumb) {
@@ -5657,7 +5913,7 @@ async function importInboxBook(rec){
     let peeked = null;
     let arcHasTxt = false, arcHasImg = false, arcPeeked = false;
     try {
-      peeked = await loadArchiveBuf(buf, fileName);
+      peeked = await loadArchiveCatalog(blob, fileName);
       const names = zipEntryNames(peeked);
       arcHasTxt = names.some(n => /\.txt$/i.test(n));
       arcHasImg = names.some(n => MANGA_IMG_RE.test(n));
@@ -5680,7 +5936,24 @@ async function importInboxBook(rec){
       return mangaBook.title;
     }
     let book = null;
-    try { book = await parseZipBook(buf, fileName, peeked); }
+    try {
+      try { book = await parseZipBook(blob, fileName, peeked); }
+      catch (pe) {
+        if (!peeked || !peeked.__isLazyZip) throw pe;
+        if (typeof peeked.__release === "function") {
+          try { peeked.__release(); } catch (e) { /* noop */ }
+        }
+        peeked = null;
+        const b2 = await getBuf();
+        const zip2 = await loadArchiveBuf(b2, fileName);
+        try { book = await parseZipBook(b2, fileName, zip2); }
+        finally {
+          if (zip2 && typeof zip2.__release === "function") {
+            try { zip2.__release(); } catch (e) { /* noop */ }
+          }
+        }
+      }
+    }
     finally {
       if (peeked && typeof peeked.__release === "function") {
         try { peeked.__release(); } catch (e) { /* noop */ }
@@ -5697,9 +5970,10 @@ async function importInboxBook(rec){
     }
     return book.title;
   }
+  const textBuf = await getBuf();
   let text;
-  try { text = new TextDecoder("utf-8", { fatal: true }).decode(buf); }
-  catch (err) { text = new TextDecoder("shift_jis").decode(buf); }
+  try { text = new TextDecoder("utf-8", { fatal: true }).decode(textBuf); }
+  catch (err) { text = new TextDecoder("shift_jis").decode(textBuf); }
   const book = parseTextBook(text, fileName);
   const stored = await saveBookContent(key, book.episodes);
   registerBook(key, book.title, fileName, "file", fileName, book.episodes, stored);
