@@ -512,11 +512,12 @@
           <h2>本棚（履歴）</h2>
           <p>フォルダを読み込むのではなく、これまでに開いた本の履歴です。最近開いた順に並びます。本を選ぶと、読んでいた位置からそのまま開きます。</p>
         </div>
+        <button class="bbtn" id="btnReload">リロード</button>
         <button class="bbtn" id="btnShelfClose">読書に戻る</button>
       </div>
       <button class="shelf-open" id="btnShelfOpen">ファイルを開く（.txt / .md / .epub / .zip）</button>
       <a class="shelf-open shelf-dl" href="https://uotamy.github.io/narou-dl/" target="_blank" rel="noopener">なろうDLで小説を探してダウンロード</a>
-      <p class="shelf-hint">なろうDLでダウンロードした本は、次にこのビューワーを開いたときに自動で本棚へ追加されます。</p>
+      <p class="shelf-hint">なろうDLでダウンロードした本は、このビューワーを開いたときや、前面に戻ったときに自動で本棚へ追加されます。表示されないときは「リロード」ボタンで再読み込みできます。</p>
       <p class="shelf-hint">各カードの「削除」ボタンで履歴から削除できます。削除すると、その本の読書位置・しおり・端末に保存した本文も一緒に消えます（元のファイル自体は消えません）。</p>
       <div id="shelfList"></div>
     </div>
@@ -2449,6 +2450,9 @@ async function openFromShelf(entry){
   toast("エラー：『" + entry.title + "』の本文が端末に保存されていないため、開けません", 3600);
 }
 $("#btnShelf").addEventListener("click", () => { closeSheets(); showShelf(); pokeUI(); });
+/* PWAではブラウザ側のリロードが使えないため、本棚に明示のリロードボタンを置く。
+   読書画面では引っ張って更新がページめくりと競合するので、ジェスチャには頼らない */
+$("#btnReload").addEventListener("click", () => { try { location.reload(); } catch (e) { /* noop */ } });
 $("#btnShelfClose").addEventListener("click", () => {
   /* 起動直後は前回の本がまだ読み込まれていない（遅延復元）。その場合は
      ここで初めて本文を読み込んで開く。失敗したら openFromShelf が
@@ -3412,12 +3416,13 @@ window.addEventListener("resize", () => {
    ダウンローダー（同一オリジン https://uotamy.github.io/narou-dl/）は、
    ダウンロードした本を共有の受け渡し用 IndexedDB『narou-dl-inbox』の
    『books』ストア（keyPath:'id', autoIncrement）に {title, blob, addedAt} で置く。
-   起動時に一度だけここを確認し、レコードがあれば「ファイルを開く」と同じ
+   起動時と、アプリが前面に戻ったとき（visibilitychange／focus／pageshow）に
+   ここを確認し、レコードがあれば「ファイルを開く」と同じ
    解析・保存の経路で本棚へ登録し、取り込めたレコードだけを消す。
-   失敗したレコードは消さずに残し、次回起動時に再試行できるようにする。
+   失敗したレコードは消さずに残し、次に前面へ戻ったときや次回起動時に再試行できるようにする。
    DBが無い・空なら何もしない。 */
 const INBOX_DB_NAME = "narou-dl-inbox", INBOX_STORE = "books";
-let inboxChecked = false;
+let inboxChecking = false;
 
 /* 受け渡し用DBを開く。存在しない場合は作らない（開くだけで空のDBが
    できてしまうのを避けるため、まず databases() で有無を確認し、
@@ -3523,36 +3528,47 @@ async function importInboxBook(rec){
   return book.title;
 }
 async function checkDownloaderInbox(){
-  if (inboxChecked) return;
-  inboxChecked = true;
-  const db = await inboxOpenIfExists();
-  if (!db) return;
-  const items = await inboxReadAll(db);
-  if (!items.length) { try { db.close(); } catch (e) { /* noop */ } return; }
-  setLoading(true);
-  const added = [], failed = [];
+  /* 実行中の重複起動だけを防ぐ（起動時の一度きりにはしない：
+     前面に戻るたびに再実行され、未取り込みがあれば拾う） */
+  if (inboxChecking) return;
+  inboxChecking = true;
   try {
-    for (const it of items) {
-      try {
-        const title = await importInboxBook(it.rec);
-        await inboxDelete(db, it.key);
-        added.push(title);
-      } catch (e) {
-        /* 取り込めなかったレコードは消さずに残す（本を失わない） */
-        failed.push((it.rec && it.rec.title) || "なろう作品");
+    const db = await inboxOpenIfExists();
+    if (!db) return;
+    const items = await inboxReadAll(db);
+    if (!items.length) { try { db.close(); } catch (e) { /* noop */ } return; }
+    setLoading(true);
+    const added = [], failed = [];
+    try {
+      for (const it of items) {
+        try {
+          const title = await importInboxBook(it.rec);
+          await inboxDelete(db, it.key);
+          added.push(title);
+        } catch (e) {
+          /* 取り込めなかったレコードは消さずに残す（本を失わない） */
+          failed.push((it.rec && it.rec.title) || "なろう作品");
+        }
       }
+    } finally {
+      setLoading(false);
+      try { db.close(); } catch (e) { /* noop */ }
     }
+    if (added.length) buildShelf();
+    added.forEach((t, i) => setTimeout(() =>
+      toast("なろうダウンローダーから『" + t + "』を追加しました", 3000), i * 3200));
+    if (failed.length) setTimeout(() =>
+      toast("なろうダウンローダーから取り込めなかった本があります（『" + failed[0] + "』）。次に前面へ戻ったときや次回起動時に再試行します", 3600),
+      added.length * 3200);
   } finally {
-    setLoading(false);
-    try { db.close(); } catch (e) { /* noop */ }
+    inboxChecking = false;
   }
-  if (added.length) buildShelf();
-  added.forEach((t, i) => setTimeout(() =>
-    toast("なろうダウンローダーから『" + t + "』を追加しました", 3000), i * 3200));
-  if (failed.length) setTimeout(() =>
-    toast("なろうダウンローダーから取り込めなかった本があります（『" + failed[0] + "』）。次回起動時に再試行します", 3600),
-    added.length * 3200);
 }
+/* タテヨミを開いたままダウンローダーで本を登録しても、リロードなしで
+   本棚に現れるよう、アプリが前面に戻るたびに受け渡しを再確認する */
+document.addEventListener("visibilitychange", () => { if (!document.hidden) checkDownloaderInbox(); });
+window.addEventListener("focus", () => checkDownloaderInbox());
+window.addEventListener("pageshow", () => checkDownloaderInbox());
 
 /* ---------------- 初期化 ---------------- */
 const hadSave = persistLoad();
@@ -3577,7 +3593,8 @@ ensureGuideEntry();
   histView = "shelf";
   try { history.replaceState({ v: "shelf" }, ""); } catch (e) { /* noop */ }
   showShelf();
-  /* なろうダウンローダーからの受け渡しは、起動時に1回だけ確認する */
+  /* なろうダウンローダーからの受け渡しは、起動時に確認し、その後も
+     アプリが前面に戻るたびに再確認する（上のリスナー側） */
   checkDownloaderInbox();
   if (!lsOK) {
     /* 保存できない環境では止めずに、保存なしモードとして読書を続けられるようにする */
