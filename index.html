@@ -2801,8 +2801,12 @@ function slideGroupTo(dir, tgt){
    見開き（ppv=2）では綴じ目＝見開きの中央が軸になる：
    - 次へ：左ページ（最後に読んだページ）が右ページ側へ倒れ込む
    - 前へ：右ページが左ページ側へ倒れ戻る（逆動作）
-   見開きで片側だけの組（最終ページ単独など）では、その1枚を綴じ目軸で
-   反対側へ倒す。1ページ表示では綴じ目が無いので、ページ自身の端
+   「次へ」で現在の組が右ページ1枚だけの場合はここへは来ない
+   （flipUnsupported がスライドへ振り分ける。右ページを左へ倒す代用
+   動作は「前へ」のめくりと同じ軌道になり、進んでいるのに戻って
+   見えるため）。下の分岐に残る単独ページの処理は保険としての予備で、
+   「前へ」では右ページを左へ倒す動き自体が正しい戻り動作になる。
+   1ページ表示では綴じ目が無いので、ページ自身の端
    （次へ＝右端、戻る＝左端）を軸にして同じ作りでめくる */
 function overlayGroup(dir, tgt, flip){
   const tgtPages = paginate(tgt.ep);
@@ -2952,9 +2956,22 @@ function targetFor(dir){
 }
 /* めくり方式が前提にできない遷移かどうか。漫画の見開きで組が2枚組でない
    場合（横長画像の単独表示など）は、葉の仕掛けが組の形と合わないため
-   スライドで送る */
-function flipUnsupported(tgt){
+   スライドで送る。
+   小説でも、現在の組が右ページ1枚だけのとき（話のページ数が奇数で、
+   最後のページが右側に単独で表示されているとき）の「次へ」はめくりで
+   送らない。「次へ」のめくりは左ページ（最後に読んだページ）を綴じ目軸で
+   右へ倒す動きが本体だが、その組には倒すべき左ページが無い。従来は
+   代わりに右ページを左へ倒していたが、その軌道は「前へ（戻る）」の
+   めくり（右ページを左へ倒し戻す）と全く同じで、話をまたいで次へ
+   進んでいるのに戻るアニメーションに見えていた。右1枚の組から次へ
+   進む正しい葉の動きは存在しない（次の話の先頭ページは新しい組の
+   右ページとして現れる側であり、倒す葉の裏にはならない）ため、この
+   遷移だけスライドで送る。スライドは組の形に依らず前進方向が一定
+   なので、向きが逆に見えることはない。「前へ」については右ページを
+   左へ倒す動き自体が正しい戻り動作なので、従来どおりめくりで送る */
+function flipUnsupported(dir, tgt){
   if (ppv !== 2) return false;
+  if (dir === "next" && visibleWindow(S.ep, S.page).length !== 2) return true;
   if (isMangaEp(S.ep) && visibleWindow(S.ep, S.page).length !== 2) return true;
   if (isMangaEp(tgt.ep) && visibleWindow(tgt.ep, tgt.page).length !== 2) return true;
   return false;
@@ -2962,7 +2979,7 @@ function flipUnsupported(tgt){
 function dispatchTurn(dir, tgt, forceSlide){
   /* 「なし」方式：前後どちらの送りもアニメーションせず即時に切り替える */
   if (S.turnStyle === "none") { S.ep = tgt.ep; S.page = tgt.page; renderWindow(); return; }
-  if (!forceSlide && S.turnStyle === "flip" && !flipUnsupported(tgt)) { overlayGroup(dir, tgt, true); return; }
+  if (!forceSlide && S.turnStyle === "flip" && !flipUnsupported(dir, tgt)) { overlayGroup(dir, tgt, true); return; }
   /* スライド方式は章内・章またぎとも同じページ単位の離散スライドで統一する */
   if (reduceMotion) { S.ep = tgt.ep; S.page = tgt.page; renderWindow(); return; }
   if (tgt.ep === S.ep) { animateGroupTo(tgt.page); return; }
