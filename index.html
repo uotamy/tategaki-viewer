@@ -505,6 +505,7 @@
   }
   .ncard .nrank.top { background: var(--accent); color: #fff; }
   .ncard .ntitle { font-size: 16px; font-weight: 600; line-height: 1.45; margin: 0; font-family: var(--font); }
+  .ncard .nsubtitle { font-size: 13.5px; font-weight: 500; color: var(--sub); }
   .ncard .ntitle a { color: var(--ink); text-decoration: none; }
   .ncard .nwriter { font-size: 12.5px; color: var(--sub); margin-top: 2px; }
   .ncard .nbadges { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 9px; }
@@ -8008,6 +8009,9 @@ $("#btnAddAozora").addEventListener("click", () => showAozora());
    テキストzipを取得し、既存の zip 取り込み（parseZipBook）でそのまま
    本棚へ直接登録する。青空の作品は単体完結のため、なろう式の台帳・
    差分更新の対象にはしない。
+   インデックスの副題（巻名はこちらに入る）も保持し、検索結果では
+   「作品名 副題」と表示する。副題のある作品は本棚への登録書名も
+   「作品名 副題」にして、同名・同著者の巻物を区別できるようにする。
    青空文庫の配布zipは既に青空文庫形式そのものなので、ダウンローダーは
    変換も再生成もしない：原本zipのバイト列をファイル取り込みと同じく
    saveBookArchive でそのまま端末に保持し、本棚の「ダウンロード」では
@@ -8015,7 +8019,7 @@ $("#btnAddAozora").addEventListener("click", () => showAozora());
    劣化しない）。本文の解釈（段落分け等）は取り込み側の仕事で、
    ダウンローダー側では一切行わない */
 const AOZORA_INDEX_URL = "https://www.aozora.gr.jp/index_pages/list_person_all_extended_utf8.zip";
-let aozoraItems = null;   /* [{t:作品名, a:著者, u:テキストzip URL, s:検索用文字列}] */
+let aozoraItems = null;   /* [{t:作品名, sub:副題, a:著者, u:テキストzip URL, s:検索用文字列}] */
 let aozoraIndexAt = 0;
 let aozoraLoading = null;
 let aozoraResults = [];
@@ -8063,6 +8067,7 @@ async function aFetchIndex(){
   const header = aCsvParseLine(lines[0]);
   const iTitle = header.indexOf("作品名"), iUrl = header.indexOf("テキストファイルURL"),
     iFlag = header.indexOf("作品著作権フラグ"),
+    iSub = header.indexOf("副題"), iSubY = header.indexOf("副題読み"),
     iLast = header.indexOf("姓"), iFirst = header.indexOf("名"),
     iTitleY = header.indexOf("作品名読み"), iLastY = header.indexOf("姓読み"), iFirstY = header.indexOf("名読み");
   if (iTitle < 0 || iUrl < 0 || iLast < 0) throw new Error("indexcsv");
@@ -8077,17 +8082,24 @@ async function aFetchIndex(){
     const t = (r[iTitle] || "").trim();
     const a = ((r[iLast] || "") + (r[iFirst] || "")).trim();
     if (!t) continue;
-    const yomi = (r[iTitleY] || "") + " " + (iLastY >= 0 ? r[iLastY] || "" : "") + (iFirstY >= 0 ? r[iFirstY] || "" : "");
-    byUrl.set(u, { t, a, u, s: (t + " " + a + " " + yomi).toLowerCase() });
+    /* 副題：青空では巻ごとに別作品として登録され、巻名は副題に入る
+       （例：『宮本武蔵』の各巻は副題が「02 地の巻」など）。同名・同著者の
+       作品を検索結果と本棚で区別できるよう、副題も保持する */
+    const sub = iSub >= 0 ? (r[iSub] || "").trim() : "";
+    const yomi = (r[iTitleY] || "") + " " + (iSubY >= 0 ? r[iSubY] || "" : "") + " " +
+      (iLastY >= 0 ? r[iLastY] || "" : "") + (iFirstY >= 0 ? r[iFirstY] || "" : "");
+    byUrl.set(u, { t, sub, a, u, s: (t + " " + sub + " " + a + " " + yomi).toLowerCase() });
   }
   aozoraItems = Array.from(byUrl.values());
   aozoraIndexAt = Date.now();
-  await nsPut(AOZORA_STORE, "index", { at: aozoraIndexAt, items: aozoraItems });
+  /* v: 2 = 副題（sub）を持つ形式。旧形式のキャッシュは aLoadIndexFromCache
+     側で読み直し対象にする */
+  await nsPut(AOZORA_STORE, "index", { at: aozoraIndexAt, v: 2, items: aozoraItems });
   return aozoraItems;
 }
-async function aLoadIndexFromCache(){
+async function aLoadIndexFromCache(anyVersion){
   const rec = await nsGet(AOZORA_STORE, "index");
-  if (rec && Array.isArray(rec.items) && rec.items.length) {
+  if (rec && Array.isArray(rec.items) && rec.items.length && (anyVersion || rec.v >= 2)) {
     aozoraItems = rec.items;
     aozoraIndexAt = rec.at || 0;
     return true;
@@ -8099,7 +8111,17 @@ function aEnsureIndex(force){
   if (aozoraItems && !force) return Promise.resolve(aozoraItems);
   aozoraLoading = (async () => {
     try {
-      if (!force && await aLoadIndexFromCache()) return aozoraItems;
+      if (!force) {
+        if (await aLoadIndexFromCache(false)) return aozoraItems;
+        /* 副題を持たない旧形式のキャッシュしか無い場合は取り直す。
+           取り直しに失敗したときだけ、旧形式でも検索できるよう
+           フォールバックする（オフライン時に検索ごと死なせない） */
+        try { return await aFetchIndex(); }
+        catch (e) {
+          if (await aLoadIndexFromCache(true)) return aozoraItems;
+          throw e;
+        }
+      }
       return await aFetchIndex();
     } finally { aozoraLoading = null; }
   })();
@@ -8158,7 +8180,8 @@ $("#aozoraSearchForm").addEventListener("submit", async ev => {
       aozoraResults.map((it, i) =>
         '<article class="ncard">' +
           '<div class="ntop"><div style="flex:1;min-width:0;">' +
-            '<h3 class="ntitle">' + esc(it.t) + "</h3>" +
+            '<h3 class="ntitle">' + esc(it.t) +
+              (it.sub ? ' <span class="nsubtitle">' + esc(it.sub) + "</span>" : "") + "</h3>" +
             '<div class="nwriter">' + esc(it.a) + "</div>" +
           "</div></div>" +
           '<div class="nactions">' +
@@ -8183,7 +8206,15 @@ async function aImportAozora(item, btn){
     const buf = await aFetchBinary(item.u, 2);
     const fileName = item.u.split("/").pop() || "aozora.zip";
     const book = await parseZipBook(buf, fileName);
-    const key = book.title + ":" + buf.byteLength;
+    /* 副題のある作品は「作品名 副題」を登録書名にする。解析側の書名は
+       zip内のテキストファイル名由来で作品名と一致しないことがあり
+       （例：02chino_maki）、そのままでは同名の巻が本棚で区別できない。
+       既に副題を含む書名なら二重に付けない。副題の無い作品は従来どおり
+       解析側の書名のまま（既存の登録済み本にも影響しない） */
+    const aozoraSub = (item.sub || "").trim();
+    const regTitle = aozoraSub && book.title.indexOf(aozoraSub) < 0
+      ? item.t + " " + aozoraSub : book.title;
+    const key = regTitle + ":" + buf.byteLength;
     const stored = await saveBookContent(key, book.episodes);
     /* 原本zipをそのまま保持する（ファイル取り込みのアーカイブ本と同じ
        扱い）。これにより本棚の「ダウンロード」は再生成ではなく原本の
@@ -8192,15 +8223,15 @@ async function aImportAozora(item, btn){
        原本の目録から正確に判定する */
     const arcStored = await saveBookArchive(key, new Blob([buf], { type: "application/zip" }));
     const thumb = await thumbFromEpisodes(book.episodes, false);
-    registerBook(key, book.title, "青空文庫ZIP", "file", fileName, book.episodes, stored);
+    registerBook(key, regTitle, "青空文庫ZIP", "file", fileName, book.episodes, stored);
     setArchiveFlags(key, { hasArchive: arcStored });
     if (thumb) {
       const e = S.library.find(x => x.key === key);
       if (e) { e.thumb = thumb; e.thumbSize = THUMB_MAX_DIM; persist(); }
     }
     buildShelf();
-    toast(stored ? "『" + book.title + "』を本棚に追加しました"
-                 : "『" + book.title + "』を取り込みましたが、この端末に保存できませんでした", 3200);
+    toast(stored ? "『" + regTitle + "』を本棚に追加しました"
+                 : "『" + regTitle + "』を取り込みましたが、この端末に保存できませんでした", 3200);
     if (btn) btn.textContent = "本棚に追加しました";
   } catch (e) {
     toast("取得に失敗しました。時間をおいて再試行してください", 3000);
