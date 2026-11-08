@@ -2476,6 +2476,17 @@ function makeSpacerEl(){
   el.setAttribute("aria-hidden", "true");
   return el;
 }
+/* 空ページ（白紙）のページ要素。本文を持たず、.page の背景（テーマの
+   紙色）だけの面になる。見開きで左ページが欠けた組をめくるとき、その
+   欠けたページを「白紙の葉」として立てるために使う（overlayGroup） */
+function makeBlankLeafEl(){
+  const el = document.createElement("div");
+  el.className = "page blankleaf";
+  el.style.width = Math.max(200, panelW()) + "px";
+  el.dataset.w = "1";
+  el.setAttribute("aria-hidden", "true");
+  return el;
+}
 /* 漫画の単独組では、隣の組のページが相方側へはみ出さないよう余白が要る。
    横長単独ページは見開き幅いっぱいに表示するので余白は付けない */
 function spreadNeedsSpacer(epIdx, win){
@@ -2801,11 +2812,16 @@ function slideGroupTo(dir, tgt){
    見開き（ppv=2）では綴じ目＝見開きの中央が軸になる：
    - 次へ：左ページ（最後に読んだページ）が右ページ側へ倒れ込む
    - 前へ：右ページが左ページ側へ倒れ戻る（逆動作）
-   「次へ」で現在の組が右ページ1枚だけの場合はここへは来ない
-   （flipUnsupported がスライドへ振り分ける。右ページを左へ倒す代用
-   動作は「前へ」のめくりと同じ軌道になり、進んでいるのに戻って
-   見えるため）。下の分岐に残る単独ページの処理は保険としての予備で、
-   「前へ」では右ページを左へ倒す動き自体が正しい戻り動作になる。
+   現在の組が右ページ1枚だけ（話のページ数が奇数で、最後のページが
+   右側に単独で残る）の「次へ」では、欠けている左ページを空ページ
+   （白紙）として扱い、その白紙の葉を通常の「次へ」と同じ綴じ目軸・
+   同じ軌道でめくる。実物の本でも奇数で終わる話の最後の葉は裏が
+   白紙で、それをめくるのは普通の前へのめくりになる。右ページを
+   左へ倒す代用動作（「前へ」のめくりと同じ軌道になり、進んでいる
+   のに戻って見える）や、この遷移だけスライドに落とす扱いはしない。
+   逆方向（次の話の先頭からこの組へ戻る「前へ」）では、倒れ込む葉の
+   裏を同じ白紙にして、行きと帰りで同じ葉になるよう整合させる。
+   下の分岐に残る単独ページの処理は保険としての予備。
    1ページ表示では綴じ目が無いので、ページ自身の端
    （次へ＝右端、戻る＝左端）を軸にして同じ作りでめくる */
 function overlayGroup(dir, tgt, flip){
@@ -2813,6 +2829,17 @@ function overlayGroup(dir, tgt, flip){
   const curWinEls = windowPagesFor(S.ep, S.page).map(p => elForPage(p)).filter(Boolean);
   const curRightEl = curWinEls[0] || null;
   const curLeftEl = ppv > 1 ? (curWinEls[1] || null) : null;
+  /* 空ページの葉にする遷移かどうか：
+     - blankNext（次へ）：現在の組が右ページ単独で左ページが欠けている
+       とき、欠けた左ページを白紙として葉の表にする
+     - blankBack（前へ）：遷移先の組が右ページ単独のとき、倒れ込む葉の
+       裏を白紙にして、blankNext でめくったのと同じ葉で整合させる
+     漫画の単独組（横長・読了ページ）は実物の単独ページなので対象外
+     （flipUnsupported がスライドへ振り分ける） */
+  const blankNext = dir === "next" && ppv > 1 && !curLeftEl && !!curRightEl &&
+    !isMangaEp(S.ep) && !isMangaEp(tgt.ep);
+  const blankBack = dir === "prev" && ppv > 1 && !isMangaEp(tgt.ep) &&
+    windowPagesFor(tgt.ep, tgt.page).length === 1;
   const tgtEls = [];
   windowPagesFor(tgt.ep, tgt.page).forEach(p =>
     tgtEls.push(takePrebuiltPage(tgt.ep, p) || buildPageEl(tgtPages[p])));
@@ -2826,6 +2853,12 @@ function overlayGroup(dir, tgt, flip){
     if (ppv > 1 && curLeftEl) {
       frontEl = curLeftEl; backEl = tgtEls[0]; backIdx = 0;
       leafLeft = 0; origin = "right center"; toDeg = 180;
+    } else if (ppv > 1 && blankNext) {
+      /* 空ページの葉：白紙を表にして、通常の「次へ」と全く同じ軸
+         （綴じ目＝右端）・軌道（0→180度）でめくる。裏は通常どおり
+         遷移先の右ページ（倒れ切った先で現れるページ） */
+      frontEl = makeBlankLeafEl(); backEl = tgtEls[0]; backIdx = 0;
+      leafLeft = 0; origin = "right center"; toDeg = 180;
     } else if (ppv > 1) {
       frontEl = curRightEl; backEl = tgtEls[tgtEls.length - 1]; backIdx = tgtEls.length - 1;
       leafLeft = pw; origin = "left center"; toDeg = -180;
@@ -2838,7 +2871,13 @@ function overlayGroup(dir, tgt, flip){
     }
   } else {
     if (ppv > 1) {
-      frontEl = curRightEl; backEl = tgtEls[tgtEls.length - 1]; backIdx = tgtEls.length - 1;
+      frontEl = curRightEl;
+      /* 遷移先が右ページ単独の組なら、葉の裏はその本文ページではなく
+         白紙にする（blankNext でめくった空ページの葉の裏面が、倒れ
+         切った先の左ページ側に現れる形と一致する。本文ページ自体は
+         背後の合成で右ページ側に置かれる） */
+      backEl = blankBack ? makeBlankLeafEl() : tgtEls[tgtEls.length - 1];
+      backIdx = blankBack ? 0 : tgtEls.length - 1;
       leafLeft = pw; origin = "left center"; toDeg = -180;
     } else {
       /* 1ページ表示の戻り：次へのめくりと対になるよう、左端を軸にめくり戻す */
@@ -2878,7 +2917,14 @@ function overlayGroup(dir, tgt, flip){
      - 次へ（見開き・通常）：左＝遷移先の左ページ、右＝現在の右ページのまま。
        葉の裏（遷移先の右ページ）が右へ倒れ切った時点で初めて右も遷移先になる
      - 戻る（見開き）：左右を反転し、右＝遷移先の右ページ、左＝現在の左ページのまま
-     - 葉が右ページ側から倒れる場合（現在の組が右ページ単独のとき）：
+     - 次へ・空ページの葉（現在の組が右ページ単独のとき）：通常の「次へ」
+       と同じ合成にする。白紙の葉が離れていく左側は遷移先の左ページ
+       （倒れるにつれて覗いてくる）、葉が倒れ込む右側は現在の右ページ
+       のまま（葉の裏＝遷移先の右ページが倒れ切って初めて確定する）
+     - 戻る・空ページの葉（遷移先の組が右ページ単独のとき）：右＝遷移先の
+       右ページ（本文。葉の裏の白紙は左ページ側へ倒れ込む）、左＝現在の
+       左ページのまま、で通常の戻りの合成と一致する
+     - 葉が右ページ側から倒れる場合（予備分岐）：
        右＝遷移先の右ページ（葉が離れるにつれて覗く）、左＝現在の左（無ければ空）
      - 1ページ表示：葉が全面を覆うので背後は遷移先のページでよい
      遷移先側の背後ページは、組の画像中央寄せが最終形になるよう
@@ -2897,7 +2943,7 @@ function overlayGroup(dir, tgt, flip){
   let bgRight = null, bgLeft = null;
   if (ppv === 1) {
     bgRight = freshTgtEl(0);
-  } else if (dir === "next" && curLeftEl) {
+  } else if (dir === "next" && (curLeftEl || blankNext)) {
     bgRight = curRightEl ? curRightEl.cloneNode(true) : null;
     bgLeft = tgtEls.length > 1 ? freshTgtEl(1) : null;
   } else if (dir === "next") {
@@ -2957,21 +3003,22 @@ function targetFor(dir){
 /* めくり方式が前提にできない遷移かどうか。漫画の見開きで組が2枚組でない
    場合（横長画像の単独表示など）は、葉の仕掛けが組の形と合わないため
    スライドで送る。
-   小説でも、現在の組が右ページ1枚だけのとき（話のページ数が奇数で、
-   最後のページが右側に単独で表示されているとき）の「次へ」はめくりで
-   送らない。「次へ」のめくりは左ページ（最後に読んだページ）を綴じ目軸で
-   右へ倒す動きが本体だが、その組には倒すべき左ページが無い。従来は
-   代わりに右ページを左へ倒していたが、その軌道は「前へ（戻る）」の
-   めくり（右ページを左へ倒し戻す）と全く同じで、話をまたいで次へ
-   進んでいるのに戻るアニメーションに見えていた。右1枚の組から次へ
-   進む正しい葉の動きは存在しない（次の話の先頭ページは新しい組の
-   右ページとして現れる側であり、倒す葉の裏にはならない）ため、この
-   遷移だけスライドで送る。スライドは組の形に依らず前進方向が一定
-   なので、向きが逆に見えることはない。「前へ」については右ページを
-   左へ倒す動き自体が正しい戻り動作なので、従来どおりめくりで送る */
+   小説で現在の組が右ページ1枚だけのとき（話のページ数が奇数で、
+   最後のページが右側に単独で表示されているとき）の「次へ」は、
+   スライドには落とさない。欠けている左ページを空ページ（白紙）と
+   して扱えば、通常の「次へ」と同じ葉の動き（白紙の葉が綴じ目軸で
+   右へ倒れ、裏＝次の話の右ページが現れる）がそのまま成立する
+   （overlayGroup の blankNext）。かつてはこの遷移だけスライドで
+   送っていたが、動きの言葉が1か所だけ変わる方が違和感が大きいため
+   空ページ方式に置き換えた。漫画の単独組は「欠けたページ」ではなく
+   実物の単独ページなので、従来どおりスライドで送る */
 function flipUnsupported(dir, tgt){
   if (ppv !== 2) return false;
-  if (dir === "next" && visibleWindow(S.ep, S.page).length !== 2) return true;
+  if (dir === "next" && visibleWindow(S.ep, S.page).length !== 2) {
+    /* 小説の右ページ単独の組からの「次へ」は空ページの葉でめくれる */
+    if (!isMangaEp(S.ep) && !isMangaEp(tgt.ep)) return false;
+    return true;
+  }
   if (isMangaEp(S.ep) && visibleWindow(S.ep, S.page).length !== 2) return true;
   if (isMangaEp(tgt.ep) && visibleWindow(tgt.ep, tgt.page).length !== 2) return true;
   return false;
