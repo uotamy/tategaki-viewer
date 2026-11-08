@@ -156,6 +156,20 @@
   .page.manga img {
     display: block; width: 100%; height: 100%; object-fit: contain;
   }
+  /* 見開きで単独表示になるページの相方側に置く余白パネル。紙の背景のまま
+     空けておき、隣の組のページがはみ出して見えないようにする */
+  .page.spreadblank { padding: 0; }
+  /* 下部バーの「1ページ進む／戻る」：話ボタンより少し小さくし、スライダーの
+     幅を圧迫しないようにする */
+  .bbtn.p1btn { font-size: 11.5px; padding: 7px 6px; white-space: nowrap; }
+  /* 「1ページ進む／戻る」は見開き（横画面）のときだけ意味があるボタン：
+     縦画面（単ページ表示）では通常のページ送りがそのまま1ページ移動に
+     なるうえ表示領域も足りないため、出さない。判定は組版側の ppv
+     （computePpv：幅780px以上かつ横長で見開き）と一致させる */
+  body[data-ppv="1"] .bbtn.p1btn { display: none; }
+  @media (max-width: 779px), (orientation: portrait) {
+    .bbtn.p1btn { display: none; }
+  }
 
   /* ---------- 読了ページ（最後の話の末尾に付く仮想ページ） ---------- */
   .page.finish { align-items: center; justify-content: center; }
@@ -613,10 +627,12 @@
 
   <footer class="bar" id="bottombar">
     <button class="bbtn" id="btnPrevEp">前の話</button>
+    <button class="bbtn p1btn" id="btnPageBack">1ページ戻る</button>
     <div id="sliderWrap">
       <input type="range" id="pageSlider" min="0" max="0" step="1" value="0" aria-label="ページ移動" />
       <div id="pageText">– / –</div>
     </div>
+    <button class="bbtn p1btn" id="btnPageFwd">1ページ進む</button>
     <button class="bbtn" id="btnNextEp">次の話</button>
   </footer>
 
@@ -988,7 +1004,9 @@ const GUIDE_EPISODES = [
       "メニューはしばらくすると自動で隠れ、本文だけの全画面に戻ります。本文を長押ししてもメニューが開きます。",
       "読書中に端末（ブラウザ）の「戻る」ボタンを押すと、本棚に戻ります。目次や設定などのシートが開いているときは、戻るボタンでまずシートが閉じます。本棚が表示されているときに「戻る」を押すとアプリを終了します（ブラウザの通常の動作です）。読書位置は自動で保存されているので、本棚から同じ本を開けば続きから読めます。",
       "メニュー下部のスライダーを動かすと、話の中をまとめて移動できます。「前の話」「次の話」ボタンでは、話や章をまたいで移動できます。",
-      "タブレットを横向きにするなど画面が横長になると、自動で見開き2ページ表示になり、2ページずつ送ります。"
+      "タブレットを横向きにするなど画面が横長になると、自動で見開き2ページ表示になり、2ページずつ送ります。",
+      "見開き表示のとき、下部バーの「1ページ進む」「1ページ戻る」を押すと、見開きの半分（1枚）だけ進んだり戻ったりできます。話をまたいだときなどに見開きの組み合わせがずれて見える場合は、このボタンで1枚ずらして合わせてください。単ページ表示では、通常のページ送りと同じ動きです。",
+      "漫画の見開きでは、横長の画像（2ページ分が連結された画像など）は無理に見開きへ組み合わせず、1枚だけで大きく表示されます。縦長の画像は従来どおり2枚で見開きになります。"
     ]
   },
   {
@@ -1537,6 +1555,9 @@ function computePpv(){
 function panelW(){ return stage.clientWidth / ppv; }
 function buildProbe(){
   ppv = computePpv();
+  /* 見開きかどうかを body へも反映する（下部バーの「1ページ進む／戻る」は
+     見開きのときだけ出す。CSS側のメディアクエリと二重に判定する） */
+  document.body.dataset.ppv = String(ppv);
   if (probePage) probePage.remove();
   probePage = document.createElement("div");
   probePage.className = "page probe";
@@ -1908,7 +1929,7 @@ function decodeMangaImage(idx){
         await new Promise(res => { im.onload = res; im.onerror = res; });
       }
       if (im.naturalWidth && mangaState === st)
-        mangaDims.set(idx, { w: im.naturalWidth, h: im.naturalHeight });
+        setMangaDim(idx, im.naturalWidth, im.naturalHeight);
     } catch (e) { /* 先読みの失敗は表示側の通常読み込みに任せる */ }
   })();
   mangaDecoding.set(idx, p);
@@ -1937,19 +1958,15 @@ async function loadMangaImageInto(idx, imgEl){
 }
 function prefetchMangaAround(center){
   if (!mangaState) return;
-  /* 先読みは前・次の見開きまでにする。以前はもう1組先（最大6枚）まで
+  /* 先読みは現在位置の前後数枚だけにする。以前はもう1組先（最大6枚）まで
      デコードしていて、見開き結合のような大きな画像ではデコード済み
      ビットマップが同時に何枚も残り、メモリ逼迫の一因になっていた。
-     次の見開きぶんの実寸確定（送った後に絵が動かないための要）は
-     この範囲でも保たれる */
-  const idxs = [];
-  [center + ppv, center - ppv].forEach(b => {
-    idxs.push(b);
-    if (ppv > 1) idxs.push(b + 1);
-  });
-  idxs.forEach(i => {
+     現在の見開きと前後の実寸をここで確定させておくことが、横長画像の
+     単独表示（見開きの組み立ての判定）と「送った後に絵が動かない」
+     ための要になる */
+  for (let i = center - 2; i <= center + 4; i++) {
     if (i >= 0 && i < mangaState.entries.length) decodeMangaImage(i);
-  });
+  }
 }
 /* zip目録から、実ファイルだけの名前一覧を返す（解凍はしない） */
 function zipEntryNames(zip){
@@ -2152,6 +2169,11 @@ function currentPos(){
 /* ---------------- ページ描画・移動 ---------------- */
 const track = $("#track");
 let animating = false, winStart = 0;
+/* トラック内の並びの台帳：{page, w, el} の配列（w はパネル幅単位の占有幅。
+   横長画像の単独ページは 2、見開き単独ページの相方の余白は page:-1）。
+   トラックのオフセット計算はすべてこの台帳経由で行う */
+let winLayout = [];
+let lastGroupsSig = ""; /* 直近の描画で使った見開きの組の署名（実寸確定時の組み直し判定用） */
 function buildPageEl(pageData){
   const el = document.createElement("div");
   el.className = "page";
@@ -2247,7 +2269,7 @@ function buildPageEl(pageData){
     if (dim) { el.dataset.iw = String(dim.w); el.dataset.ih = String(dim.h); }
     img.addEventListener("load", () => {
       if (img.naturalWidth)
-        mangaDims.set(pageData.manga, { w: img.naturalWidth, h: img.naturalHeight });
+        setMangaDim(pageData.manga, img.naturalWidth, img.naturalHeight);
       applyImgCenter(el);
     });
     img.addEventListener("error", () => {
@@ -2323,7 +2345,8 @@ function afterNav(){
      出たら、その時点で読了として記録する */
   const lastPg = pages[pages.length - 1];
   const lastContentIdx = pages.length - 1 - (lastPg && (lastPg.finish || lastPg.partial) ? 1 : 0);
-  const fin = !currentBookIncomplete() && S.ep === S.episodes.length - 1 && S.page + ppv - 1 >= lastContentIdx;
+  const curWinLen = Math.max(1, visibleWindow(S.ep, S.page).length);
+  const fin = !currentBookIncomplete() && S.ep === S.episodes.length - 1 && S.page + curWinLen - 1 >= lastContentIdx;
   /* 読了は一度達成したら保持する（ラッチ）。位置レコードはページ移動のたびに
      作り直されるため、以前は fin をそこへだけ置いていて、目次から先頭の章へ
      戻った途端に読了が消え、本棚が「未読」に戻っていた。読了は位置とは独立した
@@ -2342,7 +2365,153 @@ function alignPage(p, total){
   p = Math.max(0, Math.min(p, total - 1));
   return p - (p % ppv);
 }
-function trackOffset(){ return (S.page - winStart) * panelW(); }
+/* ---------------- 見開きの組み立て（ウィンドウ方式） ----------------
+   表示位置（S.page）は「見開きの先頭ページ」を指すが、先頭は必ずしも
+   話の先頭から数えた偶数位置とは限らない。下部バーの「1ページ進む／戻る」
+   で1枚だけ動くと、その位置から組み直した見開きが表示され、結果として
+   ペアリングが1つずれる（設定ではなく、通常のページ移動としての動き）。
+   見開き1組（ウィンドウ）の決め方は、画面サイズで決まる ppv（単ページ／
+   見開きの外側の条件）の内側のルールとして：
+   - 単ページ表示（ppv=1）：常に1枚
+   - 小説：ppv 枚ずつの組（従来どおり）
+   - 漫画の見開き：縦長画像は2枚で1組。横長画像（幅＞高さ。2ページ連結済み
+     の画像を含む）は組み合わせず1枚だけで1組にし、見開き幅いっぱいに
+     表示する。横長の隣にいる縦長画像も、その組には入れず単独にする。
+     読了ページも単独。実寸がまだ分からない画像は縦長として扱い、実寸が
+     確定した時点で組み直す（scheduleSpreadRegroup） */
+function isMangaEp(epIdx){
+  const ep = S.episodes[epIdx];
+  return !!(ep && ep.isManga);
+}
+function isTailPd(pd){ return !!(pd && (pd.finish || pd.partial)); }
+function isLandscapePage(epIdx, pageIdx){
+  if (!isMangaEp(epIdx)) return false;
+  const pd = paginate(epIdx)[pageIdx];
+  if (!pd || pd.manga === undefined || pd.manga === null) return false;
+  const d = mangaDims.get(pd.manga);
+  return !!(d && d.w > d.h);
+}
+/* 位置 pos から始まる見開き1組（ページ番号の配列）を返す */
+function visibleWindow(epIdx, pos){
+  const pages = paginate(epIdx);
+  const total = pages.length;
+  if (!total || pos < 0 || pos >= total) return [];
+  if (ppv <= 1) return [pos];
+  if (!isMangaEp(epIdx)) {
+    const w = [];
+    for (let i = pos; i < Math.min(total, pos + ppv); i++) w.push(i);
+    return w;
+  }
+  const pd = pages[pos];
+  if (isTailPd(pd) || isLandscapePage(epIdx, pos)) return [pos];
+  if (pos + 1 < total) {
+    const nd = pages[pos + 1];
+    if (!isTailPd(nd) && !isLandscapePage(epIdx, pos + 1)) return [pos, pos + 1];
+  }
+  return [pos];
+}
+/* 位置 pos の直前で終わる見開き1組（ページ番号の配列）を返す */
+function windowBeforeRange(epIdx, pos){
+  if (pos <= 0) return [];
+  if (ppv <= 1) return [pos - 1];
+  if (!isMangaEp(epIdx)) {
+    const s = Math.max(0, pos - ppv), w = [];
+    for (let i = s; i < pos; i++) w.push(i);
+    return w;
+  }
+  const prev = pos - 1;
+  const pdPrev = paginate(epIdx)[prev];
+  if (isTailPd(pdPrev) || isLandscapePage(epIdx, prev)) return [prev];
+  if (prev - 1 >= 0) {
+    const pdPrev2 = paginate(epIdx)[prev - 1];
+    if (!isTailPd(pdPrev2) && !isLandscapePage(epIdx, prev - 1)) return [prev - 1, prev];
+  }
+  return [prev];
+}
+/* 話の最後の見開きの先頭ページ。漫画は先頭から組をたどって求める */
+function lastWindowStart(epIdx){
+  const pages = paginate(epIdx);
+  if (!pages.length) return 0;
+  if (!isMangaEp(epIdx)) return alignPage(pages.length - 1, pages.length);
+  let start = 0, last = 0;
+  while (start < pages.length) {
+    last = start;
+    start += Math.max(1, visibleWindow(epIdx, start).length);
+  }
+  return last;
+}
+/* 現在の組と前後の組（描画ウィンドウ）をまとめて返す */
+function windowsAround(epIdx, pos){
+  const total = paginate(epIdx).length;
+  const cur = visibleWindow(epIdx, pos);
+  const prev = windowBeforeRange(epIdx, pos);
+  const nextStart = pos + Math.max(1, cur.length);
+  const next = nextStart < total ? visibleWindow(epIdx, nextStart) : [];
+  const groups = [];
+  if (prev.length) groups.push(prev);
+  if (cur.length) groups.push(cur);
+  if (next.length) groups.push(next);
+  return { prev, cur, next, groups };
+}
+function windowPagesFor(epIdx, pos){ return visibleWindow(epIdx, pos); }
+/* 見開きで単独になる組の相方側に置く余白パネル */
+function makeSpacerEl(){
+  const el = document.createElement("div");
+  el.className = "page spreadblank";
+  el.style.width = Math.max(200, panelW()) + "px";
+  el.dataset.w = "1";
+  el.setAttribute("aria-hidden", "true");
+  return el;
+}
+/* 漫画の単独組では、隣の組のページが相方側へはみ出さないよう余白が要る。
+   横長単独ページは見開き幅いっぱいに表示するので余白は付けない */
+function spreadNeedsSpacer(epIdx, win){
+  return ppv === 2 && isMangaEp(epIdx) && win.length === 1 &&
+    !isLandscapePage(epIdx, win[0]);
+}
+/* ページ要素へ、その組における占有幅（パネル単位）を反映する。
+   横長画像の単独ページだけは見開き全体幅（2パネル分）にする */
+function applyWindowElWidth(epIdx, win, el, pageIdx){
+  const wide = ppv === 2 && isMangaEp(epIdx) && win.length === 1 &&
+    isLandscapePage(epIdx, pageIdx);
+  el.dataset.w = wide ? "2" : "1";
+  el.style.width = (wide ? panelW() * 2 : Math.max(200, panelW())) + "px";
+  el.classList.toggle("widepage", wide);
+}
+/* トラック内でページ p の要素が始まる位置までのオフセット（px） */
+function offsetForPage(p){
+  let x = 0;
+  for (let i = 0; i < winLayout.length; i++) {
+    if (winLayout[i].page === p) break;
+    x += winLayout[i].w * panelW();
+  }
+  return x;
+}
+function trackOffset(){ return offsetForPage(S.page); }
+function elForPage(p){
+  for (let i = 0; i < winLayout.length; i++)
+    if (winLayout[i].page === p) return winLayout[i].el;
+  return null;
+}
+/* 漫画画像の実寸を記録する。新しい実寸で見開きの組み立てが変わる場合は、
+   現在ページを見失わないよう同じ先頭ページのまま組み直す */
+function setMangaDim(idx, w, h){
+  if (!w || !h) return;
+  const old = mangaDims.get(idx);
+  if (old && old.w === w && old.h === h) return;
+  mangaDims.set(idx, { w, h });
+  scheduleSpreadRegroup();
+}
+let spreadRegroupTimer = null;
+function scheduleSpreadRegroup(){
+  if (spreadRegroupTimer !== null) return;
+  spreadRegroupTimer = setTimeout(() => {
+    spreadRegroupTimer = null;
+    if (animating || !S.episodes.length || !isMangaEp(S.ep) || ppv !== 2) return;
+    const sig = windowsAround(S.ep, S.page).groups.map(g => g.join(",")).join("|");
+    if (sig !== lastGroupsSig) renderWindow();
+  }, 80);
+}
 /* ---------------- 見開きの画像センタリング ----------------
    見開き（ppv=2）で画像ページ（漫画・全面挿絵）が2枚並ぶとき、2枚を
    ひと組として画面の中央へ寄せる。各画像はパネル幅いっぱいの要素の中で
@@ -2406,16 +2575,38 @@ function spreadPairPass(container, firstIdx){
   });
   spreadPairApply(groups.filter(Boolean));
 }
-/* 前・現在・次のページ群だけをトラックに並べ、現在位置へスナップさせる */
+/* 前・現在・次の見開き（組）だけをトラックに並べ、現在位置へスナップさせる。
+   組の境界は windowsAround が決める：小説は ppv 枚ずつ、漫画の見開きは
+   横長画像が単独になるなど組の大きさが変わるため、組ごとに要素を並べ、
+   単独の組には相方側へ余白パネルを置く（隣の組がはみ出して見えないように） */
 function renderWindow(){
   const pages = paginate(S.ep);
   const total = pages.length;
-  S.page = alignPage(S.page, total);
-  winStart = Math.max(0, Math.min(S.page - ppv, Math.max(0, total - 3 * ppv)));
+  S.page = Math.max(0, Math.min(S.page, Math.max(0, total - 1)));
+  const around = windowsAround(S.ep, S.page);
+  winStart = around.groups.length && around.groups[0].length ? around.groups[0][0] : S.page;
   track.innerHTML = "";
-  const end = Math.min(total, winStart + 3 * ppv);
-  for (let i = winStart; i < end; i++) track.appendChild(buildPageEl(pages[i]));
-  spreadPairPass(track, winStart);
+  winLayout = [];
+  const groupsEls = [];
+  around.groups.forEach(win => {
+    const els = [];
+    win.forEach(p => {
+      const el = buildPageEl(pages[p]);
+      el.dataset.pidx = String(p);
+      applyWindowElWidth(S.ep, win, el, p);
+      track.appendChild(el);
+      winLayout.push({ page: p, w: Number(el.dataset.w || 1), el });
+      els.push(el);
+    });
+    if (spreadNeedsSpacer(S.ep, win)) {
+      const sp = makeSpacerEl();
+      track.appendChild(sp);
+      winLayout.push({ page: -1, w: 1, el: sp });
+    }
+    groupsEls.push(els);
+  });
+  lastGroupsSig = around.groups.map(g => g.join(",")).join("|");
+  spreadPairApply(groupsEls);
   track.style.transition = "none";
   track.style.transform = "translateX(" + trackOffset() + "px)";
   if (mangaState) prefetchMangaAround(mangaIndexBase(S.ep) + S.page);
@@ -2464,7 +2655,7 @@ function prefetchAdjacent(){
   }
   if (S.ep > 0) {
     const pages = paginate(S.ep - 1);
-    const start = alignPage(pages.length - 1, pages.length);
+    const start = lastWindowStart(S.ep - 1);
     for (let i = start; i < pages.length; i++) jobs.push([S.ep - 1, i]);
   }
   jobs.forEach(([ep, page]) => {
@@ -2485,7 +2676,7 @@ function renderCurrent(dir){ renderWindow(); }
 function animateGroupTo(newPage, done){
   animating = true;
   stage.classList.add("sliding");
-  const target = (newPage - winStart) * panelW();
+  const target = offsetForPage(newPage);
   track.style.transition = "transform .32s cubic-bezier(.25,.7,.3,1)";
   track.style.transform = "translateX(" + target + "px)";
   let fin = false;
@@ -2521,14 +2712,21 @@ function animateGroupTo(newPage, done){
    取り出して使うので、タップ時点で新規に組版・構築はしない */
 function slideGroupTo(dir, tgt){
   const curPages = paginate(S.ep), tgtPages = paginate(tgt.ep);
+  const curWin = windowPagesFor(S.ep, S.page);
+  const tgtWin = windowPagesFor(tgt.ep, tgt.page);
   const curEls = [], tgtEls = [];
-  for (let i = S.page; i < Math.min(curPages.length, S.page + ppv); i++) {
-    const child = track.children[i - winStart];
-    curEls.push(child || buildPageEl(curPages[i]));
-  }
-  for (let i = tgt.page; i < Math.min(tgtPages.length, tgt.page + ppv); i++) {
-    tgtEls.push(takePrebuiltPage(tgt.ep, i) || buildPageEl(tgtPages[i]));
-  }
+  curWin.forEach(p => {
+    const el = elForPage(p) || buildPageEl(curPages[p]);
+    el.dataset.pidx = String(p);
+    applyWindowElWidth(S.ep, curWin, el, p);
+    curEls.push(el);
+  });
+  tgtWin.forEach(p => {
+    const el = takePrebuiltPage(tgt.ep, p) || buildPageEl(tgtPages[p]);
+    el.dataset.pidx = String(p);
+    applyWindowElWidth(tgt.ep, tgtWin, el, p);
+    tgtEls.push(el);
+  });
   if (!curEls.length || !tgtEls.length) {
     S.ep = tgt.ep; S.page = tgt.page; renderWindow(); return;
   }
@@ -2537,10 +2735,17 @@ function slideGroupTo(dir, tgt){
   /* row-reverse なので先頭の群が右端（先に読む側）に来る。
      next: [現在群, 遷移先群] を現在群の実幅ぶん右へ滑らせる
      prev: [遷移先群, 現在群] を遷移先群の実幅ぶん右の位置から0へ戻す
-     （群のページ数が ppv 未満の最終群でも、固定幅ではなく実幅で送る） */
-  const shift = (dir === "next" ? curEls.length : tgtEls.length) * panelW();
+     （群のページ数が ppv 未満の最終群でも、固定幅ではなく実幅で送る。
+     漫画の単独群には renderWindow と同じ余白パネルを付け、横長単独ページは
+     要素自体の幅（2パネル分）で実幅に数える） */
+  const dispOf = (epIdx, win, els) =>
+    spreadNeedsSpacer(epIdx, win) ? els.concat([makeSpacerEl()]) : els.slice();
+  const curDisp = dispOf(S.ep, curWin, curEls);
+  const tgtDisp = dispOf(tgt.ep, tgtWin, tgtEls);
+  const widthOf = arr => arr.reduce((a, el) => a + Number(el.dataset.w || 1), 0) * panelW();
+  const shift = dir === "next" ? widthOf(curDisp) : widthOf(tgtDisp);
   track.innerHTML = "";
-  (dir === "next" ? curEls.concat(tgtEls) : tgtEls.concat(curEls))
+  (dir === "next" ? curDisp.concat(tgtDisp) : tgtDisp.concat(curDisp))
     .forEach(el => track.appendChild(el));
   spreadPairApply(dir === "next" ? [curEls, tgtEls] : [tgtEls, curEls]);
   track.style.transition = "none";
@@ -2588,12 +2793,12 @@ function slideGroupTo(dir, tgt){
    （次へ＝右端、戻る＝左端）を軸にして同じ作りでめくる */
 function overlayGroup(dir, tgt, flip){
   const tgtPages = paginate(tgt.ep);
-  const curIdx = S.page - winStart;
-  const curRightEl = track.children[curIdx] || null;
-  const curLeftEl = ppv > 1 ? (track.children[curIdx + 1] || null) : null;
+  const curWinEls = windowPagesFor(S.ep, S.page).map(p => elForPage(p)).filter(Boolean);
+  const curRightEl = curWinEls[0] || null;
+  const curLeftEl = ppv > 1 ? (curWinEls[1] || null) : null;
   const tgtEls = [];
-  for (let i = tgt.page; i < Math.min(tgtPages.length, tgt.page + ppv); i++)
-    tgtEls.push(takePrebuiltPage(tgt.ep, i) || buildPageEl(tgtPages[i]));
+  windowPagesFor(tgt.ep, tgt.page).forEach(p =>
+    tgtEls.push(takePrebuiltPage(tgt.ep, p) || buildPageEl(tgtPages[p])));
   if (!tgtEls.length) { S.ep = tgt.ep; S.page = tgt.page; renderWindow(); return; }
   /* 葉の表（今のページ）・裏（遷移先ページ）と軸の位置を決める。
      裏は「倒れ切った先で現れるページ」：次へでは遷移先の右ページ、
@@ -2720,16 +2925,35 @@ function overlayGroup(dir, tgt, flip){
 function targetFor(dir){
   const pages = paginate(S.ep);
   if (dir === "next") {
-    if (S.page + ppv < pages.length) return { ep: S.ep, page: S.page + ppv };
+    const np = S.page + Math.max(1, visibleWindow(S.ep, S.page).length);
+    if (np < pages.length) return { ep: S.ep, page: np };
     if (S.ep < S.episodes.length - 1) return { ep: S.ep + 1, page: 0 };
     return null;
   }
-  if (S.page > 0) return { ep: S.ep, page: S.page - ppv };
-  if (S.ep > 0) {
-    const prevPages = paginate(S.ep - 1);
-    return { ep: S.ep - 1, page: alignPage(prevPages.length - 1, prevPages.length) };
+  if (S.page > 0) {
+    const before = windowBeforeRange(S.ep, S.page);
+    return { ep: S.ep, page: before.length ? before[0] : Math.max(0, S.page - ppv) };
   }
+  if (S.ep > 0) return { ep: S.ep - 1, page: lastWindowStart(S.ep - 1) };
   return null;
+}
+/* めくり方式が前提にできない遷移かどうか。漫画の見開きで組が2枚組でない
+   場合（横長画像の単独表示など）は、葉の仕掛けが組の形と合わないため
+   スライドで送る */
+function flipUnsupported(tgt){
+  if (ppv !== 2) return false;
+  if (isMangaEp(S.ep) && visibleWindow(S.ep, S.page).length !== 2) return true;
+  if (isMangaEp(tgt.ep) && visibleWindow(tgt.ep, tgt.page).length !== 2) return true;
+  return false;
+}
+function dispatchTurn(dir, tgt, forceSlide){
+  /* 「なし」方式：前後どちらの送りもアニメーションせず即時に切り替える */
+  if (S.turnStyle === "none") { S.ep = tgt.ep; S.page = tgt.page; renderWindow(); return; }
+  if (!forceSlide && S.turnStyle === "flip" && !flipUnsupported(tgt)) { overlayGroup(dir, tgt, true); return; }
+  /* スライド方式は章内・章またぎとも同じページ単位の離散スライドで統一する */
+  if (reduceMotion) { S.ep = tgt.ep; S.page = tgt.page; renderWindow(); return; }
+  if (tgt.ep === S.ep) { animateGroupTo(tgt.page); return; }
+  slideGroupTo(dir, tgt);
 }
 function turn(dir){
   if (animating) return;
@@ -2740,25 +2964,45 @@ function turn(dir){
     return;
   }
   hideUI();
-  /* 「なし」方式：前後どちらの送りもアニメーションせず即時に切り替える */
-  if (S.turnStyle === "none") { S.ep = tgt.ep; S.page = tgt.page; renderWindow(); return; }
-  if (S.turnStyle === "flip") { overlayGroup(dir, tgt, true); return; }
-  /* スライド方式は章内・章またぎとも同じページ単位の離散スライドで統一する */
-  if (reduceMotion) { S.ep = tgt.ep; S.page = tgt.page; renderWindow(); return; }
-  if (tgt.ep === S.ep) { animateGroupTo(tgt.page); return; }
-  slideGroupTo(dir, tgt);
+  dispatchTurn(dir, tgt, false);
+}
+/* 下部バーの「1ページ進む／戻る」：見開きでも1枚単位で動く通常のページ移動。
+   見開きの半分だけ動くため、表示される組はその位置から組み直され、結果と
+   してペアリングが1つずれる。単ページ表示では通常のページ送りと同じ。
+   設定ではないので保存はしない。めくり方式のときも、この移動だけは
+   半見開きの形に合わせてスライドで送る */
+function moveOnePage(dir){
+  if (animating) return;
+  const pages = paginate(S.ep);
+  let tgt = null;
+  if (dir === "next") {
+    if (S.page + 1 < pages.length) tgt = { ep: S.ep, page: S.page + 1 };
+    else if (S.ep < S.episodes.length - 1) tgt = { ep: S.ep + 1, page: 0 };
+  } else {
+    if (S.page > 0) tgt = { ep: S.ep, page: S.page - 1 };
+    else if (S.ep > 0) {
+      const pp = paginate(S.ep - 1);
+      tgt = { ep: S.ep - 1, page: pp.length - 1 };
+    }
+  }
+  if (!tgt) {
+    toast(dir === "next" ? "この話の最後のページです" : "最初のページです");
+    return;
+  }
+  hideUI();
+  dispatchTurn(dir, tgt, true);
 }
 function openEpisode(i, pageSpec){
   S.ep = i;
   const pages = paginate(i);
-  S.page = pageSpec === "last" ? alignPage(pages.length - 1, pages.length)
-                               : alignPage(pageSpec || 0, pages.length);
+  S.page = pageSpec === "last" ? lastWindowStart(i)
+                               : Math.max(0, Math.min(pageSpec || 0, Math.max(0, pages.length - 1)));
   renderCurrent(null);
 }
 function goToPos(epIdx, pos){
   S.ep = epIdx;
   const pages = paginate(epIdx);
-  S.page = alignPage(findPageForPos(pages, pos), pages.length);
+  S.page = Math.max(0, Math.min(findPageForPos(pages, pos), Math.max(0, pages.length - 1)));
   renderCurrent(null);
 }
 
@@ -2904,6 +3148,8 @@ $("#btnToc").addEventListener("click", () => { buildToc(); openSheet("#tocSheet"
 $("#btnMark").addEventListener("click", () => { buildMarks(); openSheet("#markSheet"); pokeUI(); });
 $("#btnSet").addEventListener("click", () => { openSheet("#setSheet"); pokeUI(); });
 $("#btnPrevEp").addEventListener("click", () => { if (S.ep > 0) openEpisode(S.ep - 1, 0); });
+$("#btnPageBack").addEventListener("click", () => moveOnePage("prev"));
+$("#btnPageFwd").addEventListener("click", () => moveOnePage("next"));
 $("#btnNextEp").addEventListener("click", () => { if (S.ep < S.episodes.length - 1) openEpisode(S.ep + 1, 0); });
 $("#pageSlider").addEventListener("input", e => {
   S.page = parseInt(e.target.value, 10) || 0;
@@ -3941,6 +4187,7 @@ function closeCurrentBook(){
      行う。逆順だと、破棄済みURLを抱えた画像要素が残っている間ブラウザが
      ビットマップを手放せず、解放が遅れて次の読み込みと重なる */
   track.innerHTML = "";
+  winLayout = [];
   pageHost.querySelectorAll(".leafwrap").forEach(el => el.remove());
   S.cache.clear();
   clearPrebuiltPages();
