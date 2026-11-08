@@ -186,6 +186,7 @@
   .bar {
     position: fixed; left: 0; right: 0; margin: 0 auto; width: 100%; max-width: 1100px; z-index: 20;
     background: var(--chrome); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    box-shadow: none;
   }
   #app:not(.ui-hidden) #topbar { animation: barDown .22s ease; }
   #app:not(.ui-hidden) #bottombar { animation: barUp .22s ease; }
@@ -249,15 +250,30 @@
      本棚の裏で開いて「ボタンを押しても反応がない」状態になる */
   #scrim.book { z-index: 47; }
   #bookSheet { z-index: 48; }
+  /* 閉じたシートを画面下の外に translateY(103%) で待機させると、box-shadow は
+     要素の外側に描かれるため、影だけが画面下端の内側にはみ出してグレーの
+     グラデーション帯として残ってしまった（シートが複数枚重なると影も重なり、
+     読書中・本棚表示中にもシステムナビバーの上に濃い帯が見えていた）。
+     そこで閉じている間は取得進捗シート（#nprog）と同じ display:none にし、
+     一切描画しない（影もはみ出さない）。開くときは @starting-style ＋
+     display の離散遷移（allow-discrete）で従来どおり下から滑り上がり、
+     閉じるときも滑り下がってから消える。対応しないブラウザでは即時表示に
+     なるだけで、開閉自体はそのまま動く。これで読書画面の下端は本文領域
+     （紙の背景）がそのまま画面端まで届く */
   .sheet {
     position: fixed; left: 0; right: 0; bottom: 0; z-index: 31; margin: 0 auto; max-width: 620px;
     max-height: 80dvh; overflow-y: auto; overscroll-behavior: contain;
     background: var(--sheet); color: var(--ink);
     border-radius: 18px 18px 0 0; box-shadow: 0 -8px 34px rgba(0,0,0,.22);
-    transform: translateY(103%); transition: transform .28s ease;
+    transform: translateY(103%);
+    transition: transform .28s ease, display .28s allow-discrete;
     padding: 8px 20px calc(env(safe-area-inset-bottom, 0px) + 20px);
+    display: none;
   }
-  .sheet.open { transform: translateY(0); }
+  .sheet.open {
+    display: block; transform: translateY(0);
+    @starting-style { transform: translateY(103%); }
+  }
   .sheet .grab { width: 40px; height: 4px; border-radius: 2px; background: var(--line); margin: 4px auto 10px; }
   .sheet h2 { font-size: 15px; margin: 4px 0 2px; font-family: var(--font); }
   .sheet .worknote { font-size: 12px; color: var(--sub); margin: 0 0 8px; }
@@ -525,12 +541,12 @@
     position: fixed; left: 0; right: 0; bottom: 0; z-index: 47; margin: 0 auto; max-width: 620px;
     max-height: 82dvh; overflow-y: auto; overscroll-behavior: contain;
     background: var(--sheet); color: var(--ink);
-    border-radius: 18px 18px 0 0; box-shadow: 0 -8px 34px rgba(0,0,0,.28);
+    border-radius: 18px 18px 0 0; box-shadow: none;
     transform: translateY(103%); transition: transform .28s ease;
     padding: 8px 20px calc(env(safe-area-inset-bottom, 0px) + 20px);
     display: none;
   }
-  #nprog.open { display: block; transform: translateY(0); }
+  #nprog.open { display: block; transform: translateY(0); box-shadow: 0 -8px 34px rgba(0,0,0,.28); }
   #nprog .grab { width: 40px; height: 4px; border-radius: 2px; background: var(--line); margin: 4px auto 10px; }
   #nprog h2 { font-size: 15.5px; margin: 4px 0 2px; font-family: var(--font); line-height: 1.5; }
   #nprog .nprog-sub { font-size: 12px; color: var(--sub); margin: 0 0 10px; }
