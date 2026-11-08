@@ -890,8 +890,8 @@ const GUIDE_EPISODES = [
       "このビューワーは、日本語の小説を読むための縦書きビューワーです。縦書き・右から左へのページ送り、上下二段組みの組版で、紙の文庫本を読む感覚に寄せてあります。",
       "この文章は、ビューワーの使い方そのものです。サンプル小説の代わりに入っています。まずはこのまま読み進めながら、ページ送りやメニューの操作を試してみてください。",
       "読めるファイルは、テキストファイル（.txt）、Markdown（.md）、EPUB（.epub）、青空文庫の配布形式（.zip）です。Shift_JISのテキストや、青空文庫形式のルビ記法、EPUB内のルビにも対応しています。青空文庫の注記（改ページ・改段・見出し・傍点など）も処理され、.zipに画像が同梱されていれば挿絵も表示されます。挿絵は画像の大きさで自動的に切り替わり、本文に収まる小さい画像は本文の流れの中に、大きな画像（口絵など）は改ページして1ページ全面に表示されます。",
-      "テキストファイルが複数入った.zipも開けます。その場合は1冊に連結して扱い、「話」の区切りはzipのルート直下で決まります。ルート直下にフォルダがある場合はフォルダごとに1話になり、フォルダ内のファイルはその話の中でファイル名の順に連結されます（「次の話／前の話」ではフォルダの先頭へ移動します）。フォルダに入っていないファイルは1ファイルで1話、zipの中にzipがある場合はそのzip全体で1話になり、1階層まで開いて連結します。ルートに本体フォルダ（複数のテキストを持つ唯一のフォルダ）がある場合は、そのフォルダの中身がルートとして扱われます。横に説明テキストなどの小さなファイルが入っていても本体フォルダは剥がされ、同居したファイルは独立した話として残ります（フォルダが入れ子に続く場合も同様で、書名には一番外側のフォルダ名が使われます）。",
-      "画像だけが入った.zip（漫画のアーカイブ）も開けます。その場合は「画像の本」として扱われ、画像1枚が1ページになり、ファイル名の数値順（1、2、…、10の順）に並びます。ページ送りの方向や方式は小説と同じで、本棚・進み具合・しおりもそのまま使えます。画像はページを表示するタイミングで1枚ずつ読み出されるので、大きなzipでもまとめて展開はしません。",
+      "テキストファイルが複数入った.zipも開けます。その場合は1冊に連結して扱い、「話」の区切りはzipのルート直下で決まります。ルート直下にフォルダがある場合はフォルダごとに1話になり、フォルダ内のファイルはその話の中でファイル名の順に連結されます（「次の話／前の話」ではフォルダの先頭へ移動します）。フォルダに入っていないファイルは1ファイルで1話、zipの中にzipがある場合はそのzip全体で1話になり、1階層まで開いて連結します。フォルダしか入っていないフォルダは包みのまま1話にはせず、内側のフォルダやファイルがそのまま話の単位になります（ルート直下かどうかは問いません）。ルートに本体フォルダ（複数のテキストを持つ唯一のフォルダ）がある場合は、そのフォルダの中身がルートとして扱われます。横に説明テキストなどの小さなファイルが入っていても本体フォルダは剥がされ、同居したファイルは独立した話として残ります（フォルダが入れ子に続く場合も同様で、書名には一番外側のフォルダ名が使われます）。",
+      "画像だけが入った.zip（漫画のアーカイブ）も開けます。その場合は「画像の本」として扱われ、画像1枚が1ページになり、ファイル名の数値順（1、2、…、10の順）に並びます。フォルダ構成がある場合はテキストのzipと同じ考え方で話が分かれます：フォルダは配下の画像をまとめて1話、フォルダしか入っていないフォルダは内側の単位で分かれ、バラの画像はその階層で1話にまとまります。ルートがフォルダ1つだけの場合は、そのフォルダ名が書名になります。ページ送りの方向や方式は小説と同じで、本棚・進み具合・しおりもそのまま使えます。画像はページを表示するタイミングで1枚ずつ読み出されるので、大きなzipでもまとめて展開はしません。",
       "なお、Kindle本のようなDRM（コピー防止）付きの本は開けません。対象は、自分の原稿や青空文庫など、DRMのないファイルです。"
     ]
   },
@@ -1320,8 +1320,8 @@ function registerBook(key, title, note, kind, fileName, episodes, stored){
   e.epChars = counts;
   e.totalChars = counts.reduce((a, b) => a + b, 0);
   e.stored = kind === "guide" ? true : !!stored;
-  const mangaEp = episodes.find(ep => ep.isManga);
-  if (mangaEp) { e.manga = true; e.pageCount = mangaEp.paragraphs.length; }
+  const mangaEps = episodes.filter(ep => ep.isManga);
+  if (mangaEps.length) { e.manga = true; e.pageCount = mangaEps.reduce((a, ep) => a + ep.paragraphs.length, 0); }
   else { delete e.manga; delete e.pageCount; }
   e.lastRead = Date.now();
   S.library = [e].concat(S.library.filter(x => x.key !== key));
@@ -1782,18 +1782,78 @@ function zipEntryNames(zip){
   });
 }
 /* 目録だけから漫画の本を組み立てる：本文の代わりに「画像が何枚あるか」だけを持ち、
-   実データは mangaState 経由でページ表示時に取りに行く */
+   実データは mangaState 経由でページ表示時に取りに行く。
+   話の単位はテキストzipと同じ考え方で決める：
+   - ルートがフォルダ1つだけなら、そのフォルダ名を書名として中身をルート扱いにする
+     （単独フォルダが続く場合は再帰的に剥がす）
+   - ある階層のバラ画像は、まとめて1話にする
+   - サブフォルダは、自前の画像を持つものは配下を全部畳んで1話、
+     フォルダしか抱えていないものは透過して内側の単位をそのまま話にする
+     （ルート直下かどうかは問わない）
+   以前は全画像を自然順に並べて1話に平坦化していたため、「外側フォルダの中に
+   バラ画像＋フォルダだけのフォルダ（その中に巻フォルダ）」という構成が
+   1話に潰れてしまっていた */
 function buildMangaFromZip(zip, fileName){
-  const imageNames = zipEntryNames(zip).filter(n => MANGA_IMG_RE.test(n)).sort(naturalCompare);
-  if (!imageNames.length) throw new Error("notext");
-  const entries = imageNames.map(n => ({ name: n, entry: zip.files[n] }));
-  const title = String(fileName || "漫画").replace(/\.(zip|cbz)$/i, "");
-  const episode = {
-    title: title, isManga: true,
-    /* 進み具合・しおりの位置計算に乗せるため、1画像＝1文字ぶんのダミー段落にする */
-    paragraphs: entries.map(e => ({ units: [{ c: "画" }], cls: "manga", img: e.name }))
+  const pairs0 = zipEntryNames(zip)
+    .filter(n => MANGA_IMG_RE.test(n))
+    .map(n => ({
+      rel: n.replace(/\\/g, "/").replace(/^\/+/, "").replace(/^(\.\/)+/, ""),
+      orig: n
+    }))
+    .filter(p => p.rel)
+    .sort((a, b) => naturalCompare(a.rel, b.rel));
+  if (!pairs0.length) throw new Error("notext");
+  let pairs = pairs0;
+  let wrapperName = "";
+  for (;;) {
+    const segs = new Set(pairs.map(p => p.rel.split("/")[0]));
+    if (segs.size !== 1) break;
+    const seg = segs.values().next().value;
+    if (!pairs.every(p => p.rel.startsWith(seg + "/"))) break;
+    if (!wrapperName) wrapperName = seg;
+    pairs = pairs.map(p => ({ rel: p.rel.slice(seg.length + 1), orig: p.orig })).filter(p => p.rel);
+    if (!pairs.length) { pairs = pairs0; wrapperName = ""; break; }
+  }
+  const title = wrapperName || String(fileName || "漫画").replace(/\.(zip|cbz)$/i, "");
+  const groups = []; /* {title, members:[pair]} 出現順 */
+  const collect = (plist, looseTitle) => {
+    const bySeg = new Map();
+    plist.forEach(p => {
+      const seg = p.rel.split("/")[0];
+      if (!bySeg.has(seg)) bySeg.set(seg, []);
+      bySeg.get(seg).push(p);
+    });
+    let looseGroup = null;
+    for (const [seg, members] of bySeg) {
+      const isFolder = members.some(p => p.rel.includes("/"));
+      if (!isFolder) {
+        if (!looseGroup) { looseGroup = { title: looseTitle, members: [] }; groups.push(looseGroup); }
+        members.forEach(p => looseGroup.members.push(p));
+        continue;
+      }
+      const hasDirect = members.some(p => !p.rel.slice(seg.length + 1).includes("/"));
+      if (!hasDirect) {
+        const inner = members.map(p => ({ rel: p.rel.slice(seg.length + 1), orig: p.orig })).filter(p => p.rel);
+        collect(inner, seg);
+      } else {
+        groups.push({ title: seg, members });
+      }
+    }
   };
-  return { title, episodes: [episode], mangaState: { zip, entries } };
+  collect(pairs, title);
+  const entries = [];
+  const episodes = [];
+  groups.forEach(g => {
+    if (!g.members.length) return;
+    const paragraphs = g.members.map(p => {
+      entries.push({ name: p.orig, entry: zip.files[p.orig] });
+      /* 進み具合・しおりの位置計算に乗せるため、1画像＝1文字ぶんのダミー段落にする */
+      return { units: [{ c: "画" }], cls: "manga", img: p.orig };
+    });
+    episodes.push({ title: g.title, isManga: true, paragraphs });
+  });
+  if (!episodes.length) throw new Error("notext");
+  return { title, episodes, mangaState: { zip, entries } };
 }
 async function parseMangaArchive(buf, fileName){
   const zip = await loadZipBuf(buf); /* 読むのは目録まで。画像は解凍しない */
@@ -1819,13 +1879,25 @@ function bookTailPage(paragraphCount){
   else p.finish = true;
   return p;
 }
+/* 漫画のページ番号は本全体を通した通し番号（mangaState.entries の添字）で扱う。
+   話ごとに 0 から数え直すと、2話目以降のページが1話目の画像を指してしまうため、
+   ページ組版と先読みでは「その話より前の話の画像数」を先頭位置として加える */
+function mangaIndexBase(epIdx){
+  let base = 0;
+  for (let j = 0; j < epIdx && j < S.episodes.length; j++) {
+    const pe = S.episodes[j];
+    if (pe && pe.isManga) base += pe.paragraphs.length;
+  }
+  return base;
+}
 function paginate(epIdx){
   if (S.cache.has(epIdx)) return S.cache.get(epIdx);
   const ep = S.episodes[epIdx];
   /* 漫画は組版せず、画像1枚＝1ページとしてそのまま並べる */
   if (ep && ep.isManga) {
-    const pages = ep.paragraphs.map((p, i) => ({ tiers: [], start: { pi: i, off: 0 }, manga: i }));
-    if (!pages.length) pages.push({ tiers: [], start: { pi: 0, off: 0 }, manga: 0 });
+    const base = mangaIndexBase(epIdx);
+    const pages = ep.paragraphs.map((p, i) => ({ tiers: [], start: { pi: i, off: 0 }, manga: base + i }));
+    if (!pages.length) pages.push({ tiers: [], start: { pi: 0, off: 0 }, manga: base });
     /* 最後の話の末尾には「読了」ページを付ける（start が本文末尾を指すため、
        このページを開くと進捗が100%になる） */
     if (epIdx === S.episodes.length - 1) {
@@ -2068,7 +2140,7 @@ function renderWindow(){
   for (let i = winStart; i < end; i++) track.appendChild(buildPageEl(pages[i]));
   track.style.transition = "none";
   track.style.transform = "translateX(" + trackOffset() + "px)";
-  if (mangaState) prefetchMangaAround(S.page);
+  if (mangaState) prefetchMangaAround(mangaIndexBase(S.ep) + S.page);
   afterNav();
   scheduleAdjacentPrefetch();
 }
@@ -4036,16 +4108,22 @@ async function parseZipBook(buf, fileName){
     pairs = pairs.map(p => (p.rel.startsWith(prefix) ? { rel: p.rel.slice(prefix.length), orig: p.orig } : p))
       .filter(p => p.rel);
   }
-  const groups = new Map(); /* ルート直下の名前 -> その配下のエントリ（自然順） */
-  pairs.forEach(p => {
-    const seg = p.rel.split("/")[0];
-    if (!groups.has(seg)) groups.set(seg, []);
-    groups.get(seg).push(p);
-  });
+  /* 話への分割は再帰的に行う。自前のファイルを持つフォルダは従来どおり
+     配下を畳んで1話にするが、フォルダしか抱えていないフォルダは透過して
+     内側の単位をそのまま話にする（ルート直下かどうかは問わない）。
+     旧仕様では分割がルート直下で止まっていたため、フォルダだけのフォルダの
+     内側にある巻フォルダ等が丸ごと1話に潰れてしまっていた */
   const parts = [];
-  for (const [seg, members] of groups) {
-    const isFolder = members.some(p => p.rel.includes("/"));
-    if (!isFolder) {
+  const collectParts = async plist => {
+    const groups = new Map(); /* この階層の名前 -> その配下のエントリ（自然順） */
+    plist.forEach(p => {
+      const seg = p.rel.split("/")[0];
+      if (!groups.has(seg)) groups.set(seg, []);
+      groups.get(seg).push(p);
+    });
+    for (const [seg, members] of groups) {
+      const isFolder = members.some(p => p.rel.includes("/"));
+      if (!isFolder) {
       /* 通常は1グループ1ファイル。ラッパーを剥がした結果、同名ファイルが
          ルート直下で重なった場合も落とさないよう、全メンバーを処理する */
       for (const p of members) {
@@ -4066,6 +4144,13 @@ async function parseZipBook(buf, fileName){
           if (subTexts.length) parts.push({ title: baseName(p.rel).replace(/\.zip$/i, ""), subTexts });
         }
       }
+      continue;
+    }
+    const hasDirect = members.some(p => !p.rel.slice(seg.length + 1).includes("/"));
+    if (!hasDirect) {
+      /* フォルダしか抱えていないフォルダ：1話に潰さず透過し、内側の単位を話にする */
+      const inner = members.map(p => ({ rel: p.rel.slice(seg.length + 1), orig: p.orig })).filter(p => p.rel);
+      await collectParts(inner);
       continue;
     }
     /* フォルダ：配下のtxt（深い階層も含む）を自然順に連結して1話にする。
@@ -4089,7 +4174,9 @@ async function parseZipBook(buf, fileName){
       }
     }
     if (subTexts.length) parts.push({ title: seg, subTexts });
-  }
+    }
+  };
+  await collectParts(pairs);
   /* フォルダ（や入れ子zip）に包まれているだけで実質txtが1本だけの本は、
      従来どおりそのtxt自体を1冊として読む（話タイトルもファイル名から取る） */
   if (parts.length === 1 && parts[0].subTexts && parts[0].subTexts.length === 1) {
@@ -4222,7 +4309,10 @@ $("#fileInput").addEventListener("change", async e => {
         const resumed = setBook({ title: mangaBook.title, note: "画像ZIP（漫画）" }, mangaBook.episodes, key,
           { kind: "manga", fileName: file.name, stored, mangaState: mangaBook.mangaState, thumb: mThumb });
         toast(resumed ? "前回の続きから開きました"
-          : "『" + mangaBook.title + "』を開きました（全" + mangaBook.episodes[0].paragraphs.length + "ページ）");
+          : "『" + mangaBook.title + "』を開きました（" +
+            (mangaBook.episodes.length > 1
+              ? "全" + mangaBook.episodes.length + "話・全" + mangaBook.episodes.reduce((a, ep) => a + ep.paragraphs.length, 0) + "ページ"
+              : "全" + mangaBook.episodes[0].paragraphs.length + "ページ") + "）");
         notifyNotStored(stored);
       } else {
         const book = await parseZipBook(buf, file.name);
