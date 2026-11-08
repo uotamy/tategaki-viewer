@@ -3576,12 +3576,21 @@ async function probeArchiveSwitch(entry){
     if (!arch) { setArchiveFlags(entry.key, { hasArchive: false }); return null; }
     const buf = (typeof Blob !== "undefined" && arch instanceof Blob) ? await arch.arrayBuffer() : arch;
     const zipObj = await loadArchiveBuf(buf, entry.fileName || "");
-    const names = zipEntryNames(zipObj);
-    const hasTxt = names.some(n => /\.txt$/i.test(n));
-    const hasImg = names.some(n => MANGA_IMG_RE.test(n));
-    setArchiveFlags(entry.key, { hasArchive: true, arcHasTxt: hasTxt, arcHasImg: hasImg });
-    const eligible = isEntryManga(entry) ? hasTxt : hasImg;
-    return eligible ? { hasTxt, hasImg } : null;
+    try {
+      const names = zipEntryNames(zipObj);
+      const hasTxt = names.some(n => /\.txt$/i.test(n));
+      const hasImg = names.some(n => MANGA_IMG_RE.test(n));
+      setArchiveFlags(entry.key, { hasArchive: true, arcHasTxt: hasTxt, arcHasImg: hasImg });
+      const eligible = isEntryManga(entry) ? hasTxt : hasImg;
+      return eligible ? { hasTxt, hasImg } : null;
+    } finally {
+      /* 目録を見ただけの使い捨て目録は、その場で解放する。RARでは
+         解放しないとアーカイブ全バイトのコピーが展開器ごと残留し、
+         次に本を開く処理とピークが重なって落ちる原因になる */
+      if (zipObj && typeof zipObj.__release === "function") {
+        try { zipObj.__release(); } catch (e) { /* noop */ }
+      }
+    }
   } catch (e) { return null; }
 }
 let switchBusy = false;
@@ -3589,6 +3598,11 @@ async function switchBookMode(entry, toManga){
   if (!entry || switchBusy) { if (switchBusy) toast("別の切り替え処理中です"); return; }
   switchBusy = true;
   setLoading(true);
+  /* 目録オブジェクトの解放管理：漫画へ切り替えた場合は目録がそのまま
+     読書中の mangaState になるので解放しない。それ以外（小説化・失敗・
+     早期リターン）では finally で必ず解放する。RAR目録を解放せずに
+     捨てるとアーカイブ全バイトのコピーが残留する */
+  let switchZipObj = null, switchZipLive = false;
   try {
     await new Promise(r => setTimeout(r, 40));
     const key = entry.key;
@@ -3598,6 +3612,7 @@ async function switchBookMode(entry, toManga){
     if (!arch) { toast("エラー：『" + entry.title + "』の元のファイルが端末に保持されていないため、切り替えできません", 3600); return; }
     const buf = (typeof Blob !== "undefined" && arch instanceof Blob) ? await arch.arrayBuffer() : arch;
     const zipObj = await loadArchiveBuf(buf, fileName);
+    switchZipObj = zipObj;
     const names = zipEntryNames(zipObj);
     const hasTxt = names.some(n => /\.txt$/i.test(n));
     const hasImg = names.some(n => MANGA_IMG_RE.test(n));
@@ -3635,7 +3650,11 @@ async function switchBookMode(entry, toManga){
     if (!toManga) textStored = await saveBookContent(key, newEpisodes);
     if (isCurrent) {
       /* 今開いている本は、メモリ上の本文もその場で差し替える。
-         位置は上で消してあるので setBook は先頭から開き直す */
+         位置は上で消してあるので setBook は先頭から開き直す。
+         漫画化の場合は目録が mangaState として生き続けるので、
+         finally での解放対象から外す（本棚側だけの切り替えでは
+         mangaState は使われず破棄されるため、そちらは解放する） */
+      if (toManga) switchZipLive = true;
       setBook({ title: titleKeep, note: newNote }, newEpisodes, key,
         { kind: toManga ? "manga" : "file", fileName, stored: toManga ? true : textStored, mangaState: newMangaState, thumb: newThumb || null });
       const e2 = S.library.find(x => x.key === key);
@@ -3670,6 +3689,9 @@ async function switchBookMode(entry, toManga){
     else if (code === "notext") toast(toManga ? "画像が含まれていないため、漫画として読めません" : "読み取れるテキスト（.txt）が含まれていないため、小説として読めません", 3600);
     else toast("切り替えに失敗しました。時間をおいて再試行してください", 3600);
   } finally {
+    if (switchZipObj && !switchZipLive && typeof switchZipObj.__release === "function") {
+      try { switchZipObj.__release(); } catch (e) { /* noop */ }
+    }
     switchBusy = false;
     setLoading(false);
   }
@@ -4817,8 +4839,31 @@ async function loadRarBuf(buf){
   if (!isRar) throw new Error("rar-unsupported");
   const lib = await ensureUnrar();
   let extractor = null;
+  /* 展開器の完全な破棄：WASM側アーカイブを閉じるだけでは足りない。
+     node-unrar-js の展開器は dataFiles にアーカイブ全バイトのコピー
+     （取り込み時に渡したデータそのもの）と展開済みエントリを抱え続ける
+     うえ、ライブラリのWASMモジュールはページ寿命の単例で、生成した
+     展開器を module.extractor として「次の展開器が作られるまで」
+     参照し続ける。アプリ側が自分の参照を切っても、dataFiles を空に
+     しない限りアーカイブ丸ごと1冊分が残留し、2回目に同じ本を開くとき
+     「残留コピー＋読み直したバイト列＋新展開器のコピー」の三重保持で
+     ピークを迎えて実機が落ちていた（リロード後は単例ごと消えるので
+     落ちない。zipは単例に掴まれないので無事）。解放・失敗の全経路で
+     必ずここを通して中身ごと空にする */
+  function disposeExtractor(){
+    if (!extractor) return;
+    try {
+      if (extractor._archive && typeof extractor.closeArc === "function") extractor.closeArc();
+    } catch (e) { /* noop */ }
+    try { extractor.dataFiles = {}; } catch (e) { /* noop */ }
+    try { extractor.dataFileMap = {}; } catch (e) { /* noop */ }
+  }
   try {
-    extractor = await lib.createExtractorFromData({ wasmBinary: lib.wasmBinary, data: new Uint8Array(ab) });
+    /* data には ArrayBuffer 自体を渡す：ライブラリは内部で
+       new Uint8Array(data) を作るため、Uint8Array を渡すと全バイトの
+       コピーがもう1つ増えるが、ArrayBuffer を渡せばビューになり、
+       開く瞬間の保持が1冊分減る */
+    extractor = await lib.createExtractorFromData({ wasmBinary: lib.wasmBinary, data: ab });
   } catch (e) { throw mapRarError(e); }
   let headers = null;
   try {
@@ -4829,10 +4874,18 @@ async function loadRarBuf(buf){
     }
     headers = Array.from(list.fileHeaders);
   } catch (e) {
+    /* 目録が読めずに失敗した展開器も、放置するとアーカイブのコピーを
+       抱えたまま単例に掴まれて残る。投げる前に必ず破棄する */
+    disposeExtractor();
+    extractor = null;
     if (e && (e.message === "rar-encrypted" || e.message === "rar-unsupported")) throw e;
     throw mapRarError(e);
   }
-  if (headers.some(h => h.flags && h.flags.encrypted)) throw new Error("rar-encrypted");
+  if (headers.some(h => h.flags && h.flags.encrypted)) {
+    disposeExtractor();
+    extractor = null;
+    throw new Error("rar-encrypted");
+  }
   /* 展開済みエントリのキャッシュ。以前は無制限に保持していたため、漫画を
      読み進めるほど全ページ分の展開済みバイト列が溜まり続け、オブジェクト
      URL側のBlobコピーと二重持ちになってメモリを圧迫し、実機Chromeが
@@ -4990,8 +5043,12 @@ async function loadRarBuf(buf){
        展開器には二度と触らない */
     extractWaiters.forEach(w => w.reject(new Error("rar-unsupported")));
     extractWaiters.clear();
-    /* 展開途中で閉じられた場合に残っている WASM 側アーカイブも閉じる */
-    closeArcQuietly();
+    /* WASM側アーカイブを閉じ、展開器が抱えるアーカイブ全バイトの
+       コピーと展開済みエントリも空にする。ライブラリ単例がこの
+       展開器への参照を次回まで持ち続けるため、参照を切るだけでは
+       アーカイブ1冊分が残留し、2回目の開く処理とピークが重なって
+       落ちる原因になっていた（disposeExtractor のコメント参照） */
+    disposeExtractor();
     extractor = null;
   };
   return { files, __release: release };
@@ -5149,7 +5206,13 @@ async function parseZipBook(buf, fileName, preopened){
         let nz = null;
         try { nz = await loadArchiveBuf(await zip.files[p.orig].async("arraybuffer"), p.orig); }
         catch (e) { nz = null; }
-        if (nz) n += (await readSubTexts(nz)).length;
+        if (nz) {
+          const subCount = (await readSubTexts(nz)).length;
+          /* 入れ子目録も使い捨て：読み終えたら解放する（RARの場合、
+             解放しないとアーカイブのコピーが残留する） */
+          if (typeof nz.__release === "function") { try { nz.__release(); } catch (e) { /* noop */ } }
+          n += subCount;
+        }
       }
     }
     return n;
@@ -5215,6 +5278,7 @@ async function parseZipBook(buf, fileName, preopened){
           catch (e) { nz = null; }
           if (!nz) continue;
           const subTexts = await readSubTexts(nz);
+          if (typeof nz.__release === "function") { try { nz.__release(); } catch (e) { /* noop */ } }
           if (subTexts.length) parts.push({ title: baseName(p.rel).replace(/\.(zip|cbz|rar|cbr)$/i, ""), subTexts });
         }
       }
@@ -5244,6 +5308,7 @@ async function parseZipBook(buf, fileName, preopened){
         catch (e) { nz = null; }
         if (!nz) continue;
         const innerSubs = await readSubTexts(nz);
+        if (typeof nz.__release === "function") { try { nz.__release(); } catch (e) { /* noop */ } }
         innerSubs.forEach(s => subTexts.push(s));
       }
     }
@@ -5403,7 +5468,17 @@ $("#fileInput").addEventListener("change", async e => {
               : "全" + mangaBook.episodes[0].paragraphs.length + "ページ") + "）");
         notifyNotStored(stored);
       } else {
-        const book = await parseZipBook(buf, file.name, peeked);
+        /* テキストとして取り込む場合、目録（peeked）は解析が終われば
+           使い捨て。本文・挿絵は解析時に文字列／data URL として取り
+           出し済みなので、解析の成否によらずここで解放する。RAR目録を
+           解放せずに捨てるとアーカイブ全バイトのコピーが残留する */
+        let book = null;
+        try { book = await parseZipBook(buf, file.name, peeked); }
+        finally {
+          if (peeked && typeof peeked.__release === "function") {
+            try { peeked.__release(); } catch (e) { /* noop */ }
+          }
+        }
         const key = keyFor(book.title);
         const stored = await saveBookContent(key, book.episodes);
         /* テキストとして取り込んだアーカイブも、後から「漫画として読む」へ
@@ -5597,9 +5672,20 @@ async function importInboxBook(rec){
       const stored = await saveBookArchive(key, blob);
       registerBook(key, mangaBook.title, isRarName ? "画像RAR（漫画）" : "画像ZIP（漫画）", "manga", fileName, mangaBook.episodes, stored);
       if (arcPeeked) setArchiveFlags(key, { hasArchive: stored, arcHasTxt, arcHasImg });
+      /* この経路は本を開かず登録だけなので、目録はここで使い捨て。
+         RAR目録を解放せずに捨てるとアーカイブのコピーが残留する */
+      if (peeked && typeof peeked.__release === "function") {
+        try { peeked.__release(); } catch (e) { /* noop */ }
+      }
       return mangaBook.title;
     }
-    const book = await parseZipBook(buf, fileName, peeked);
+    let book = null;
+    try { book = await parseZipBook(buf, fileName, peeked); }
+    finally {
+      if (peeked && typeof peeked.__release === "function") {
+        try { peeked.__release(); } catch (e) { /* noop */ }
+      }
+    }
     const stored = await saveBookContent(key, book.episodes);
     const arcStored = await saveBookArchive(key, blob);
     const thumb = await thumbFromEpisodes(book.episodes, false);
