@@ -629,7 +629,8 @@ const S = {
   theme: "light", customBg: "#f7f1e3", customInk: "#33302a",
   showThumbs: true,         // 本棚サムネイルの表示ON/OFF（設定で切り替え）
   bookmarks: [],            // {bookKey, ep, pos:{pi,off}, epTitle, label}
-  positions: {},            // bookKey -> {ep, pos, charInEp}
+  positions: {},            // bookKey -> {ep, pos, charInEp}（現在位置のみ。読了は finished 側で保持）
+  finished: {},             // bookKey -> true（一度読了したら消えないラッチ。位置とは独立に永続化）
   library: [],              // 本棚: {key,kind,title,note,fileName,epTitles,epChars,totalChars,stored,lastRead}
   lastKey: null,
   cache: new Map(),         // epIndex -> pages
@@ -656,7 +657,7 @@ function persistNow(){
       font: S.font, fsIdx: S.fsIdx, lhIdx: S.lhIdx, marginIdx: S.marginIdx, mode: S.mode,
       turnStyle: S.turnStyle, theme: S.theme, customBg: S.customBg, customInk: S.customInk,
       showThumbs: S.showThumbs,
-      positions: S.positions, bookmarks: S.bookmarks,
+      positions: S.positions, bookmarks: S.bookmarks, finished: S.finished,
       library: S.library, lastKey: S.work.key || S.lastKey
     }));
   } catch (e) { /* 保存できない環境ではセッション内のみで動く */ }
@@ -671,6 +672,14 @@ function persistLoad(){
     ["font","fsIdx","lhIdx","marginIdx","mode","turnStyle","theme","customBg","customInk","showThumbs"]
       .forEach(k => { if (d[k] !== undefined) S[k] = d[k]; });
     if (d.positions) S.positions = d.positions;
+    if (d.finished && typeof d.finished === "object") {
+      Object.keys(d.finished).forEach(k => { if (d.finished[k]) S.finished[k] = true; });
+    }
+    /* 旧版は読了を位置レコードの fin でしか保持していなかった。残っている fin は
+       ラッチへ移し、以後は位置が先頭へ戻っても読了が消えないようにする */
+    Object.keys(S.positions).forEach(k => {
+      if (S.positions[k] && S.positions[k].fin) S.finished[k] = true;
+    });
     if (Array.isArray(d.bookmarks)) S.bookmarks = d.bookmarks;
     if (Array.isArray(d.library)) S.library = d.library;
     S.lastKey = d.lastKey || null;
@@ -965,21 +974,33 @@ function registerBook(key, title, note, kind, fileName, episodes, stored){
   S.library = [e].concat(S.library.filter(x => x.key !== key));
   persist();
 }
+/* 現在位置ベースの進捗（0..1）。読了かどうかは含めない：
+   読了は isBookFinished のラッチで別に判定し、本棚の「読了」ラベルと
+   フルバーだけをラッチ側で決める（％表示はここ＝現在位置のまま） */
 function bookProgress(entry){
   const pos = S.positions[entry.key];
   if (!pos || !entry.totalChars) return 0;
-  if (pos.fin) return 1; /* 最終ページまで読んだ記録があれば読了（100%） */
   let done = 0;
   const chars = entry.epChars || [];
   for (let i = 0; i < Math.min(pos.ep, chars.length); i++) done += chars[i];
   done += pos.charInEp || 0;
   return Math.max(0, Math.min(1, done / entry.totalChars));
 }
+/* 読了ラッチの判定。本ごとの finished（永続化）に加え、旧版が位置レコードへ
+   残した fin も読了として扱う（移行漏れの保険） */
+function isBookFinished(entry){
+  const key = typeof entry === "string" ? entry : (entry && entry.key);
+  if (!key) return false;
+  if (S.finished && S.finished[key]) return true;
+  const pos = S.positions[key];
+  return !!(pos && pos.fin);
+}
 /* 旧版の組み込みサンプル（小説）は廃止されたので、端末に残っている履歴・位置・しおりを掃除する */
 function purgeLegacySample(){
-  if (!S.library.some(x => x.key === "sample") && !S.positions["sample"]) return;
+  if (!S.library.some(x => x.key === "sample") && !S.positions["sample"] && !(S.finished && S.finished["sample"])) return;
   S.library = S.library.filter(x => x.key !== "sample");
   delete S.positions["sample"];
+  if (S.finished) delete S.finished["sample"];
   S.bookmarks = S.bookmarks.filter(m => m.bookKey !== "sample");
   if (S.lastKey === "sample") S.lastKey = null;
   persist();
@@ -1601,8 +1622,14 @@ function afterNav(){
      出たら、その時点で読了として記録する */
   const lastContentIdx = pages.length - 1 - (pages[pages.length - 1] && pages[pages.length - 1].finish ? 1 : 0);
   const fin = S.ep === S.episodes.length - 1 && S.page + ppv - 1 >= lastContentIdx;
+  /* 読了は一度達成したら保持する（ラッチ）。位置レコードはページ移動のたびに
+     作り直されるため、以前は fin をそこへだけ置いていて、目次から先頭の章へ
+     戻った途端に読了が消え、本棚が「未読」に戻っていた。読了は位置とは独立した
+     S.finished に立て、二度と下ろさない。位置レコードの fin は旧版との互換の
+     ためラッチの鏡として付け続ける（こちらも消さない） */
+  if (fin) S.finished[S.work.key] = true;
   const rec = { ep: S.ep, pos: cp, charInEp };
-  if (fin) rec.fin = true;
+  if (S.finished[S.work.key]) rec.fin = true;
   S.positions[S.work.key] = rec;
   const lib = S.library.find(x => x.key === S.work.key);
   if (lib) lib.lastRead = Date.now();
@@ -2152,6 +2179,7 @@ function deleteBookFromShelf(entry){
   if (!entry || entry.kind === "guide") return;
   S.library = S.library.filter(x => x.key !== entry.key);
   delete S.positions[entry.key];
+  if (S.finished) delete S.finished[entry.key]; /* 履歴削除のときだけ読了ラッチも一緒に消す */
   S.bookmarks = S.bookmarks.filter(m => m.bookKey !== entry.key);
   if (S.lastKey === entry.key) S.lastKey = S.library.length ? S.library[0].key : null;
   dropBookContent(entry.key);
@@ -2191,7 +2219,11 @@ function buildShelf(){
     const card = document.createElement("div");
     card.className = "bookcard" + (entry.key === S.work.key ? " current" : "");
     const pos = S.positions[entry.key];
+    /* ％は現在位置ベースのまま。読了ラベルとフルバーだけはラッチで判定する：
+       読了後に先頭へ戻っても、バーは満ちたまま「読了」表示が残る */
     const pct = Math.round(bookProgress(entry) * 100);
+    const finished = isBookFinished(entry);
+    const barPct = finished ? 100 : pct;
     const epName = pos && entry.epTitles && entry.epTitles[pos.ep] ? entry.epTitles[pos.ep] : "";
     const started = !!(pos && (pos.ep > 0 || (pos.charInEp || 0) > 0));
     let meta = esc(entry.note || entry.fileName || "");
@@ -2209,8 +2241,8 @@ function buildShelf(){
       '<div class="bmain">' +
       '<div class="bt">' + esc(entry.title) + "</div>" +
       (meta ? '<div class="bmeta">' + meta + "</div>" : "") +
-      '<div class="bprog"><i style="width:' + pct + '%"></i></div>' +
-      '<div class="bfoot"><span>' + (pct >= 100 ? "読了" : started ? pct + "%まで読了" : "未読") + "</span>" +
+      '<div class="bprog"><i style="width:' + barPct + '%"></i></div>' +
+      '<div class="bfoot"><span>' + (finished ? "読了" : started ? pct + "%まで読了" : "未読") + "</span>" +
       (entry.lastRead ? "<span>" + fmtReadDate(entry.lastRead) + "</span>" : "") +
       (!entry.stored && entry.kind !== "guide" ? '<span class="bneed">本文が保存されていません</span>' : "") +
       '<span class="go">' + (entry.key === S.work.key ? "読書中" : (started ? "続きから読む" : "開く")) + "</span></div>" +
