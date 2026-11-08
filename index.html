@@ -319,6 +319,8 @@
     font: inherit; font-size: 13.5px; padding: 13px; border-radius: 12px; cursor: pointer; margin: 10px 0 16px;
   }
   .shelf-open:active { background: var(--tint); }
+  a.shelf-open { display: block; text-align: center; text-decoration: none; }
+  .shelf-dl { color: var(--accent); font-weight: 600; margin-top: -6px; }
   .bookcard {
     background: var(--sheet); border: 1px solid var(--line); border-radius: 14px;
     padding: 14px 16px 12px; margin-bottom: 10px; cursor: pointer;
@@ -521,6 +523,8 @@
         <button class="bbtn" id="btnShelfClose">読書に戻る</button>
       </div>
       <button class="shelf-open" id="btnShelfOpen">ファイルを開く（.txt / .md / .epub / .zip）</button>
+      <a class="shelf-open shelf-dl" href="https://uotamy.github.io/narou-dl/" target="_blank" rel="noopener">なろうDLで小説を探してダウンロード</a>
+      <p class="shelf-hint">なろうDLでダウンロードした本は、次にこのビューワーを開いたときに自動で本棚へ追加されます。</p>
       <p class="shelf-hint">各カードの「削除」ボタンで履歴から削除できます。削除すると、その本の読書位置・しおり・端末に保存した本文も一緒に消えます（元のファイル自体は消えません）。</p>
       <div id="shelfList"></div>
     </div>
@@ -3289,6 +3293,154 @@ window.addEventListener("resize", () => {
   }, 220);
 });
 
+/* ---------------- なろうダウンローダーからの自動受け取り ----------------
+   ダウンローダー（同一オリジン https://uotamy.github.io/narou-dl/）は、
+   ダウンロードした本を共有の受け渡し用 IndexedDB『narou-dl-inbox』の
+   『books』ストア（keyPath:'id', autoIncrement）に {title, blob, addedAt} で置く。
+   起動時に一度だけここを確認し、レコードがあれば「ファイルを開く」と同じ
+   解析・保存の経路で本棚へ登録し、取り込めたレコードだけを消す。
+   失敗したレコードは消さずに残し、次回起動時に再試行できるようにする。
+   DBが無い・空なら何もしない。 */
+const INBOX_DB_NAME = "narou-dl-inbox", INBOX_STORE = "books";
+let inboxChecked = false;
+
+/* 受け渡し用DBを開く。存在しない場合は作らない（開くだけで空のDBが
+   できてしまうのを避けるため、まず databases() で有無を確認し、
+   それが使えない環境では、開いた後にストアが無ければ作ってしまった
+   空DBを消して元に戻す） */
+async function inboxOpenIfExists(){
+  if (!("indexedDB" in window)) return null;
+  try {
+    if (indexedDB.databases) {
+      const dbs = await indexedDB.databases();
+      if (!dbs.some(d => d.name === INBOX_DB_NAME)) return null;
+    }
+  } catch (e) { /* 確認できない環境では、開いてから判定する */ }
+  const db = await new Promise(res => {
+    let req;
+    try { req = indexedDB.open(INBOX_DB_NAME, 1); } catch (e) { res(null); return; }
+    req.onsuccess = () => res(req.result);
+    req.onerror = () => res(null);
+    req.onblocked = () => res(null);
+  });
+  if (!db) return null;
+  if (!db.objectStoreNames.contains(INBOX_STORE)) {
+    try { db.close(); } catch (e) { /* noop */ }
+    try { indexedDB.deleteDatabase(INBOX_DB_NAME); } catch (e) { /* noop */ }
+    return null;
+  }
+  return db;
+}
+function inboxReadAll(db){
+  return new Promise(res => {
+    const out = [];
+    try {
+      const cur = db.transaction(INBOX_STORE, "readonly").objectStore(INBOX_STORE).openCursor();
+      cur.onsuccess = () => {
+        const c = cur.result;
+        if (c) { out.push({ key: c.primaryKey, rec: c.value }); c.continue(); }
+        else res(out);
+      };
+      cur.onerror = () => res(out);
+    } catch (e) { res(out); }
+  });
+}
+function inboxDelete(db, key){
+  return new Promise(res => {
+    try {
+      const tx = db.transaction(INBOX_STORE, "readwrite");
+      tx.objectStore(INBOX_STORE).delete(key);
+      tx.oncomplete = () => res(true);
+      tx.onerror = () => res(false);
+      tx.onabort = () => res(false);
+    } catch (e) { res(false); }
+  });
+}
+/* 受け渡された1冊を取り込む。「ファイルを開く」の各形式と同じ解析・保存を
+   行い、本棚へ登録するだけ（本自体は開かない）。取り込めた書名を返し、
+   失敗したら例外を投げる（呼び出し側でレコードを残す判断をする） */
+async function importInboxBook(rec){
+  const blob = rec && rec.blob;
+  if (!blob || typeof blob.arrayBuffer !== "function") throw new Error("badrecord");
+  const recTitle = (rec.title && String(rec.title)) || "なろう作品";
+  const fileName = /\.(zip|cbz|epub|txt|md|markdown)$/i.test(recTitle) ? recTitle : recTitle + ".zip";
+  const buf = await blob.arrayBuffer();
+  const key = fileName + ":" + blob.size;
+  if (/\.epub$/i.test(fileName)) {
+    const book = await parseEpub(buf, fileName);
+    const stored = await saveBookContent(key, book.episodes);
+    registerBook(key, book.title, "EPUB", "file", fileName, book.episodes, stored);
+    if (book.thumb) {
+      const e = S.library.find(x => x.key === key);
+      if (e) { e.thumb = book.thumb; e.thumbSize = THUMB_MAX_DIM; persist(); }
+    }
+    return book.title;
+  }
+  if (/\.(zip|cbz)$/i.test(fileName)) {
+    let mangaBook = null;
+    if (typeof JSZip !== "undefined") {
+      try {
+        const zipPeek = await loadZipBuf(buf);
+        const names = zipEntryNames(zipPeek);
+        if (!names.some(n => /\.txt$/i.test(n)) && names.some(n => MANGA_IMG_RE.test(n)))
+          mangaBook = buildMangaFromZip(zipPeek, fileName);
+      } catch (e) { /* zipとして読めない場合はテキスト経路でエラーを出す */ }
+    }
+    if (mangaBook) {
+      const stored = await saveBookArchive(key, blob);
+      registerBook(key, mangaBook.title, "画像ZIP（漫画）", "manga", fileName, mangaBook.episodes, stored);
+      return mangaBook.title;
+    }
+    const book = await parseZipBook(buf, fileName);
+    const stored = await saveBookContent(key, book.episodes);
+    const thumb = await thumbFromEpisodes(book.episodes, false);
+    registerBook(key, book.title, "青空文庫ZIP", "file", fileName, book.episodes, stored);
+    if (thumb) {
+      const e = S.library.find(x => x.key === key);
+      if (e) { e.thumb = thumb; e.thumbSize = THUMB_MAX_DIM; persist(); }
+    }
+    return book.title;
+  }
+  let text;
+  try { text = new TextDecoder("utf-8", { fatal: true }).decode(buf); }
+  catch (err) { text = new TextDecoder("shift_jis").decode(buf); }
+  const book = parseTextBook(text, fileName);
+  const stored = await saveBookContent(key, book.episodes);
+  registerBook(key, book.title, fileName, "file", fileName, book.episodes, stored);
+  return book.title;
+}
+async function checkDownloaderInbox(){
+  if (inboxChecked) return;
+  inboxChecked = true;
+  const db = await inboxOpenIfExists();
+  if (!db) return;
+  const items = await inboxReadAll(db);
+  if (!items.length) { try { db.close(); } catch (e) { /* noop */ } return; }
+  setLoading(true);
+  const added = [], failed = [];
+  try {
+    for (const it of items) {
+      try {
+        const title = await importInboxBook(it.rec);
+        await inboxDelete(db, it.key);
+        added.push(title);
+      } catch (e) {
+        /* 取り込めなかったレコードは消さずに残す（本を失わない） */
+        failed.push((it.rec && it.rec.title) || "なろう作品");
+      }
+    }
+  } finally {
+    setLoading(false);
+    try { db.close(); } catch (e) { /* noop */ }
+  }
+  if (added.length) buildShelf();
+  added.forEach((t, i) => setTimeout(() =>
+    toast("なろうダウンローダーから『" + t + "』を追加しました", 3000), i * 3200));
+  if (failed.length) setTimeout(() =>
+    toast("なろうダウンローダーから取り込めなかった本があります（『" + failed[0] + "』）。次回起動時に再試行します", 3600),
+    added.length * 3200);
+}
+
 /* ---------------- 初期化 ---------------- */
 const hadSave = persistLoad();
 $("#customBg").value = S.customBg;
@@ -3332,6 +3484,8 @@ ensureGuideEntry();
   histView = "shelf";
   try { history.replaceState({ v: "shelf" }, ""); } catch (e) { /* noop */ }
   showShelf();
+  /* なろうダウンローダーからの受け渡しは、起動時に1回だけ確認する */
+  checkDownloaderInbox();
   if (!lsOK) {
     /* 保存できない環境では止めずに、保存なしモードとして読書を続けられるようにする */
     setTimeout(() => toast("この環境では保存できないため、保存なしモードで動作します"), 600);
