@@ -4010,11 +4010,11 @@ function episodeToAozoraText(ep, regImg){
   if (title && !(firstPara && firstPara.cls !== "head" && firstPara.cls !== "title"
       && unitsToText(firstPara.units) === title))
     blocks.unshift(title);
-  /* 段落の区切りは改行（1段落＝1行）で書き出す。空行で区切ると、読み戻し
-     側の二段構え（改行＝段落、空行＝場面級の区切り＝空列）で全段落の前に
-     空列が付いてしまう。空行段落のブロック（""）は前後の改行と合わせて
-     ちょうど空行1つになり、空列として復元される */
-  return blocks.join("\n") + "\n";
+  /* 段落の区切りは元の形式どおり空行で書き出す。書き出し側では段落の
+     つなぎ方を変えるような加工はしない（解釈は取り込み側の仕事で、
+     取り込んだ時点で処理は終わっている）。空行段落のブロック（""）は
+     前後の空行と重なって、ファイル上でも空行として現れる */
+  return blocks.join("\n\n") + "\n";
 }
 let shelfDlBusy = false;
 async function downloadBookFromShelf(entry, btn){
