@@ -677,6 +677,12 @@ function persistLoad(){
         });
       }
     });
+    /* しおりに保存された話タイトルも同じ化け方をしていることがあるので、あわせて直す */
+    S.bookmarks.forEach(m => {
+      if (!m || typeof m.epTitle !== "string") return;
+      const r = repairMojibake(m.epTitle);
+      if (r !== m.epTitle) { m.epTitle = r; metaRepaired = true; }
+    });
     if (metaRepaired) persist();
     return true;
   } catch (e) { return false; }
@@ -2071,6 +2077,24 @@ function deleteBookFromShelf(entry){
 }
 function buildShelf(){
   ensureGuideEntry();
+  /* 表示直前の自己修復：読み込み時の修復（persistLoad）や開いたときの修復
+     （setBook）をすり抜けて化けたまま保存されている書名・話タイトルが
+     あっても、本棚の行（「読書中：○○」の話タイトルを含む）に化けた文字列が
+     出ないよう、ここで直して保存し直す */
+  let shelfRepaired = false;
+  S.library.forEach(entry => {
+    if (!entry || typeof entry !== "object" || entry.kind === "guide") return;
+    const t = repairMojibake(entry.title);
+    if (t !== entry.title) { entry.title = t; shelfRepaired = true; }
+    if (Array.isArray(entry.epTitles)) {
+      entry.epTitles = entry.epTitles.map(x => {
+        const r = repairMojibake(x);
+        if (r !== x) shelfRepaired = true;
+        return r;
+      });
+    }
+  });
+  if (shelfRepaired) persist();
   /* 履歴なので、最後に開いた順に並べ替える（フォルダ内を走査はしない） */
   S.library.sort((a, b) => (b.lastRead || 0) - (a.lastRead || 0));
   const list = $("#shelfList");
@@ -2433,7 +2457,20 @@ function parseTextBook(text, fileName, images, imageDims){
   flush();
   const valid = episodes.filter(e => e.paragraphs.length);
   if (valid.length > 1 && episodes[0].paragraphs.length === 0) valid.shift();
-  if (!valid.length) throw new Error("empty");
+  if (!valid.length) {
+    /* 見出し行として処理された行だけで本文段落が1つも残らなかった場合
+       （例：1行だけの短いテキストが「第一話…」で始まっている）の救済。
+       このままでは中身のあるテキストを「空」と誤判定して開けないため、
+       行単位でそのまま段落として読み直す。通常の本ではここに来ない */
+    const plain = lines.map(l => l.trim()).filter(Boolean);
+    if (plain.length) {
+      return { title: workTitle, episodes: [{
+        title: workTitle,
+        paragraphs: plain.map(t => ({ units: textToUnits(stripMd(t)), cls: paraClsFor(t) }))
+      }] };
+    }
+    throw new Error("empty");
+  }
   if (valid.length > 1 && valid[0] !== episodes[0]) workTitle = episodes[0].title;
   return { title: workTitle, episodes: valid };
 }
@@ -3111,7 +3148,13 @@ $("#fileInput").addEventListener("change", async e => {
     hideShelf();
     closeSheets();
   } catch (err) {
-    toast("このファイルは読み込めませんでした");
+    /* 無言で失敗せず、理由が分かる文面で知らせる（解析側が投げるコードで出し分ける） */
+    const code = err && err.message;
+    if (code === "nozip") toast("zip／EPUBを開く部品（JSZip）が読み込めていません。ページを再読み込みしてください");
+    else if (code === "notext") toast("読み取れるテキスト（.txt）が含まれていませんでした");
+    else if (code === "empty") toast("テキストの内容が空でした");
+    else if (code === "badepub") toast("EPUBとして読み込めませんでした（形式が違うか、壊れています）");
+    else toast("このファイルは読み込めませんでした");
   } finally {
     setLoading(false);
   }
