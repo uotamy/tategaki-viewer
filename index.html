@@ -544,7 +544,7 @@ const GUIDE_EPISODES = [
       "このビューワーは、日本語の小説を読むための縦書きビューワーです。縦書き・右から左へのページ送り、上下二段組みの組版で、紙の文庫本を読む感覚に寄せてあります。",
       "この文章は、ビューワーの使い方そのものです。サンプル小説の代わりに入っています。まずはこのまま読み進めながら、ページ送りやメニューの操作を試してみてください。",
       "読めるファイルは、テキストファイル（.txt）、Markdown（.md）、EPUB（.epub）、青空文庫の配布形式（.zip）です。Shift_JISのテキストや、青空文庫形式のルビ記法、EPUB内のルビにも対応しています。青空文庫の注記（改ページ・改段・見出し・傍点など）も処理され、.zipに画像が同梱されていれば挿絵も表示されます。挿絵は画像の大きさで自動的に切り替わり、本文に収まる小さい画像は本文の流れの中に、大きな画像（口絵など）は改ページして1ページ全面に表示されます。",
-      "テキストファイルが複数入った.zipも開けます。その場合は1冊に連結して扱い、「話」の区切りはzipのルート直下で決まります。ルート直下にフォルダがある場合はフォルダごとに1話になり、フォルダ内のファイルはその話の中でファイル名の順に連結されます（「次の話／前の話」ではフォルダの先頭へ移動します）。フォルダに入っていないファイルは1ファイルで1話、zipの中にzipがある場合はそのzip全体で1話になり、1階層まで開いて連結します。",
+      "テキストファイルが複数入った.zipも開けます。その場合は1冊に連結して扱い、「話」の区切りはzipのルート直下で決まります。ルート直下にフォルダがある場合はフォルダごとに1話になり、フォルダ内のファイルはその話の中でファイル名の順に連結されます（「次の話／前の話」ではフォルダの先頭へ移動します）。フォルダに入っていないファイルは1ファイルで1話、zipの中にzipがある場合はそのzip全体で1話になり、1階層まで開いて連結します。ルート直下にフォルダが1つだけの場合は、そのフォルダの中身がルートとして扱われます（フォルダが入れ子に続く場合も同様で、書名には一番外側のフォルダ名が使われます）。",
       "画像だけが入った.zip（漫画のアーカイブ）も開けます。その場合は「画像の本」として扱われ、画像1枚が1ページになり、ファイル名の数値順（1、2、…、10の順）に並びます。ページ送りの方向や方式は小説と同じで、本棚・進み具合・しおりもそのまま使えます。画像はページを表示するタイミングで1枚ずつ読み出されるので、大きなzipでもまとめて展開はしません。",
       "なお、Kindle本のようなDRM（コピー防止）付きの本は開けません。対象は、自分の原稿や青空文庫など、DRMのないファイルです。"
     ]
@@ -2624,14 +2624,29 @@ async function parseEpub(buf, fileName){
   return { title: workTitle, episodes, thumb };
 }
 
-/* ---- zipのエントリ名デコード ----
+/* ---- zipのエントリ名デコード（エントリ名を使う全経路で統一） ----
    日本のツールで作られたzipは、エントリ名がShift_JIS（CP932）で記録され、
-   UTF-8フラグが立っていないことが多い。JSZipの既定デコーダはフラグなしの
-   名前もUTF-8として読むため、日本語ファイル名が文字化けし、書名まで化けて
-   いた。loadAsync の decodeFileName に、UTF-8として読めなければ
-   Shift_JISで読み直すデコーダを渡して直す（フラグありの名前はJSZip側が
-   UTF-8で読むので影響しない）。 */
-function decodeZipEntryName(bytes){
+   UTF-8フラグが立っていないことが多い。逆に、フラグを立てながら中身は
+   CP932というツールや、フラグ無しでUTF-8の名前を書くツールもある。
+   JSZipの名前決定に任せると、フラグありは無条件にUTF-8として読まれ、
+   Unicodeパス拡張フィールド（0x7075）があればそちらが優先されるなど、
+   経路によって文字化けが残った。そこで、セントラルディレクトリを自前で
+   走査して「生バイト列＋フラグ」を取り出し、名前はこちらで決めてから
+   JSZipの目録へ上書きする。フォルダ名由来の話タイトル、共通接頭辞から
+   作る書名、ファイルの継ぎ目の見出し、挿絵の対応付けなど、エントリ名を
+   使うすべての経路が同じデコード結果になる。 */
+/* デコード結果の「汚れ」の数：化けた読みには半角カナ（U+FF61–FF9F）や
+   制御文字が混ざりやすい。正しく読めた日本語のファイル名には通常含まれ
+   ないため、候補の採否の目安にする */
+function nameDecodeScore(s){
+  let bad = 0;
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    if ((c >= 0xff61 && c <= 0xff9f) || (c < 0x20 && c !== 0x09) || (c >= 0x7f && c <= 0x9f)) bad++;
+  }
+  return bad;
+}
+function decodeZipEntryName(bytes, flags){
   if (!bytes || !bytes.length) return "";
   let ascii = true;
   for (let i = 0; i < bytes.length; i++) { if (bytes[i] > 0x7f) { ascii = false; break; } }
@@ -2640,11 +2655,96 @@ function decodeZipEntryName(bytes){
     for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
     return s;
   }
-  try { return new TextDecoder("utf-8", { fatal: true }).decode(bytes); }
-  catch (e) { return new TextDecoder("shift_jis").decode(bytes); }
+  const tryDec = enc => {
+    try { return new TextDecoder(enc, { fatal: true }).decode(bytes); }
+    catch (e) { return null; }
+  };
+  if (flags && (flags & 0x800)) {
+    /* UTF-8フラグあり：原則UTF-8。ただしフラグを立てながら中身がCP932の
+       ツールもあるので、UTF-8として厳密に読めなければCP932で読み直す */
+    return tryDec("utf-8") || tryDec("shift_jis")
+      || new TextDecoder("shift_jis").decode(bytes);
+  }
+  /* フラグなし：CP932とUTF-8の両方で厳密に読んでみて、より「汚れ」の
+     少ない方を採る。CP932の名前はUTF-8ではほぼ厳密に読めず、UTF-8の
+     名前をCP932で読むと半角カナや制御文字が混ざるため、これで判別できる。
+     互角なら、日本のzipの慣習どおりCP932を優先する */
+  const sj = tryDec("shift_jis"), u8 = tryDec("utf-8");
+  if (sj !== null && u8 !== null) return nameDecodeScore(u8) < nameDecodeScore(sj) ? u8 : sj;
+  return sj || u8 || new TextDecoder("shift_jis").decode(bytes);
+}
+/* セントラルディレクトリを走査し、エントリごとの
+   { flags, nameBytes, flagOff } を記録順に返す。ZIP64や壊れたzipでは
+   null を返し、その場合はJSZip側の名前決定にフォールバックする */
+function readCentralDirectory(u8){
+  try {
+    if (u8.length < 22) return null;
+    const dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
+    let eocd = -1;
+    for (let i = u8.length - 22; i >= Math.max(0, u8.length - 65557); i--) {
+      if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+    }
+    if (eocd < 0) return null;
+    const count = dv.getUint16(eocd + 10, true);
+    let off = dv.getUint32(eocd + 16, true);
+    if (count === 0xffff || off === 0xffffffff) return null; /* ZIP64は対象外 */
+    const entries = [];
+    for (let k = 0; k < count; k++) {
+      if (off + 46 > u8.length || dv.getUint32(off, true) !== 0x02014b50) return null;
+      const flags = dv.getUint16(off + 8, true);
+      const nlen = dv.getUint16(off + 28, true);
+      const elen = dv.getUint16(off + 30, true);
+      const clen = dv.getUint16(off + 32, true);
+      entries.push({ flags, flagOff: off + 8, nameBytes: u8.subarray(off + 46, off + 46 + nlen) });
+      off += 46 + nlen + elen + clen;
+    }
+    return entries.length ? entries : null;
+  } catch (e) { return null; }
+}
+function isValidUtf8(bytes){
+  try { new TextDecoder("utf-8", { fatal: true }).decode(bytes); return true; }
+  catch (e) { return false; }
 }
 async function loadZipBuf(buf){
-  return JSZip.loadAsync(buf, { decodeFileName: decodeZipEntryName });
+  const u8 = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
+  const entries = readCentralDirectory(u8);
+  let data = buf;
+  /* UTF-8フラグが立っているのに名前のバイト列がUTF-8として読めない
+     エントリ（フラグを立てながら中身はCP932というツール製）は、JSZipが
+     無条件にUTF-8として読み、文字化けしたうえ別のエントリと名前が衝突
+     して目録から消えてしまう。渡す前に、そのエントリだけフラグを落とし、
+     decodeFileName（CP932として読み直す）経由に切り替える */
+  if (entries && entries.some(en => (en.flags & 0x800) && !isValidUtf8(en.nameBytes))) {
+    const copy = new Uint8Array(u8);
+    const dv = new DataView(copy.buffer, copy.byteOffset, copy.byteLength);
+    entries.forEach(en => {
+      if ((en.flags & 0x800) && !isValidUtf8(en.nameBytes))
+        dv.setUint16(en.flagOff, en.flags & ~0x800, true);
+    });
+    data = copy;
+  }
+  /* decodeFileName は、フラグ無しエントリの名前をJSZipが決めるときに
+     呼ばれる。最終的な名前はセントラルディレクトリからのデコード結果で
+     上書きして統一する */
+  const zip = await JSZip.loadAsync(data, { decodeFileName: bytes => decodeZipEntryName(bytes, 0) });
+  if (entries) {
+    const names = entries.map(en => decodeZipEntryName(en.nameBytes, en.flags));
+    const keys = Object.keys(zip.files);
+    /* JSZipの目録とエントリ数・順序が一致し、デコード後の名前にも重複が
+       無いときだけ名前を差し替える（同名エントリの重複などで数が合わない
+       場合はJSZip側の名前を残す） */
+    if (keys.length === names.length && new Set(names).size === names.length
+        && keys.some((k, i) => k !== names[i])) {
+      const remapped = {};
+      keys.forEach((k, i) => {
+        const obj = zip.files[k];
+        try { obj.name = names[i]; } catch (e) { /* noop */ }
+        remapped[names[i]] = obj;
+      });
+      zip.files = remapped;
+    }
+  }
+  return zip;
 }
 /* ---------------- 文字化けした書名の自己修復 ----------------
    旧版はzip内ファイル名を「1バイト＝1文字」で文字化けさせて読んでいたため、
@@ -2685,8 +2785,11 @@ function decodeTxtBytes(bytes){
    txtが1本だけのzipは従来どおり。そのほかに、複数巻・複数話のtxtが
    まとめて入ったzipにも対応する：「話」の単位はルート直下で決まる。
    ルート直下のフォルダはフォルダ全体で1話（フォルダ内のtxtは自然順に
-   連結し、ファイルの継ぎ目には見出しを入れる）、ルート直下のtxtファイルは
-   1ファイルで1話、zipの中のzipは1階層だけ展開してそのzip全体で1話。
+   連結し、ファイルの継ぎ目には見出しを入れる；多重フォルダは親フォルダの
+   話へ連結）、ルート直下のtxtファイルは1ファイルで1話、zipの中のzipは
+   1階層だけ展開してそのzip全体で1話。ただし、ルート直下にフォルダが
+   1つだけの場合はそのフォルダの中身をルートとして扱い、単独フォルダが
+   続く場合は再帰的に剥がす（書名は最外のフォルダ名）。
    目次と「次の話／前の話」はこの単位で動き、話の先頭はフォルダの先頭になる */
 function mergeParsedEpisodes(parsed, title){
   const paras = [];
@@ -2732,44 +2835,61 @@ async function parseZipBook(buf, fileName){
     }
     return subs;
   };
-  const groups = new Map(); /* ルート直下の名前 -> その配下のエントリ名（自然順） */
-  items.forEach(n => {
-    const seg = n.split("/")[0];
+  /* 単独ラッパーフォルダの剥がし：ルート直下にフォルダが1つだけあり、
+     ファイルやzipが同居していない場合は、そのフォルダの中身をルートと
+     して扱う。単独フォルダが続く場合は再帰的に剥がし、書名には最外の
+     フォルダ名を使う。フォルダ＋txt同居のような場合は剥がさない
+     （フォルダは1話、txtは独立の1話のまま）。
+     pairs は { rel: 剥がし後の相対パス, orig: zip内の実エントリ名 } で、
+     グループ化とタイトル付けは rel、実データの読み出しは orig で行う */
+  let pairs = items.map(n => ({ rel: n, orig: n }));
+  let wrapperName = "";
+  for (;;) {
+    const segs = new Set(pairs.map(p => p.rel.split("/")[0]));
+    if (segs.size !== 1) break;
+    const seg = [...segs][0];
+    if (!pairs.every(p => p.rel.startsWith(seg + "/"))) break;
+    if (!wrapperName) wrapperName = seg;
+    pairs = pairs.map(p => ({ rel: p.rel.slice(seg.length + 1), orig: p.orig }));
+  }
+  const groups = new Map(); /* ルート直下の名前 -> その配下のエントリ（自然順） */
+  pairs.forEach(p => {
+    const seg = p.rel.split("/")[0];
     if (!groups.has(seg)) groups.set(seg, []);
-    groups.get(seg).push(n);
+    groups.get(seg).push(p);
   });
   const parts = [];
   for (const [seg, members] of groups) {
-    const isFolder = members.some(n => n.includes("/"));
+    const isFolder = members.some(p => p.rel.includes("/"));
     if (!isFolder) {
-      const n = members[0];
-      if (/\.txt$/i.test(n)) {
-        const b = await zip.files[n].async("arraybuffer");
-        parts.push({ title: baseName(n).replace(/\.txt$/i, ""), text: decodeTxtBytes(b) });
+      const p = members[0];
+      if (/\.txt$/i.test(p.rel)) {
+        const b = await zip.files[p.orig].async("arraybuffer");
+        parts.push({ title: baseName(p.rel).replace(/\.txt$/i, ""), text: decodeTxtBytes(b) });
       } else {
         let nz = null;
-        try { nz = await loadZipBuf(await zip.files[n].async("arraybuffer")); }
+        try { nz = await loadZipBuf(await zip.files[p.orig].async("arraybuffer")); }
         catch (e) { nz = null; }
         if (!nz) continue;
         const subTexts = await readSubTexts(nz);
-        if (subTexts.length) parts.push({ title: baseName(n).replace(/\.zip$/i, ""), subTexts });
+        if (subTexts.length) parts.push({ title: baseName(p.rel).replace(/\.zip$/i, ""), subTexts });
       }
       continue;
     }
     /* フォルダ：配下のtxt（深い階層も含む）を自然順に連結して1話にする。
        フォルダ内の入れ子zipはその位置で展開し、同じ話の一部にする */
     const subTexts = [];
-    for (const n of members) {
-      if (/\.txt$/i.test(n)) {
-        const b = await zip.files[n].async("arraybuffer");
+    for (const p of members) {
+      if (/\.txt$/i.test(p.rel)) {
+        const b = await zip.files[p.orig].async("arraybuffer");
         subTexts.push({
-          head: baseName(n).replace(/\.txt$/i, "").replace(/^\d+[_＿\s]*/, ""),
-          raw: baseName(n).replace(/\.txt$/i, ""),
+          head: baseName(p.rel).replace(/\.txt$/i, "").replace(/^\d+[_＿\s]*/, ""),
+          raw: baseName(p.rel).replace(/\.txt$/i, ""),
           text: decodeTxtBytes(b)
         });
       } else {
         let nz = null;
-        try { nz = await loadZipBuf(await zip.files[n].async("arraybuffer")); }
+        try { nz = await loadZipBuf(await zip.files[p.orig].async("arraybuffer")); }
         catch (e) { nz = null; }
         if (!nz) continue;
         const innerSubs = await readSubTexts(nz);
@@ -2844,7 +2964,9 @@ async function parseZipBook(buf, fileName){
     return { title: p.title, paragraphs: paras };
   }).filter(ep => ep.paragraphs.length);
   if (!episodes.length) throw new Error("notext");
-  const title = commonPrefixTitle(parts.map(p => p.title))
+  /* ラッパーフォルダを剥がした場合は、最外のフォルダ名を書名にする */
+  const title = wrapperName
+    || commonPrefixTitle(parts.map(p => p.title))
     || String(fileName || "").replace(/\.(zip|cbz)$/i, "")
     || parts[0].title;
   return { title, episodes };
