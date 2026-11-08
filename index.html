@@ -145,10 +145,16 @@
   .tier .boten { text-emphasis: filled sesame; -webkit-text-emphasis: filled sesame;
     text-emphasis-position: over right; -webkit-text-emphasis-position: over right; }
   .tier .fbold { font-weight: 700; }
-  /* 挿絵：縦書き段の中に横書きの図版ブロックとして収める */
+  /* 挿絵：縦書き段の中に横書きの図版ブロックとして収める。
+     height:100% で図版ブロックの高さを段の高さに確定させる。内容依存の
+     高さのままだと img の max-height:100% が解決できず（%の基準が不確定に
+     なり無効化される）、大きな画像が段をはみ出して次のページへ分かれて
+     見えることがあるため。確定させれば上限が効き、段内に収まる大きさへ
+     必ず収縮する */
   .tier .illus {
     writing-mode: horizontal-tb; -webkit-writing-mode: horizontal-tb;
-    display: block; margin: .35em 0; text-align: center; max-height: 100%;
+    display: block; margin: .35em 0; text-align: center;
+    height: 100%; max-height: 100%;
   }
   .tier .illus img { max-width: 92%; max-height: 100%; height: auto; }
   /* 大きな挿絵（口絵など）：段組みを無視して1ページ全面にフィット表示する */
@@ -1689,7 +1695,11 @@ function renderChunks(tierEl, chunks){
        全角空白1文字を入れて列の幅（行高ぶん）を確保する */
     if (ch.blank) return '<p class="blank">　</p>';
     if (ch.table) return tableHTML(ch.table);
-    if (ch.img) return ch.src ? '<div class="illus"><img src="' + ch.src + '" alt="挿絵" /></div>' : "";
+    /* 挿絵には実寸の width/height 属性を付ける。ブラウザは属性のアスペクト比から
+       読み込み前でも表示サイズの箱を確保するため、probeFits の実測が未読み込みの
+       画像を大きさ0と誤認せず、実表示でも読み込み完了時に組版がずれない */
+    if (ch.img) return ch.src ? '<div class="illus"><img src="' + ch.src + '"' +
+      (ch.iw && ch.ih ? ' width="' + ch.iw + '" height="' + ch.ih + '"' : "") + ' alt="挿絵" /></div>' : "";
     return '<p class="' + ch.cls + '">' + chunkHTML(ch.units) + "</p>";
   }).join("");
 }
@@ -1980,26 +1990,60 @@ function firstColHasRuby(paras, pos, prefix){
   }
   return false;
 }
+/* 段に傍点（text-emphasis）の単位が含まれるか。傍点の列は記号ぶん
+   行ボックスが広がり、後続の列を左へ押し出す。広がり量は書体や
+   傍点の密度で変わるため列モデル（1列＝行高）には入れず、実測検証の
+   対象判定にだけ使う */
+function chunksHaveBoten(chunks){
+  for (const ch of chunks) {
+    if (!ch.units) continue;
+    for (const u of ch.units) if (u.e) return true;
+  }
+  return false;
+}
+/* 割り付け結果の同一判定キー（予算を削っても結果が変わらない段を
+   見分けるため） */
+function tierSig(res){
+  return res.pos.pi + ":" + res.pos.off + ":" + res.chunks.length;
+}
 function fillTier(paras, pos, prefix){
   if (!M) return fillTierProbe(paras, pos, prefix);
   let budget = M.tierW - 1;
   if (prefix) budget -= prefixWidth(prefix[0]);
-  if (!firstColHasRuby(paras, pos, prefix)) return fillTierCore(paras, pos, prefix, budget);
-  /* 最初の列にルビがある段は、その列の広がり（M.rubyPad）ぶん後続の列が
-     左へ押される。以前はそのぶんを予算から引いてから列数を決めていたが、
-     段幅の余りが小さいとき（実例：余り2.25pxに対して rubyPad 4.5px）は
-     引き算が列数の floor を跨いでしまい、本来入るはずの列が丸ごと1列
-     落ちて、段の最終列の位置に1列分の空白が残った（縦画面の上段・下段
-     ともに発生）。そこで、まず差し引かずに割り付けてプローブ実測に
-     かけ、段に収まる（＝最後の列がはみ出さない）ことを確認できた場合
-     だけその割り付けを採用する。実測で収まらない場合に限り、従来どおり
-     rubyPad を差し引いて割り付け直すので、はみ出しゼロは実測で担保
-     される。プローブ実測の許容（+1.5px）ぶん最後の列の行ボックスが
-     段の左端を越えても、字面は半行間（(lh−fs)/2、最小でも約5px）の
-     内側に収まるため欠けない */
-  const res = fillTierCore(paras, pos, prefix, budget);
-  if (probeFits(res.chunks)) return res;
-  return fillTierCore(paras, pos, prefix, budget - M.rubyPad);
+  const res0 = fillTierCore(paras, pos, prefix, budget);
+  /* 実測検証が要る段だけプローブにかける（長編の割り付け速度を保つため、
+     注記の無い通常段は列モデルの結果をそのまま使う）。対象は次の2種：
+     (1) 最初の列にルビがある段：その列の広がり（M.rubyPad）ぶん後続の
+     列が左へ押される。
+     (2) 傍点を含む段：傍点の列も行ボックスが広がって後続の列を押し出す
+     が、広がり量はモデル化できない。実例（刀語第1話、101ページ相当）：
+     傍点の列の広がりの累積で段の最終列が段の外へ押し出され、字が欠けて
+     傍点の点だけが段内に残った。以前は (2) を検証しておらず、モデル
+     どおり収まる前提でそのまま描いて文字欠けになっていた */
+  const suspect = firstColHasRuby(paras, pos, prefix) || chunksHaveBoten(res0.chunks);
+  if (!suspect) return res0;
+  if (probeFits(res0.chunks)) return res0;
+  /* 実測で収まらない場合は、予算を削って割り付け直す。まず従来どおり
+     rubyPad を差し引き（段幅の余りが小さいときは引き算が列数の floor を
+     跨いで列が落ちるため、差し引くのは実測で収まらなかった場合に限る、
+     という従来の順序は維持する）、それでも収まらなければ1列ずつ削って
+     いく。収まるまで削り続けるので、注記の広がりが想定を超えても
+     はみ出しは起きない（削れた分は次の段へ流れるだけ）。
+     予算を削っても割り付けが変わらない段（挿絵・表だけの段など）は
+     それ以上削っても無駄なので打ち切る。プローブ実測の許容（+1.5px）
+     ぶん最後の列の行ボックスが段の左端を越えても、字面は半行間
+     （(lh−fs)/2、最小でも約5px）の内側に収まるため欠けない */
+  let res = res0, prevSig = tierSig(res0);
+  budget -= M.rubyPad;
+  for (let step = 0; step < 80; step++) {
+    res = fillTierCore(paras, pos, prefix, budget);
+    if (probeFits(res.chunks)) return res;
+    const sig = tierSig(res);
+    if (sig === prevSig || budget <= M.lh) break;
+    prevSig = sig;
+    budget -= M.lh;
+  }
+  return res;
 }
 function fillTierCore(paras, pos, prefix, budget){
   const chunks = prefix ? prefix.slice() : [];
@@ -2020,12 +2064,20 @@ function fillTierCore(paras, pos, prefix, budget){
     if (off === 0 && chunks.length > baseLen && (para.breakBefore || para.breakTier)) break;
     /* 全面表示の挿絵は段に入れず、ページ分割側（paginate）の専用ページに委ねる */
     if (off === 0 && isFullIllus(para)) break;
-    /* 表・挿絵は原子ブロックとしてDOM実測で収め、その段はそこで打ち切る（頻度が低いための割り切り） */
+    /* 表・挿絵は原子ブロックとしてDOM実測で収め、その段はそこで打ち切る（頻度が低いための割り切り）。
+       実寸（iw/ih）は描画側で img の width/height 属性になり、読み込み前でも
+       正しい大きさの箱として実測・描画される（属性が無いと未読み込みの
+       画像は大きさ0と測られ、実際は段に収まらない挿絵が「収まる」と
+       誤判定されてページをまたいでいた）。
+       接頭（話タイトル）だけの段で収まらない場合は、空の段に置く特例を
+       使わず次の段へ送る（タイトルと挿絵が同居できないだけの話で、
+       次の段は接頭なしの空段として受けられる） */
     if (para.table || para.img) {
       const whole = { units: para.units.slice(), cls: para.table ? "table" : "illus",
-                      table: para.table, img: para.img, src: para.src };
+                      table: para.table, img: para.img, src: para.src,
+                      iw: para.imgW || 0, ih: para.imgH || 0 };
       if (probeFits(chunks.concat([whole]))) { chunks.push(whole); pi++; off = 0; break; }
-      if (chunks.length > baseLen) break;
+      if (chunks.length > baseLen || baseLen > 0) break;
       chunks.push(whole); pi++; off = 0; break;
     }
     const startCls = chunkClsFor(para, off);
@@ -2070,12 +2122,14 @@ function fillTierProbe(paras, pos, prefix){
     /* 全面表示の挿絵は段に入れず、ページ分割側（paginate）の専用ページに委ねる */
     if (off === 0 && isFullIllus(para)) break;
     /* 表・挿絵は途中で割らず、丸ごと1ブロックとして段に収める。
-       入らない場合は次の段・ページへ送り、空の段でのみ（はみ出し覚悟で）そのまま置いて前進させる */
+       入らない場合は次の段・ページへ送り、空の段でのみ（はみ出し覚悟で）そのまま置いて前進させる。
+       接頭（話タイトル）だけの段も「空の段」扱いにせず次の段へ送る */
     if (para.table || para.img) {
       const whole = { units: para.units.slice(), cls: para.table ? "table" : "illus",
-                      table: para.table, img: para.img, src: para.src };
+                      table: para.table, img: para.img, src: para.src,
+                      iw: para.imgW || 0, ih: para.imgH || 0 };
       if (probeFits(chunks.concat([whole]))) { chunks.push(whole); pi++; off = 0; continue; }
-      if (chunks.length > baseLen) break;
+      if (chunks.length > baseLen || baseLen > 0) break;
       chunks.push(whole); pi++; off = 0; continue;
     }
     const startCls = chunkClsFor(para, off);
@@ -2361,16 +2415,31 @@ async function parseMangaArchive(buf, fileName){
   return buildMangaFromZip(zip, fileName);
 }
 
-/* 挿絵の表示自動切替：画像の実寸（natural size）の幅がページ幅（本文エリア）に
-   収まる小さい画像は本文の流れの中にインライン表示し、収まらない大きな画像
-   （口絵など）は改ページして段組みを無視した全面表示にする。
-   実寸が記録されていない挿絵（旧形式で保存された本など）は本文内表示にする */
+/* 挿絵の表示自動切替：本文の段に収まる小さい画像は本文の流れの中に
+   インライン表示し、収まらない大きな画像（口絵など）は改ページして
+   段組みを無視した全面表示にする。
+   判定は「段の中での表示サイズ」で行う：
+   (1) 実寸の幅が1ページ幅を超える画像は全面（従来どおり）。
+   (2) 幅は収まっても、段の幅に合わせて表示したときの高さが段の高さを
+   超える画像（縦長の挿絵など）も全面。段の中に置ききれない画像を
+   インラインにすると、はみ出した分が次のページ側へ分かれて見える
+   （実例：刀語の挿絵がページ境界で上下に割れた）。段の高さには
+   図版ブロックの上下マージン（.35em×2）ぶんの余裕も見込む。
+   実寸が記録されていない挿絵（旧形式で保存された本など）は本文内表示にする
+   （開いたときに repairIllusDims が実寸を補って割り付け直す） */
 /* 全面判定の基準は「1ページ分の幅」。見開き（2ページ同時表示）でも比較対象を
    見開き全体の幅にしてしまうと、大きな口絵ほど永遠に全面にならないため、
    ページ数（ppv）は呼び出し時点の画面から取り直して1ページ幅に換算する */
 function singlePageW(){ return stage.clientWidth / Math.max(1, computePpv()); }
 function isFullIllus(para){
-  return !!(para && para.img && para.imgW && para.imgW > singlePageW());
+  if (!para || !para.img || !para.imgW) return false;
+  if (para.imgW > singlePageW()) return true;
+  if (para.imgH && M) {
+    const dispW = Math.min(para.imgW, M.tierW * 0.92);
+    const dispH = para.imgH * dispW / para.imgW;
+    if (dispH > M.tierH - M.fs * 0.7) return true;
+  }
+  return false;
 }
 /* 本の末尾ページ：通常は「読了」ページ。取得途中の本では読了にせず、
    取得済み範囲の終わりを知らせる案内ページにする */
