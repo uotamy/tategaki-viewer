@@ -319,7 +319,20 @@
     max-width: 720px; margin: 0 auto;
     padding: calc(env(safe-area-inset-top, 0px) + 22px) 18px calc(env(safe-area-inset-bottom, 0px) + 30px);
   }
-  .shelf-head { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 18px; }
+  .shelf-head { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 12px; }
+  /* 本棚の操作行：左に「本追加」、右側に「検索」「リロード」を並べる */
+  .shelf-tools { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+  .shelf-tools .sp { flex: 1 1 auto; }
+  .shelf-tools .bbtn { flex: none; }
+  /* 本棚の絞り込みバー（検索ボタンで開閉する） */
+  .shelf-filter { display: none; align-items: center; gap: 8px; margin: -4px 0 12px; }
+  .shelf-filter.open { display: flex; }
+  .shelf-filter input {
+    flex: 1 1 auto; min-width: 0; font: inherit; font-size: 15px; color: var(--ink);
+    background: var(--sheet); border: 1px solid var(--line); border-radius: 9px; padding: 10px 11px;
+  }
+  .shelf-filter .bbtn { flex: none; }
+  .shelf-filter-count { font-size: 12px; color: var(--sub); margin: -4px 0 12px; }
   .shelf-head > div { flex: 1 1 auto; min-width: 0; }
   .shelf-head h2 {
     font-size: 21px; margin: 0; font-weight: 600;
@@ -685,9 +698,19 @@
         <div>
           <h2>本棚（履歴）</h2>
         </div>
+      </div>
+      <div class="shelf-tools">
         <button class="bbtn bbtn-add" id="btnAddBook">本追加</button>
+        <span class="sp"></span>
+        <button class="bbtn" id="btnShelfSearch" aria-expanded="false">検索</button>
         <button class="bbtn" id="btnReload">リロード</button>
       </div>
+      <div class="shelf-filter" id="shelfFilter">
+        <input type="search" id="shelfFilterInput" placeholder="タイトル・著者名で絞り込み" autocomplete="off" aria-label="本棚の絞り込み" />
+        <button class="bbtn" id="btnShelfFilterClear">クリア</button>
+        <button class="bbtn" id="btnShelfFilterClose">閉じる</button>
+      </div>
+      <p class="shelf-filter-count" id="shelfFilterCount" hidden></p>
       <div id="shelfList"></div>
     </div>
   </div>
@@ -939,6 +962,7 @@ const GUIDE_EPISODES = [
     paras: [
       { t: "本棚（履歴）", cls: "head" },
       "本棚は、端末のフォルダを読み込むものではなく、これまでに開いた本の履歴です。最近開いた順に並び、本を選ぶと読んでいた位置からそのまま開きます。進み具合もパーセントで表示されます。本の最後まで読むと、最終ページの後ろに「読了」のページが現れ、本棚では「読了」と表示されます。",
+      "本が増えてきたら、本棚の上の「検索」ボタンで絞り込めます。タイトルで探せて、著者名のある本（なろう作品など）は著者名でも当たります。文字を打つとその場で絞り込まれ、件数が表示されます。一致する本がないときは「見つかりません」と出ます。「クリア」か「閉じる」で全件表示に戻ります。絞り込みは表示だけのもので、本の並び順や読書位置は変わりません。",
       "各本の左側にはサムネイルが付きます。EPUBでは表紙画像、テキストやzipでは本文で最初に現れる画像、漫画zipでは先頭ページの画像が使われ、画像のない本はアイコン表示になります。サムネイルは本を取り込むときに小さく作って保存されるので、本棚を開くたびに作り直すことはありません。表示は設定の「本棚のサムネイル」で切り替えられます。",
       "履歴の本の操作は、各カードの右下にあるメニューボタン（⋯）に集約されています。押すと、その本に使える操作（ダウンロード／削除など）だけが並んだシートが開きます。「削除」を選ぶと、その本の読書位置・しおり・端末に保存した本文も一緒に消えます（元のファイル自体は消えません）。この「使い方」は組み込みのため、メニューボタン自体が付きません。",
       "操作シートの「ダウンロード」からは、その本をファイルとして端末へ保存できます。ダウンローダーやテキストから取り込んだ本は、話ごとのテキストファイル（Shift_JIS）をまとめた青空文庫形式のzip（ファイル名は書名）になり、このビューワーでそのまま開き直せます。取り込み時の原本ファイルが端末に残っている本（漫画zipなど）は、原本がそのまま保存されます。",
@@ -3231,6 +3255,23 @@ function deleteBookFromShelf(entry){
   buildShelf();
   toast("履歴から削除しました");
 }
+/* 本棚の絞り込み文字列。表示だけの状態で、本データには保存しない。
+   絞り込みは本の並び順・読書位置・しおりには一切触らない */
+let shelfQuery = "";
+function shelfFilterWords(){
+  return shelfQuery.trim().toLowerCase().split(/[\s　]+/).filter(Boolean);
+}
+/* 絞り込みの照合先はタイトル＋著者名。著者名は独立フィールドが無いため、
+   ノートが「著者名／小説家になろう」形式の本（なろう作品）については
+   ノートの先頭部分を著者名として照合に加える */
+function shelfEntryMatches(entry, words){
+  let hay = String(entry.title || "");
+  const note = String(entry.note || "");
+  const slash = note.indexOf("／");
+  if (slash > 0) hay += " " + note.slice(0, slash);
+  hay = hay.toLowerCase();
+  return words.every(w => hay.indexOf(w) >= 0);
+}
 function buildShelf(){
   ensureGuideEntry();
   /* 表示直前の自己修復：読み込み時の修復（persistLoad）や開いたときの修復
@@ -3268,13 +3309,26 @@ function buildShelf(){
       S.library.unshift(pe);
     }
   }
+  /* 絞り込み（表示だけ）：文字列が入っていれば、条件に合う本だけを並べる。
+     並べる対象を絞るだけで、S.library 自体の順序や各本の状態は変えない */
+  const fq = shelfFilterWords();
+  const shown = fq.length ? S.library.filter(e => shelfEntryMatches(e, fq)) : S.library;
+  const cntEl = $("#shelfFilterCount");
+  if (fq.length) {
+    cntEl.hidden = false;
+    cntEl.textContent = "絞り込み中：" + shown.length + "件（全" + S.library.length + "件）";
+  } else cntEl.hidden = true;
   const list = $("#shelfList");
   list.innerHTML = "";
   if (!S.library.length) {
     list.innerHTML = '<div class="empty-note">履歴は空です。「ファイルを開く」から本を開くと、ここに履歴として残ります。</div>';
     return;
   }
-  S.library.forEach(entry => {
+  if (!shown.length) {
+    list.innerHTML = '<div class="empty-note">「' + esc(shelfQuery.trim()) + '」に一致する本は見つかりません。</div>';
+    return;
+  }
+  shown.forEach(entry => {
     const card = document.createElement("div");
     card.className = "bookcard" + (entry.key === pinKey ? " current" : "");
     const pos = S.positions[entry.key];
@@ -3466,6 +3520,38 @@ $("#btnReload").addEventListener("click", () => {
   } else go();
 });
 $("#btnAddBook").addEventListener("click", () => showAddBook());
+/* 本棚の絞り込み：「検索」ボタンで入力欄を開き、打つたびにその場で絞り込む。
+   「クリア」／「閉じる」で文字列を消して全件表示に戻る（閉じるは欄も閉じる）。
+   入力欄は本棚リストの外にあるので、再描画してもフォーカスは外れない */
+const shelfFilterEl = $("#shelfFilter"), shelfFilterInput = $("#shelfFilterInput");
+function setShelfFilterOpen(open){
+  shelfFilterEl.classList.toggle("open", open);
+  $("#btnShelfSearch").setAttribute("aria-expanded", open ? "true" : "false");
+  if (open) { try { shelfFilterInput.focus(); } catch (e) { /* noop */ } }
+}
+function clearShelfFilter(){
+  shelfQuery = "";
+  shelfFilterInput.value = "";
+  buildShelf();
+}
+$("#btnShelfSearch").addEventListener("click", () => {
+  setShelfFilterOpen(!shelfFilterEl.classList.contains("open"));
+});
+shelfFilterInput.addEventListener("input", () => {
+  shelfQuery = shelfFilterInput.value;
+  buildShelf();
+});
+$("#btnShelfFilterClear").addEventListener("click", () => {
+  clearShelfFilter();
+  try { shelfFilterInput.focus(); } catch (e) { /* noop */ }
+});
+$("#btnShelfFilterClose").addEventListener("click", () => {
+  clearShelfFilter();
+  setShelfFilterOpen(false);
+});
+shelfFilterInput.addEventListener("keydown", e => {
+  if (e.key === "Escape") { clearShelfFilter(); setShelfFilterOpen(false); }
+});
 
 /* ---------------- 本を開く ---------------- */
 /* 旧形式で保存された本は挿絵の実寸（全面表示の判定材料）を持たないことがある。
