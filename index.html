@@ -1835,6 +1835,12 @@ function naturalCompare(a, b){
   return 0;
 }
 function clearMangaState(){
+  /* RARの展開器・展開済みキャッシュは目録オブジェクト側が抱えているので、
+     参照を外す前に明示解放を呼ぶ（アーカイブ全体のコピーを抱えるため、
+     GCまかせだと次の本を開く処理とピークが重なる） */
+  if (mangaState && mangaState.zip && typeof mangaState.zip.__release === "function") {
+    try { mangaState.zip.__release(); } catch (e) { /* noop */ }
+  }
   mangaURLCache.forEach(url => { try { URL.revokeObjectURL(url); } catch (e) { /* noop */ } });
   mangaURLCache.clear();
   mangaPending.clear();
@@ -1862,7 +1868,10 @@ function getMangaURL(idx){
       if (mangaState !== st) return null;
       const url = URL.createObjectURL(new Blob([data], { type: mimeForImageName(st.entries[idx].name) }));
       mangaURLCache.set(idx, url);
-      while (mangaURLCache.size > 14) {
+      /* 保持は表示ウィンドウ（最大3見開き＝6枚）＋前後の余裕ぶんまで。
+         以前は14枚ぶんの画像データ（Blob）を常時抱えていて、高解像度の
+         スキャンではそれだけで数百MB級になり得た */
+      while (mangaURLCache.size > 8) {
         const oldest = mangaURLCache.keys().next().value;
         if (oldest === idx) break;
         try { URL.revokeObjectURL(mangaURLCache.get(oldest)); } catch (e) { /* noop */ }
@@ -1913,11 +1922,13 @@ async function loadMangaImageInto(idx, imgEl){
 }
 function prefetchMangaAround(center){
   if (!mangaState) return;
-  /* 次・前の見開きは組の2枚とも、もう1組先まで先読みしてデコードまで
-     済ませ、実寸を確定させておく（URLだけ先に作っても、デコードと
-     実寸の確定が表示タイミングに残ると送りの後に絵が動くため） */
+  /* 先読みは前・次の見開きまでにする。以前はもう1組先（最大6枚）まで
+     デコードしていて、見開き結合のような大きな画像ではデコード済み
+     ビットマップが同時に何枚も残り、メモリ逼迫の一因になっていた。
+     次の見開きぶんの実寸確定（送った後に絵が動かないための要）は
+     この範囲でも保たれる */
   const idxs = [];
-  [center + ppv, center - ppv, center + ppv * 2].forEach(b => {
+  [center + ppv, center - ppv].forEach(b => {
     idxs.push(b);
     if (ppv > 1) idxs.push(b + 1);
   });
@@ -3862,16 +3873,26 @@ function closeCurrentBook(){
     try { clearTimeout(adjacentPrefetchTimer); } catch (e) { /* noop */ }
     adjacentPrefetchTimer = null;
   }
+  /* 閉じた後に遅れて発火すると、閉じた本の組版・読み込みを再開してしまう
+     タイマー類も止める：長押し判定、リサイズ後の再組版チェック、UI自動消去 */
+  try { clearTimeout(lpTimer); } catch (e) { /* noop */ }
+  try { clearTimeout(rsTimer); } catch (e) { /* noop */ }
+  try { clearTimeout(uiHideTimer); } catch (e) { /* noop */ }
+  drag = null;
   animating = false;
   stage.classList.remove("sliding");
+  /* 解放の順序：まず表示中のページ要素（デコード済み画像を持つ <img>）を
+     DOMから外し、その後にオブジェクトURLの破棄とアーカイブ側の明示解放を
+     行う。逆順だと、破棄済みURLを抱えた画像要素が残っている間ブラウザが
+     ビットマップを手放せず、解放が遅れて次の読み込みと重なる */
+  track.innerHTML = "";
+  pageHost.querySelectorAll(".leafwrap").forEach(el => el.remove());
   S.cache.clear();
   clearPrebuiltPages();
   clearMangaState();
   S.episodes = [];
   S.ep = 0; S.page = 0; winStart = 0;
   S.work = { title: "", note: "", key: null };
-  track.innerHTML = "";
-  pageHost.querySelectorAll(".leafwrap").forEach(el => el.remove());
   if (probePage) { probePage.remove(); probePage = null; probeTier = null; }
   M = null;
   persistNow();
@@ -4786,9 +4807,32 @@ async function loadRarBuf(buf){
     throw mapRarError(e);
   }
   if (headers.some(h => h.flags && h.flags.encrypted)) throw new Error("rar-encrypted");
-  const cache = new Map(); /* エントリ名 -> 展開済み Uint8Array */
+  /* 展開済みエントリのキャッシュ。以前は無制限に保持していたため、漫画を
+     読み進めるほど全ページ分の展開済みバイト列が溜まり続け、オブジェクト
+     URL側のBlobコピーと二重持ちになってメモリを圧迫し、実機Chromeが
+     落ちる（Aw, Snap!）原因になっていた。保持は直近ぶんだけに絞る：
+     合計16MBまで・LRUで古いものから捨てる。予算を超える大きなエントリは
+     キャッシュしない（表示側は取得のたびにコピーを受け取るので問題ない） */
+  const RAR_CACHE_MAX_BYTES = 16 * 1024 * 1024;
+  const cache = new Map(); /* エントリ名 -> 展開済み Uint8Array（LRU） */
+  let cacheBytes = 0;
+  const cachePut = (name, u8) => {
+    if (u8.byteLength > RAR_CACHE_MAX_BYTES) return;
+    if (cache.has(name)) { cacheBytes -= cache.get(name).byteLength; cache.delete(name); }
+    cache.set(name, u8);
+    cacheBytes += u8.byteLength;
+    while (cacheBytes > RAR_CACHE_MAX_BYTES && cache.size > 1) {
+      const oldest = cache.keys().next().value;
+      cacheBytes -= cache.get(oldest).byteLength;
+      cache.delete(oldest);
+    }
+  };
   const extractOne = async name => {
-    if (cache.has(name)) return cache.get(name);
+    if (cache.has(name)) {
+      const hit = cache.get(name);
+      cache.delete(name); cache.set(name, hit); /* LRU: 最近使ったものへ */
+      return hit;
+    }
     let found = null;
     try {
       const res = extractor.extract({ files: [name] });
@@ -4804,7 +4848,7 @@ async function loadRarBuf(buf){
     } catch (e) { /* noop */ }
     if (!found) throw new Error("rar-unsupported");
     const u8 = found instanceof Uint8Array ? found : new Uint8Array(found);
-    cache.set(name, u8);
+    cachePut(name, u8);
     return u8;
   };
   const files = {};
@@ -4826,7 +4870,16 @@ async function loadRarBuf(buf){
       }
     };
   });
-  return { files };
+  /* 本を閉じるときの明示解放：展開済みキャッシュと展開器（アーカイブ全体の
+     コピーを抱えるWASM側の状態）への参照をその場で落とす。参照を外すだけ
+     ではGCまかせになり、閉じた直後に別の本を開くと旧・新のピークが重なって
+     落ちやすかったため、閉じる経路（clearMangaState）から必ず呼ぶ */
+  const release = () => {
+    cache.clear();
+    cacheBytes = 0;
+    extractor = null;
+  };
+  return { files, __release: release };
 }
 /* アーカイブの中身（先頭バイトの署名）で zip か RAR かを判別して開く。
    拡張子ではなく署名を優先するので、.cbz（中身はzip）も、拡張子と中身が
