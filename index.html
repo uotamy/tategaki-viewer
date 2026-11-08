@@ -159,6 +159,18 @@
     display: block; width: 100%; height: 100%; object-fit: contain;
   }
 
+  /* ---------- 読了ページ（最後の話の末尾に付く仮想ページ） ---------- */
+  .page.finish { align-items: center; justify-content: center; }
+  .fin-inner {
+    writing-mode: vertical-rl; -webkit-writing-mode: vertical-rl;
+    font-family: var(--font); color: var(--ink);
+    display: flex; flex-direction: column; gap: 2.4em; align-items: flex-start;
+    max-height: 88%;
+  }
+  .fin-mark { font-size: 1.9em; font-weight: 600; letter-spacing: .4em; }
+  .fin-title { font-size: 1.02em; line-height: 1.9; padding-top: .5em; }
+  .fin-sub { font-size: .78em; color: var(--sub); line-height: 1.9; padding-top: .5em; }
+
   #pageBadge {
     position: absolute; z-index: 5; pointer-events: none;
     top: calc(env(safe-area-inset-top, 0px) + 10px); left: 14px;
@@ -578,7 +590,7 @@ const GUIDE_EPISODES = [
     title: "本棚・しおり・保存のしくみ",
     paras: [
       { t: "本棚（履歴）", cls: "head" },
-      "本棚は、端末のフォルダを読み込むものではなく、これまでに開いた本の履歴です。最近開いた順に並び、本を選ぶと読んでいた位置からそのまま開きます。進み具合もパーセントで表示されます。",
+      "本棚は、端末のフォルダを読み込むものではなく、これまでに開いた本の履歴です。最近開いた順に並び、本を選ぶと読んでいた位置からそのまま開きます。進み具合もパーセントで表示されます。本の最後まで読むと、最終ページの後ろに「読了」のページが現れ、本棚では「読了」と表示されます。",
       "各本の左側にはサムネイルが付きます。EPUBでは表紙画像、テキストやzipでは本文で最初に現れる画像、漫画zipでは先頭ページの画像が使われ、画像のない本はアイコン表示になります。サムネイルは本を取り込むときに小さく作って保存されるので、本棚を開くたびに作り直すことはありません。表示は設定の「本棚のサムネイル」で切り替えられます。",
       "履歴の本は、各カードの「削除」ボタンから履歴を削除できます。削除すると、その本の読書位置・しおり・端末に保存した本文も一緒に消えます（元のファイル自体は消えません）。この「使い方」は組み込みのため、削除ボタンは付きません。",
       { t: "しおり", cls: "head" },
@@ -956,6 +968,7 @@ function registerBook(key, title, note, kind, fileName, episodes, stored){
 function bookProgress(entry){
   const pos = S.positions[entry.key];
   if (!pos || !entry.totalChars) return 0;
+  if (pos.fin) return 1; /* 最終ページまで読んだ記録があれば読了（100%） */
   let done = 0;
   const chars = entry.epChars || [];
   for (let i = 0; i < Math.min(pos.ep, chars.length); i++) done += chars[i];
@@ -1135,9 +1148,15 @@ function paraPrefix(para){
   para._prefix = pre; para._pk = M.key;
   return pre;
 }
-function colCap(){ return Math.max(M.fs, M.tierH - M.fs * 0.5); } /* 1列に収まる長さ（安全側に半文字引く） */
+/* 1列に収まる長さ。以前は安全側に半文字引いていたが、その不足が段内の
+   列数ぶん累積し、実測で段の最終列だけが4〜5文字分短く終わる（上段・下段
+   ともに下端まで使い切れない）原因になっていた。Canvas実測の文字送りは
+   実描画と一致するため、余白はサブピクセルの溢れ防止に必要な最小限にする */
+function colCap(){ return Math.max(M.fs, M.tierH - Math.max(1.5, M.fs * 0.06)); }
 function colsFor(px, ind){
-  const cap = colCap(), first = cap - (ind ? M.fs : 0);
+  /* 段落単位の概算は禁則による列の無駄を見込んで少し保守側に倒す
+     （正確な詰め込みは分割側の simulateSplit が担う） */
+  const cap = colCap() - M.fs * 0.3, first = cap - (ind ? M.fs : 0);
   if (px <= first) return 1;
   return 1 + Math.ceil((px - first) / cap);
 }
@@ -1150,6 +1169,34 @@ function colWFor(para, off){
 }
 function headExtra(para, off){
   return (off === 0 && para.cls && para.cls.includes("head")) ? 0.8 * 1.06 * M.fs : 0;
+}
+/* ブラウザの列折り返しを列モデルで模擬する：段落を off から colsAvail 列に
+   収めるとき、何文字入って何列使うかを返す。1列の容量いっぱいまで詰め、
+   列の区切りは禁則（行頭・行末に来られない文字）を避けて直前の切断可能
+   位置へ寄せる。単純に「列容量×列数」で長さを切る旧方式は、容量の余白が
+   列数ぶん積み重なって最終列が数文字分空いてしまうため、この模擬に替えた */
+function simulateSplit(para, off, colsAvail, ind){
+  const pre = paraPrefix(para), total = para.units.length;
+  const capFull = colCap();
+  let colStart = off, cols = 1, lastBreak = -1;
+  let capNow = capFull - (ind ? M.fs : 0);
+  let i = off;
+  while (i < total) {
+    if (pre[i + 1] - pre[colStart] > capNow) {
+      const brk = (lastBreak > colStart) ? lastBreak : i;
+      if (cols >= colsAvail) return { n: brk - off, cols };
+      cols++;
+      colStart = brk; lastBreak = -1; capNow = capFull;
+      i = brk;
+      continue;
+    }
+    if (i + 1 < total) {
+      const nu = para.units[i + 1], lu = para.units[i];
+      if (!NO_START.includes(unitStartChar(nu)) && !NO_END.includes(unitEndChar(lu))) lastBreak = i + 1;
+    }
+    i++;
+  }
+  return { n: total - off, cols };
 }
 function prefixWidth(chunk){
   /* 話タイトル（prefix）：1.3倍フォント・行高1.55・左余白1em として占有幅を概算する */
@@ -1191,23 +1238,16 @@ function fillTier(paras, pos, prefix){
     }
     const colsAvail = Math.floor((budget - extra) / colW);
     if (colsAvail <= 0) break;
-    const capPx = colsAvail * colCap() - (ind ? M.fs : 0);
-    let lo = 0, hi = total - off;
-    while (hi - lo > 1) {
-      const mid = (lo + hi) >> 1;
-      if (pre[off + mid] - pre[off] <= capPx) lo = mid; else hi = mid;
-    }
-    let n = lo;
-    while (n > 0 && n < total - off) {
-      const nextU = para.units[off + n], lastU = para.units[off + n - 1];
-      if (NO_START.includes(unitStartChar(nextU)) || NO_END.includes(unitEndChar(lastU))) n--;
-      else break;
-    }
+    const sim = simulateSplit(para, off, colsAvail, ind);
+    const n = sim.n;
     if (n === 0) {
       if (chunks.length === baseLen) { chunks.push({ units: para.units.slice(off, off + 1), cls: startCls }); off += 1; }
       break;
     }
     chunks.push({ units: para.units.slice(off, off + n), cls: startCls });
+    /* 概算では収まらなかったが模擬では丸ごと収まった場合は、使った列数ぶん
+       予算を引いて次の段落の詰め込みを続ける */
+    if (n >= total - off) { budget -= sim.cols * colW + extra; pi++; off = 0; continue; }
     off += n; break;
   }
   return { chunks, pos: { pi, off } };
@@ -1402,6 +1442,11 @@ function paginate(epIdx){
   if (ep && ep.isManga) {
     const pages = ep.paragraphs.map((p, i) => ({ tiers: [], start: { pi: i, off: 0 }, manga: i }));
     if (!pages.length) pages.push({ tiers: [], start: { pi: 0, off: 0 }, manga: 0 });
+    /* 最後の話の末尾には「読了」ページを付ける（start が本文末尾を指すため、
+       このページを開くと進捗が100%になる） */
+    if (epIdx === S.episodes.length - 1) {
+      pages.push({ tiers: [], start: { pi: ep.paragraphs.length, off: 0 }, finish: true });
+    }
     S.cache.set(epIdx, pages);
     return pages;
   }
@@ -1441,6 +1486,13 @@ function paginate(epIdx){
     first = false;
   }
   if (!pages.length) pages.push({ tiers: Array.from({ length: tiersPer }, () => []), start: { pi: 0, off: 0 } });
+  /* 最後の話には本文の後ろへ「読了」ページを1枚付ける。start が本文末尾を
+     指すため、このページを開いた時点で charInEp が末尾まで届き、進捗が
+     100%（読了）になる。最終ページを開いただけでも読了扱いにしたいので、
+     読了の確定そのものは afterNav 側の fin フラグでも行う */
+  if (epIdx === S.episodes.length - 1) {
+    pages.push({ tiers: [], start: { pi: ep.paragraphs.length, off: 0 }, finish: true });
+  }
   S.cache.set(epIdx, pages);
   return pages;
 }
@@ -1465,6 +1517,26 @@ function buildPageEl(pageData){
   const el = document.createElement("div");
   el.className = "page";
   el.style.width = Math.max(200, panelW()) + "px";
+  /* 読了ページ：最後の話の最終ページの後ろに付く仮想ページ */
+  if (pageData.finish) {
+    el.classList.add("finish");
+    const inner = document.createElement("div");
+    inner.className = "fin-inner";
+    const mark = document.createElement("div");
+    mark.className = "fin-mark";
+    mark.textContent = "読了";
+    const ttl = document.createElement("div");
+    ttl.className = "fin-title";
+    ttl.textContent = S.work.title || "";
+    const sub = document.createElement("div");
+    sub.className = "fin-sub";
+    sub.textContent = "最後までお読みいただき、ありがとうございました";
+    inner.appendChild(mark);
+    inner.appendChild(ttl);
+    inner.appendChild(sub);
+    el.appendChild(inner);
+    return el;
+  }
   /* 漫画ページ：画像を全面に1枚だけ置く。実データは表示のこのタイミングで
      エントリ単位に解凍して差し込む（先読みぶんはキャッシュに乗る） */
   if (pageData.manga !== undefined && pageData.manga !== null) {
@@ -1523,7 +1595,15 @@ function afterNav(){
     for (let i = 0; i < cp.pi && i < curEp.paragraphs.length; i++) charInEp += curEp.paragraphs[i].units.length;
     charInEp += cp.off;
   }
-  S.positions[S.work.key] = { ep: S.ep, pos: cp, charInEp };
+  /* 読了の確定：保存位置は「現在ページの先頭」で表すため、最終ページを
+     開いただけでは charInEp が本の末尾に届かず、進捗が90%台で止まって
+     しまっていた。最終話の最終ページ（読了ページを含む見開き）が画面に
+     出たら、その時点で読了として記録する */
+  const lastContentIdx = pages.length - 1 - (pages[pages.length - 1] && pages[pages.length - 1].finish ? 1 : 0);
+  const fin = S.ep === S.episodes.length - 1 && S.page + ppv - 1 >= lastContentIdx;
+  const rec = { ep: S.ep, pos: cp, charInEp };
+  if (fin) rec.fin = true;
+  S.positions[S.work.key] = rec;
   const lib = S.library.find(x => x.key === S.work.key);
   if (lib) lib.lastRead = Date.now();
   persist();
@@ -1654,7 +1734,11 @@ function targetFor(dir){
 function turn(dir){
   if (animating) return;
   const tgt = targetFor(dir);
-  if (!tgt) { toast(dir === "next" ? "この話の最後のページです" : "最初のページです"); return; }
+  if (!tgt) {
+    const curPg = paginate(S.ep)[S.page];
+    toast(dir === "next" ? (curPg && curPg.finish ? "最後まで読みました" : "この話の最後のページです") : "最初のページです");
+    return;
+  }
   hideUI();
   if (S.turnStyle === "flip") { overlayGroup(dir, tgt, true); return; }
   /* スライド方式は章内・章またぎとも同じページ単位の離散スライドで統一する */
@@ -2126,7 +2210,7 @@ function buildShelf(){
       '<div class="bt">' + esc(entry.title) + "</div>" +
       (meta ? '<div class="bmeta">' + meta + "</div>" : "") +
       '<div class="bprog"><i style="width:' + pct + '%"></i></div>' +
-      '<div class="bfoot"><span>' + (started ? pct + "%まで読了" : "未読") + "</span>" +
+      '<div class="bfoot"><span>' + (pct >= 100 ? "読了" : started ? pct + "%まで読了" : "未読") + "</span>" +
       (entry.lastRead ? "<span>" + fmtReadDate(entry.lastRead) + "</span>" : "") +
       (!entry.stored && entry.kind !== "guide" ? '<span class="bneed">本文が保存されていません</span>' : "") +
       '<span class="go">' + (entry.key === S.work.key ? "読書中" : (started ? "続きから読む" : "開く")) + "</span></div>" +
