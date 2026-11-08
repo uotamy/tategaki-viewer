@@ -106,6 +106,11 @@
     box-shadow: none; visibility: hidden; pointer-events: none; z-index: 0; }
   .tier {
     flex: 1 1 0; min-height: 0; overflow: hidden;
+    /* 右端3pxは、段の最初の列のルビ注釈が段の範囲外へはみ出すぶんの逃げ場。
+       overflow:hidden の切り捨て位置はパディングの外側になるため、注釈が
+       ここへはみ出しても欠けない。組版側の段幅はこの分を除いて測る
+       （computeMetrics） */
+    padding-right: 3px;
     writing-mode: vertical-rl; -webkit-writing-mode: vertical-rl;
     font-family: var(--font); font-size: var(--fs); line-height: var(--lh);
     color: var(--ink); letter-spacing: .01em; line-break: strict;
@@ -1621,7 +1626,11 @@ function probeFits(chunks){
 }
 
 /* ---------------- ページ分割 ---------------- */
-const NO_START = "、。，．・：；！？゛゜＾￣＿ヽヾゝゞ々〆ー―‐～）〕］｝〉》」』】｣ｧｨｩｪｫｬｭｮｯ";
+/* 行頭禁則（NO_START）はブラウザの line-break: strict と一致させること。
+   小書き仮名は、ひらがな・カタカナの両方が必要（カタカナの ャュョッ 等が
+   抜けると「ビューワー」のような外来語の箇所で列の区切り位置が実描画と
+   ずれ、列数を少なく数えて段の最終列がはみ出す原因になる） */
+const NO_START = "、。，．・：；！？゛゜＾￣＿ヽヾゝゞ々〆ー―‐～〜…‥）〕］｝〉》」』】｣ｧｨｩｪｫｬｭｮｯぁぃぅぇぉっゃゅょゎゕゖヵヶァィゥェォッャュョヮ";
 const NO_END = "（〔［｛〈《「『【｢";
 const unitStartChar = u => u.c !== undefined ? u.c : (u.r ? u.r[0] : "");
 const unitEndChar = u => u.c !== undefined ? u.c : (u.r ? u.r[u.r.length - 1] : "");
@@ -1647,16 +1656,37 @@ function computeMetrics(){
     if (!fs || !lh || !probeTier.clientWidth || !probeTier.clientHeight) { M = null; return; }
     if (!measureCtx) measureCtx = document.createElement("canvas").getContext("2d");
     measureCtx.font = cs.fontWeight + " " + fs + "px " + cs.fontFamily;
-    M = { fs, lh, tierW: probeTier.clientWidth, tierH: probeTier.clientHeight,
+    /* 段の組版幅は内容幅で測る：.tier の右パディング（最初の列のルビ注釈の
+       逃げ場）は本文の幅に含めない */
+    const padH = (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0);
+    M = { fs, lh, tierW: probeTier.clientWidth - padH, tierH: probeTier.clientHeight,
           ls: fs * 0.01, ctx: measureCtx,
-          key: [S.font, S.fsIdx, S.lhIdx, S.marginIdx, S.mode, advGen,
+          /* 段の最初の列（右端）にルビがあるとき、その列の行ボックスは注釈を
+             収めるために行高より広がって置かれ、後続の列がすべて左へ押される
+             （実測：lh=1.7で約4.5px、フォント最大・行間最小で約6px）。その列を
+             含む段では、この広がりぶんを予算からあらかじめ差し引く */
+          rubyPad: Math.max(0, fs * 1.15 - lh / 2) + 1,
+          /* 段落ごとの文字送りキャッシュ（paraPrefix）の照合キーは、必ず
+             「実測した」書体・寸法で作る。設定値（S.fsIdx 等）で作ると、
+             設定変更のときに applyTypography が現在位置の取得のため
+             旧書式の CSS のまま先に組版する経路があり、旧サイズの文字送りが
+             キャッシュに残って新しい組版へ混入する。すると列の詰め込みが
+             実際より甘くなり、段の最終列がはみ出して欠ける */
+          key: [cs.fontFamily, fs, lh, S.marginIdx, S.mode, advGen,
                 probeTier.clientWidth, probeTier.clientHeight].join("|") };
   } catch (e) { M = null; }
 }
 function advOf(u){
   if (u.c !== undefined) return M.ctx.measureText(u.c).width + M.ls;
-  const t = u.r || "";
-  return M.ctx.measureText(t).width + M.ls * Math.max(1, [...t].length);
+  /* ルビ単位の縦の進みは、ベース（親文字）と読みのうち広い方になる。読みが
+     ベースより長いルビ（私《わたし》、心《こころ》等）ではブラウザは読みの
+     幅まで進みを広げるため、ベース幅だけで見積もると列数が過小になり、
+     段の最終列がはみ出して欠ける。読みは rt の 0.5em として測る（実測で
+     ブラウザの進みと一致することを確認済み） */
+  const base = u.r || "", read = u.t || "";
+  const bAdv = M.ctx.measureText(base).width + M.ls * Math.max(1, [...base].length);
+  const rAdv = M.ctx.measureText(read).width * 0.5 + M.ls * Math.max(1, [...read].length);
+  return Math.max(bAdv, rAdv);
 }
 function paraPrefix(para){
   if (para._pk === M.key && para._prefix) return para._prefix;
@@ -1685,21 +1715,35 @@ function colWFor(para, off){
   return M.lh;
 }
 function headExtra(para, off){
-  return (off === 0 && para.cls && para.cls.includes("head")) ? 0.8 * 1.06 * M.fs : 0;
+  /* 見出しの左余白（.8em）。見出し段落のチャンクは、段落の途中から始まる
+     継続チャンクでも段ごとに <p> として描き直され、そのたびに余白が付く。
+     段落の先頭で置くときだけ数えると、継続チャンクで始まる段で余白ぶん
+     見積もりが不足し、段の最終列がはみ出す */
+  return (para.cls && para.cls.includes("head")) ? 0.8 * 1.06 * M.fs : 0;
 }
 /* ブラウザの列折り返しを列モデルで模擬する：段落を off から colsAvail 列に
    収めるとき、何文字入って何列使うかを返す。1列の容量いっぱいまで詰め、
    列の区切りは禁則（行頭・行末に来られない文字）を避けて直前の切断可能
    位置へ寄せる。単純に「列容量×列数」で長さを切る旧方式は、容量の余白が
    列数ぶん積み重なって最終列が数文字分空いてしまうため、この模擬に替えた */
+/* 英数字の単語の内部では列を割らない。ブラウザは単語の途中で折り返さない
+   ため、どこでも割れる前提で詰めると列数が過小になり、段の最終列が欠ける
+   （日本語文中の英単語や数字の並びでも起こる）。アンダースコアも単語の
+   一部として扱う（「Shift_JIS」のような並びを割らない） */
+const WORD_CHAR = /[0-9A-Za-zÀ-ÖØ-öø-ÿ_]/;
+function isWordUnit(u){ return u.c !== undefined && WORD_CHAR.test(u.c); }
 function simulateSplit(para, off, colsAvail, ind){
   const pre = paraPrefix(para), total = para.units.length;
   const capFull = colCap();
+  /* 見出しはフォントが1.06倍で、列方向への進みも1.06倍になる。容量判定を
+     実寸に合わせないと見出しの列数を少なく数える（「保存のしくみ」が
+     実描画では2列になるところを1列と数え、段の最終列がはみ出した） */
+  const scale = (para.cls && para.cls.includes("head")) ? 1.06 : 1;
   let colStart = off, cols = 1, lastBreak = -1;
   let capNow = capFull - (ind ? M.fs : 0);
   let i = off;
   while (i < total) {
-    if (pre[i + 1] - pre[colStart] > capNow) {
+    if ((pre[i + 1] - pre[colStart]) * scale > capNow) {
       const brk = (lastBreak > colStart) ? lastBreak : i;
       if (cols >= colsAvail) return { n: brk - off, cols };
       cols++;
@@ -1709,17 +1753,74 @@ function simulateSplit(para, off, colsAvail, ind){
     }
     if (i + 1 < total) {
       const nu = para.units[i + 1], lu = para.units[i];
-      if (!NO_START.includes(unitStartChar(nu)) && !NO_END.includes(unitEndChar(lu))) lastBreak = i + 1;
+      if (!NO_START.includes(unitStartChar(nu)) && !NO_END.includes(unitEndChar(lu))
+          && !(isWordUnit(lu) && isWordUnit(nu))
+          && !((lu.c === "." || lu.c === "'") && isWordUnit(nu))
+          && !(isWordUnit(lu) && (nu.c === "." || nu.c === "'")
+               && i + 2 < total && isWordUnit(para.units[i + 2]))
+          && !((nu.c === "." || nu.c === "'")
+               && i + 2 < total && isWordUnit(para.units[i + 2]))
+          && !(isWordUnit(lu) && nu.c === "-")) lastBreak = i + 1;
     }
     i++;
   }
   return { n: total - off, cols };
 }
 function prefixWidth(chunk){
-  /* 話タイトル（prefix）：1.3倍フォント・行高1.55・左余白1em として占有幅を概算する */
-  let L = 0;
-  chunk.units.forEach(u => { L += advOf(u) * 1.3; });
-  return Math.ceil(L / colCap()) * (M.fs * 1.3 * 1.55) + M.fs * 1.3;
+  /* 話タイトル（prefix）：1.3倍フォント・行高1.55・左余白1em として占有幅を返す。
+     列数は単純な割り算ではなく、本文と同じ禁則・単語接着の規則で列の
+     折り返しを模擬して数える。割り算だけだと「本を開く・ページをめくる」の
+     「・」のような行頭禁則の引き戻しで増える列を見落とし、占有幅を少なく
+     見積もって段の最終列をはみ出させる（実測で約1列ぶんの不足になった） */
+  const scale = 1.3, units = chunk.units, total = units.length;
+  const pre = [0];
+  units.forEach(u => pre.push(pre[pre.length - 1] + advOf(u) * scale));
+  const cap = M.tierH - Math.max(1.5, M.fs * scale * 0.06);
+  let cols = 1, colStart = 0, lastBreak = -1, i = 0;
+  while (i < total) {
+    if (pre[i + 1] - pre[colStart] > cap) {
+      let brk = (lastBreak > colStart) ? lastBreak : i;
+      if (brk <= colStart) brk = colStart + 1;
+      cols++; colStart = brk; lastBreak = -1; i = brk;
+      continue;
+    }
+    if (i + 1 < total) {
+      const nu = units[i + 1], lu = units[i];
+      if (!NO_START.includes(unitStartChar(nu)) && !NO_END.includes(unitEndChar(lu))
+          && !(isWordUnit(lu) && isWordUnit(nu))
+          && !((lu.c === "." || lu.c === "'") && isWordUnit(nu))
+          && !(isWordUnit(lu) && (nu.c === "." || nu.c === "'")
+               && i + 2 < total && isWordUnit(units[i + 2]))
+          && !((nu.c === "." || nu.c === "'")
+               && i + 2 < total && isWordUnit(units[i + 2]))
+          && !(isWordUnit(lu) && nu.c === "-")) lastBreak = i + 1;
+    }
+    i++;
+  }
+  return cols * (M.fs * scale * 1.55) + M.fs * scale;
+}
+/* 段の最初の列（右端の列）にルビ単位が含まれるか。最初の列は段の開始位置
+   から入る段落（または継続中の段落の続き）が占めるため、その範囲の単位を
+   見る。接頭（話タイトル）がある場合は段の最初の列はタイトル側になる。
+   最初の列の範囲は、字下げを差し引いた1列の容量までを目安にする */
+function firstColHasRuby(paras, pos, prefix){
+  if (prefix && prefix[0] && prefix[0].units && prefix[0].units.length)
+    return prefix[0].units.some(u => u.r !== undefined);
+  let pi = pos.pi, off = pos.off;
+  while (pi < paras.length && off >= paras[pi].units.length) { pi++; off = 0; }
+  const para = paras[pi];
+  if (!para || para.table || para.img) return false;
+  const pre = paraPrefix(para);
+  const startCls = chunkClsFor(para, off);
+  const ind = !/(cont|noind|head|title|endmark)/.test(startCls);
+  const cap = colCap() - (ind ? M.fs : 0);
+  const base = pre[off];
+  for (let i = off; i < para.units.length; i++) {
+    if (i > off && pre[i] - base >= cap) break;
+    if (para.units[i].r !== undefined) return true;
+    if (pre[i + 1] - base > cap) break;
+  }
+  return false;
 }
 function fillTier(paras, pos, prefix){
   if (!M) return fillTierProbe(paras, pos, prefix);
@@ -1728,6 +1829,10 @@ function fillTier(paras, pos, prefix){
   let pi = pos.pi, off = pos.off;
   let budget = M.tierW - 1;
   if (prefix) budget -= prefixWidth(prefix[0]);
+  /* 最初の列にルビがある段は、その列の広がり（M.rubyPad）ぶんを最初から
+     差し引く。差し引かないと後続の列が左へ押され、段の最終列が段の左端
+     からはみ出して欠ける（見開きの右ページの段末で目立っていた） */
+  if (firstColHasRuby(paras, pos, prefix)) budget -= M.rubyPad;
   while (pi < paras.length) {
     const para = paras[pi], total = para.units.length;
     if (off >= total) { pi++; off = 0; continue; }
@@ -1745,16 +1850,13 @@ function fillTier(paras, pos, prefix){
     }
     const startCls = chunkClsFor(para, off);
     const ind = !/(cont|noind|head|title|endmark)/.test(startCls);
-    const pre = paraPrefix(para);
     const colW = colWFor(para, off), extra = headExtra(para, off);
-    const restPx = pre[total] - pre[off];
-    if (colsFor(restPx, ind) * colW + extra <= budget) {
-      chunks.push({ units: para.units.slice(off), cls: startCls });
-      budget -= colsFor(restPx, ind) * colW + extra;
-      pi++; off = 0; continue;
-    }
     const colsAvail = Math.floor((budget - extra) / colW);
     if (colsAvail <= 0) break;
+    /* 丸ごと収まるかどうかも含め、列数は必ず simulateSplit の模擬で決める。
+       以前の colsFor 概算（禁則による無駄を一律0.3em/列と見積もる）は、
+       禁則が続く段落や大きなフォントでは実際の列数より少なく返ることが
+       あり、そのまま「収まった」ことにして段の最終列をはみ出させていた */
     const sim = simulateSplit(para, off, colsAvail, ind);
     const n = sim.n;
     if (n === 0) {
@@ -1762,8 +1864,8 @@ function fillTier(paras, pos, prefix){
       break;
     }
     chunks.push({ units: para.units.slice(off, off + n), cls: startCls });
-    /* 概算では収まらなかったが模擬では丸ごと収まった場合は、使った列数ぶん
-       予算を引いて次の段落の詰め込みを続ける */
+    /* 模擬では丸ごと収まった場合は、使った列数ぶん予算を引いて次の段落の
+       詰め込みを続ける */
     if (n >= total - off) { budget -= sim.cols * colW + extra; pi++; off = 0; continue; }
     off += n; break;
   }
