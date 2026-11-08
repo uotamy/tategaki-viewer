@@ -122,6 +122,11 @@
   .tier p.head { font-size: 1.06em; font-weight: 600; margin-left: .8em; }
   .tier p.endmark { text-align: end; color: var(--sub); }
   .tier rt { font-size: .5em; }
+  /* 半角数字は縦中横で正立させる：縦書きの中で数字だけが寝てしまうのを防ぎ、
+     1文字＝1emのマスに立ったまま収める（組版側の文字送りも1emで見積もる） */
+  .tier .tcy { text-combine-upright: all; -webkit-text-combine: horizontal; }
+  /* 空行段落（空列）：中身は全角空白1つで、列1つぶんの空白として描く */
+  .tier p.blank { text-indent: 0; }
   /* Markdownの表：縦書き段の中に、横書きの表ブロックとして収める */
   .tier .mdtable {
     writing-mode: horizontal-tb; -webkit-writing-mode: horizontal-tb;
@@ -1029,6 +1034,7 @@ const GUIDE_EPISODES = [
       "メニューの「設定」からは、読み心地に関わる項目をまとめて変えられます。変更はその場で本文に反映され、自動で保存されるので、次に開いたときも同じ設定のままです。",
       { t: "フォントと文字まわり", cls: "head" },
       "フォントは、端末の明朝（既定）と端末のゴシック、GoogleフォントのNoto Serif JP、しっぽり明朝、Zen Old 明朝、Noto Sans JPから選べます。Googleフォントは選んだときにだけ読み込まれるので、初回だけ通信が必要です。さらに「任意フォント」として、端末にあるフォントファイル（.ttf／.otfなど）を表示設定の「フォントを追加」から登録できます。登録したフォントは端末内に保存され、次回もそのまま使えます（各フォントの「×」で削除できます）。文字の大きさは5段階、行間と余白はそれぞれ3段階です。",
+      "本文の半角数字は、縦書きの中で寝てしまわないよう、1文字ずつ立った形（縦中横）で表示されます。本文中の空行は消されず、空の列1つとしてそのまま組版に残ります。",
       { t: "段組みとページ送り", cls: "head" },
       "段組みは、上下二段組みと一段組みを切り替えられます。ページ送りの方式は「スライド」（ページ単位で滑って切り替わる）と「めくり」（綴じ目を軸にページがめくれる動き）と「なし」（アニメーションせず即時に切り替わる）から選べます。",
       "「進行方向」は、画面下のバーの進み具合・スライダー・「前の話／次の話」の並びの向きです。「右から左」（本の進行）では進み具合が右端から埋まり、スライダーは右端が開始・左端が終わり、「次の話」が左に来ます。「左から右」は一般的なアプリと同じ並びです。ページ送りのタップやスワイプの方向は、どちらの設定でも変わりません。",
@@ -1306,6 +1312,7 @@ function serializeEpisodes(episodes){
     title: ep.title,
     paras: ep.paragraphs.map(p => {
       const o = { t: unitsToMarkup(p.units), cls: p.cls || "" };
+      if (p.blank) o.bl = 1; /* 空行段落（空列）はユニットが無いため、印で保存する */
       if (p.table) o.tbl = p.table; /* 表はセル構造ごと保存し、復元時も表として描く */
       if (p.img) { o.img = p.img; o.src = p.src; /* 挿絵は画像データごと保存する */
         if (p.imgW) { o.iw = p.imgW; o.ih = p.imgH; } } /* 実寸も保存し、全面表示の判定に使う */
@@ -1328,6 +1335,7 @@ function deserializeEpisodes(data){
         title: ep.title,
         paragraphs: paras.map(p => {
           const o = { units: textToUnits(p.t), cls: p.cls || "" };
+          if (p.bl) o.blank = true;
           if (Array.isArray(p.tbl) && p.tbl.length) o.table = p.tbl;
           if (p.img) { o.img = p.img; o.src = p.src; if (p.iw) { o.imgW = p.iw; o.imgH = p.ih; } }
           if (p.pb) o.breakBefore = true;
@@ -1590,11 +1598,16 @@ function buildProbe(){
   pageHost.appendChild(probePage);
   probeTier = probePage.firstChild;
 }
+/* 半角数字は1文字ずつ縦中横（.tcy）で包み、縦書きの中で正立させる。
+   ルビの親文字の中の数字にも同じ処理をする（読みには付けない） */
+function tcyDigits(escaped){
+  return escaped.replace(/[0-9]/g, d => '<span class="tcy">' + d + "</span>");
+}
 function chunkHTML(units){
   return units.map(u => {
     let h;
-    if (u.c !== undefined) h = esc(u.c);
-    else if (u.r !== undefined) h = "<ruby>" + esc(u.r) + "<rt>" + esc(u.t) + "</rt></ruby>";
+    if (u.c !== undefined) h = /^[0-9]$/.test(u.c) ? '<span class="tcy">' + u.c + "</span>" : esc(u.c);
+    else if (u.r !== undefined) h = "<ruby>" + tcyDigits(esc(u.r)) + "<rt>" + esc(u.t) + "</rt></ruby>";
     else h = "";
     if (u.b) h = '<span class="fbold">' + h + "</span>";
     if (u.e) h = '<span class="boten">' + h + "</span>";
@@ -1611,6 +1624,9 @@ function tableHTML(rows){
 }
 function renderChunks(tierEl, chunks){
   tierEl.innerHTML = chunks.map(ch => {
+    /* 空行段落は空列1つとして描く。空の <p> だと幅が潰れて列にならないため、
+       全角空白1文字を入れて列の幅（行高ぶん）を確保する */
+    if (ch.blank) return '<p class="blank">　</p>';
     if (ch.table) return tableHTML(ch.table);
     if (ch.img) return ch.src ? '<div class="illus"><img src="' + ch.src + '" alt="挿絵" /></div>' : "";
     return '<p class="' + ch.cls + '">' + chunkHTML(ch.units) + "</p>";
@@ -1677,14 +1693,22 @@ function computeMetrics(){
   } catch (e) { M = null; }
 }
 function advOf(u){
-  if (u.c !== undefined) return M.ctx.measureText(u.c).width + M.ls;
+  if (u.c !== undefined) {
+    /* 半角数字は縦中横で正立し、1emのマスを占める。寝たままの実測幅
+       （約0.5em）で見積もると、そのぶん列が詰まって最終列がはみ出すため、
+       描画に合わせて1emとして数える */
+    if (u.c >= "0" && u.c <= "9") return M.fs + M.ls;
+    return M.ctx.measureText(u.c).width + M.ls;
+  }
   /* ルビ単位の縦の進みは、ベース（親文字）と読みのうち広い方になる。読みが
      ベースより長いルビ（私《わたし》、心《こころ》等）ではブラウザは読みの
      幅まで進みを広げるため、ベース幅だけで見積もると列数が過小になり、
      段の最終列がはみ出して欠ける。読みは rt の 0.5em として測る（実測で
      ブラウザの進みと一致することを確認済み） */
   const base = u.r || "", read = u.t || "";
-  const bAdv = M.ctx.measureText(base).width + M.ls * Math.max(1, [...base].length);
+  let baseW = 0;
+  for (const ch of base) baseW += (ch >= "0" && ch <= "9") ? M.fs : M.ctx.measureText(ch).width;
+  const bAdv = baseW + M.ls * Math.max(1, [...base].length);
   const rAdv = M.ctx.measureText(read).width * 0.5 + M.ls * Math.max(1, [...read].length);
   return Math.max(bAdv, rAdv);
 }
@@ -1835,6 +1859,14 @@ function fillTier(paras, pos, prefix){
   if (firstColHasRuby(paras, pos, prefix)) budget -= M.rubyPad;
   while (pi < paras.length) {
     const para = paras[pi], total = para.units.length;
+    /* 空行段落（本文中の空行）：ユニットは無いが、空列1つとして行高ぶんの
+       幅を予算から引いて段に置く。段に1列も入らないときは次の段へ送る */
+    if (para.blank && off === 0) {
+      if (chunks.length > baseLen && budget < M.lh) break;
+      chunks.push({ units: [], cls: "blank", blank: true });
+      budget -= M.lh;
+      pi++; off = 0; continue;
+    }
     if (off >= total) { pi++; off = 0; continue; }
     /* ［＃改ページ］［＃改段］：段落の途中でなければ、ここで段を打ち切って次の段・ページへ送る */
     if (off === 0 && chunks.length > baseLen && (para.breakBefore || para.breakTier)) break;
@@ -1878,6 +1910,12 @@ function fillTierProbe(paras, pos, prefix){
   let pi = pos.pi, off = pos.off;
   while (pi < paras.length) {
     const para = paras[pi], total = para.units.length;
+    /* 空行段落（本文中の空行）：空列1つとしてプローブ実測で収める */
+    if (para.blank && off === 0) {
+      const whole = { units: [], cls: "blank", blank: true };
+      if (chunks.length > baseLen && !probeFits(chunks.concat([whole]))) break;
+      chunks.push(whole); pi++; off = 0; continue;
+    }
     if (off >= total) { pi++; off = 0; continue; }
     /* ［＃改ページ］［＃改段］：段落の途中でなければ、ここで段を打ち切って次の段・ページへ送る */
     if (off === 0 && chunks.length > baseLen && (para.breakBefore || para.breakTier)) break;
@@ -3869,6 +3907,13 @@ function episodeToAozoraText(ep, regImg){
       lastText = -1;
       return;
     }
+    if (p.blank) {
+      /* 空行段落は空のブロックとして書き出す（ブロック区切りと合わせて
+         空行になり、読み戻したときも空列として復元される） */
+      blocks.push(prefix + "");
+      lastText = -1;
+      return;
+    }
     const text = unitsToAozoraText(p.units || []);
     if (!text) return;
     if (p.cls === "cont" && lastText >= 0) {
@@ -4758,12 +4803,25 @@ function parseTextBook(text, fileName, images, imageDims){
   const episodes = [];
   let cur = null, buf = [];
   let pendingBreak = 0; /* 1:［＃改段］ 2:［＃改ページ］（次に作る段落へ付ける） */
+  /* 段落の間に空行があった印。次の本文段落の前に「空列1つ」の空行段落を
+     挟むために使う（空行を段落の区切りとして捨ててしまわない）。
+     実際の挿入は次の段落が作られる時点まで遅らせるので、話の先頭・末尾や
+     見出し・改ページの前後に空列が付くことはない。連続した空行は1列に畳む */
+  let blankPending = false;
   const ensureEp = () => { if (!cur) { cur = { title: workTitle, paragraphs: [] }; episodes.push(cur); } };
   const stripMd = s => s.replace(/\*\*([^*]+)\*\*/g, "$1").replace(/\*([^*]+)\*/g, "$1")
     .replace(/`([^`]+)`/g, "$1").replace(/\[([^\]]+)\]\([^)]*\)/g, "$1");
   const pushPara = (units, cls) => {
     if (!units || !units.length) return;
     ensureEp();
+    /* 直前に空行があった本文段落の前には、空列1つ（空行段落）を挟む。
+       見出しや改ページ・改段の対象になる段落の前には挟まない */
+    if (blankPending) {
+      blankPending = false;
+      if (!pendingBreak && cls !== "head" && cur.paragraphs.length
+          && !cur.paragraphs[cur.paragraphs.length - 1].blank)
+        cur.paragraphs.push({ units: [], cls: "blank", blank: true });
+    }
     const p = { units, cls: cls || "" };
     if (pendingBreak === 2) p.breakBefore = true;
     else if (pendingBreak === 1) p.breakTier = true;
@@ -4779,6 +4837,7 @@ function parseTextBook(text, fileName, images, imageDims){
   };
   const startEp = title => {
     flush();
+    blankPending = false; /* 話をまたいだ空行は、新しい話の先頭へ持ち越さない */
     cur = { title: title.trim(), paragraphs: [] };
     episodes.push(cur);
   };
@@ -4800,6 +4859,7 @@ function parseTextBook(text, fileName, images, imageDims){
     const src = images ? (images[name] || images[base]) : null;
     /* 画像が同梱されていない単体テキストでは、注記だけ落として何も表示しない（表示は崩れない） */
     if (!src) return;
+    blankPending = false; /* 挿絵の前に空列は挟まない */
     ensureEp();
     const p = { units: textToUnits("挿絵"), cls: "illus", img: base, src };
     /* 画像ファイル自体の実寸（natural size）を持たせる。表示時の自動切替
@@ -4857,8 +4917,15 @@ function parseTextBook(text, fileName, images, imageDims){
       continue;
     }
     if (ch) { startEp((ch[1] + (ch[2] ? "　" + ch[2] : "")).trim()); continue; }
-    if (/^(-{3,}|\*{3,}|_{3,})\s*$/.test(line)) { flush(); continue; }
-    if (!line.trim()) { flush(); continue; }
+    if (/^(-{3,}|\*{3,}|_{3,})\s*$/.test(line)) { flush(); blankPending = false; continue; }
+    /* 空行：段落を区切るだけでなく、次に来る段落との間に空列1つを残す。
+       ただし印を立てるのは、すでに本文のある話の中だけ（先頭の空行や、
+       見出しだけの話では立てない） */
+    if (!line.trim()) {
+      flush();
+      if (cur && cur.paragraphs.length) blankPending = true;
+      continue;
+    }
     /* --- Markdownの表（パイプ記法）：次の行が区切り行なら、表として取り込む --- */
     if (line.includes("|") && li + 1 < lines.length && isSepRow(lines[li + 1])) {
       flush();
@@ -4869,6 +4936,7 @@ function parseTextBook(text, fileName, images, imageDims){
         if (!nx.trim() || !nx.includes("|") || isSepRow(nx)) break;
         rows.push(parseRow(nx)); li++;
       }
+      blankPending = false; /* 表の前に空列は挟まない */
       ensureEp();
       cur.paragraphs.push({ units: textToUnits(rows.map(r => r.join(" ")).join(" ")), cls: "table", table: rows });
       continue;
@@ -4978,10 +5046,26 @@ function extractChapter(doc){
       const u = trimSpaceUnits(cur); cur = [];
       if (u.length) paras.push({ units: u, cls: /^h[1-6]$/.test(tag) ? "head" : "" });
     };
+    const before = paras.length;
     units.forEach(u => { if (u.br) flush(); else cur.push(u); });
     flush();
+    /* 空の <p>（場面転換などの空行）は捨てず、空列1つの空行段落として残す。
+       画像だけの <p> は挿絵の置き場なので空行にはしない */
+    if (paras.length === before && tag === "p" && !el.querySelector("img, svg, image"))
+      paras.push({ units: [], cls: "blank", blank: true });
   };
   if (doc.body) [...doc.body.children].forEach(el => processEl(el));
+  /* 空行段落の整理：章の先頭・末尾の空行は落とし、連続した空行は1つに畳む */
+  {
+    const cleaned = [];
+    paras.forEach(p => {
+      if (p.blank && (!cleaned.length || cleaned[cleaned.length - 1].blank)) return;
+      cleaned.push(p);
+    });
+    while (cleaned.length && cleaned[cleaned.length - 1].blank) cleaned.pop();
+    paras.length = 0;
+    cleaned.forEach(p => paras.push(p));
+  }
   let heading = "";
   if (paras.length && paras[0].cls === "head") {
     heading = unitsToText(paras[0].units);
