@@ -1922,15 +1922,29 @@ function firstColHasRuby(paras, pos, prefix){
 }
 function fillTier(paras, pos, prefix){
   if (!M) return fillTierProbe(paras, pos, prefix);
+  let budget = M.tierW - 1;
+  if (prefix) budget -= prefixWidth(prefix[0]);
+  if (!firstColHasRuby(paras, pos, prefix)) return fillTierCore(paras, pos, prefix, budget);
+  /* 最初の列にルビがある段は、その列の広がり（M.rubyPad）ぶん後続の列が
+     左へ押される。以前はそのぶんを予算から引いてから列数を決めていたが、
+     段幅の余りが小さいとき（実例：余り2.25pxに対して rubyPad 4.5px）は
+     引き算が列数の floor を跨いでしまい、本来入るはずの列が丸ごと1列
+     落ちて、段の最終列の位置に1列分の空白が残った（縦画面の上段・下段
+     ともに発生）。そこで、まず差し引かずに割り付けてプローブ実測に
+     かけ、段に収まる（＝最後の列がはみ出さない）ことを確認できた場合
+     だけその割り付けを採用する。実測で収まらない場合に限り、従来どおり
+     rubyPad を差し引いて割り付け直すので、はみ出しゼロは実測で担保
+     される。プローブ実測の許容（+1.5px）ぶん最後の列の行ボックスが
+     段の左端を越えても、字面は半行間（(lh−fs)/2、最小でも約5px）の
+     内側に収まるため欠けない */
+  const res = fillTierCore(paras, pos, prefix, budget);
+  if (probeFits(res.chunks)) return res;
+  return fillTierCore(paras, pos, prefix, budget - M.rubyPad);
+}
+function fillTierCore(paras, pos, prefix, budget){
   const chunks = prefix ? prefix.slice() : [];
   const baseLen = chunks.length;
   let pi = pos.pi, off = pos.off;
-  let budget = M.tierW - 1;
-  if (prefix) budget -= prefixWidth(prefix[0]);
-  /* 最初の列にルビがある段は、その列の広がり（M.rubyPad）ぶんを最初から
-     差し引く。差し引かないと後続の列が左へ押され、段の最終列が段の左端
-     からはみ出して欠ける（見開きの右ページの段末で目立っていた） */
-  if (firstColHasRuby(paras, pos, prefix)) budget -= M.rubyPad;
   while (pi < paras.length) {
     const para = paras[pi], total = para.units.length;
     /* 空行段落（本文中の空行）：ユニットは無いが、空列1つとして行高ぶんの
