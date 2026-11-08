@@ -1010,6 +1010,7 @@ const GUIDE_EPISODES = [
       "本が増えてきたら、本棚の上の「検索」ボタンで絞り込めます。タイトルで探せて、著者名のある本（なろう作品など）は著者名でも当たります。文字を打つとその場で絞り込まれ、件数が表示されます。一致する本がないときは「見つかりません」と出ます。「クリア」か「閉じる」で全件表示に戻ります。絞り込みは表示だけのもので、本の並び順や読書位置は変わりません。",
       "各本の左側にはサムネイルが付きます。EPUBでは表紙画像、テキストやzipでは本文で最初に現れる画像、漫画アーカイブ（zip／cbz／rar／cbr）では先頭ページの画像が使われ、画像のない本はアイコン表示になります。サムネイルは本を取り込むときに小さく作って保存されるので、本棚を開くたびに作り直すことはありません。表示は設定の「本棚のサムネイル」で切り替えられます。",
       "履歴の本の操作は、各カードの右下にあるメニューボタン（⋯）に集約されています。押すと、その本に使える操作（ダウンロード／削除など）だけが並んだシートが開きます。「削除」を選ぶと、その本の読書位置・しおり・端末に保存した本文も一緒に消えます（元のファイル自体は消えません）。この「使い方」は組み込みのため、メニューボタン自体が付きません。",
+      "アーカイブ（zip／cbz／rar／cbr）の原本が端末に保持されている本では、メニューに今と反対の読み方も並びます。漫画として取り込まれた本にテキスト（.txt）が含まれていれば「小説として読む」、小説として取り込まれた本に画像が含まれていれば「漫画として読む」です。選ぶと、保持されている原本を反対の経路で読み直して同じ本棚のまま中身を差し替え、次に開いたときもその読み方のままになります。取り込み時の自動判定は変わりません。切り替えると、その本の読書位置・しおり・読了はリセットされます。なろうや青空文庫から登録した本、単体のテキストやEPUBの本にはこの項目は出ません。",
       "操作シートの「ダウンロード」からは、その本をファイルとして端末へ保存できます。ダウンローダーやテキストから取り込んだ本は、話ごとのテキストファイル（Shift_JIS）をまとめた青空文庫形式のzip（ファイル名は書名）になり、このビューワーでそのまま開き直せます。取り込み時の原本ファイルが端末に残っている本（漫画アーカイブなど）は、原本がそのまま保存されます。",
       { t: "なろうダウンローダー", cls: "head" },
       "本の追加は、本棚の「本追加」ボタンから開く「本を追加」画面に集約されています。ファイルを開く（端末内のファイルの取り込み）、なろうダウンローダー、青空文庫ダウンローダーの3つが並びます。",
@@ -3493,12 +3494,148 @@ function fmtReadDate(ts){
    元のファイル自体は消えない。「使い方」（組み込み）は削除対象外。 */
 /* 本棚カードの操作シート：その本に適用できる操作だけを並べる。
    なろう未完＝続きを取得／ダウンロード／削除、なろう完結＝更新を確認／
-   ダウンロード／削除、通常の本＝ダウンロード／削除。
+   ダウンロード／削除、通常の本＝ダウンロード／削除、アーカイブ原本が
+   保持され反対側に中身がある本＝今と反対の読み方（漫画として読む／
+   小説として読む）を加える。
    「開く」は並べない：本を開く操作はカード自体のタップが担っており、
    シートに同じ項目を置くと冗長になるため（ユーザー指示で削除済み）。
    シートは履歴に積まない（本棚表示中に端末の戻るボタンでアプリを終える
    従来の作法を変えないため）。開閉は openSheetUI／closeSheetsUI を使い、
    背景タップ（scrim）でも閉じる */
+/* ---------------- アーカイブ本の読み方切り替え（漫画⇔小説） ----------------
+   取り込み時の自動判定（.txtが1つでもあればテキスト、画像だけなら漫画）は
+   変えない。あくまで後からの手動切り替えだけを、本棚の「⋯」メニューから
+   行えるようにする。
+   条件は厳密に絞る：
+   - 元のファイルがアーカイブ（zip／cbz／rar／cbr）で、その原本が端末内
+     データベース（archivesストア）に保持されている本だけ
+   - なろう（keyが narou: で始まる本）・青空文庫の登録本・単体ファイルの
+     本は、原本アーカイブが保持されていない（または対象外）ため出さない。
+     青空の登録本は saveBookArchive を通らないので hasArchive が立たない
+   - 反対側に中身がある場合だけ：漫画→小説は .txt がある場合、
+     小説→漫画は画像がある場合
+   切り替えは本棚エントリの hasArchive／arcHasTxt／arcHasImg と
+   kind／manga フラグで永続化され（localStorageの library に保存される）、
+   次に本棚から開くときも openFromShelf がその種別で開くため維持される。
+   切り替え時、読書位置・しおり・読了はリセットしてよい（仕様）。 */
+function isArchiveFileName(name){ return /\.(zip|cbz|rar|cbr)$/i.test(name || ""); }
+function isEntryManga(entry){ return !!(entry && (entry.manga || entry.kind === "manga")); }
+function setArchiveFlags(key, flags){
+  const e = S.library.find(x => x.key === key);
+  if (!e || !flags) return;
+  if (flags.hasArchive !== undefined) e.hasArchive = !!flags.hasArchive;
+  if (flags.arcHasTxt !== undefined) e.arcHasTxt = !!flags.arcHasTxt;
+  if (flags.arcHasImg !== undefined) e.arcHasImg = !!flags.arcHasImg;
+  persist();
+}
+/* 原本アーカイブの目録だけを見て、反対側の中身があるかを確認する。
+   結果はエントリへキャッシュし、次回からは同期的に判定できるようにする */
+async function probeArchiveSwitch(entry){
+  try {
+    if (!entry || entry.kind === "guide" || entry.key.indexOf("narou:") === 0) return null;
+    if (!isArchiveFileName(entry.fileName)) return null;
+    const arch = await loadBookArchive(entry.key);
+    if (!arch) { setArchiveFlags(entry.key, { hasArchive: false }); return null; }
+    const buf = (typeof Blob !== "undefined" && arch instanceof Blob) ? await arch.arrayBuffer() : arch;
+    const zipObj = await loadArchiveBuf(buf, entry.fileName || "");
+    const names = zipEntryNames(zipObj);
+    const hasTxt = names.some(n => /\.txt$/i.test(n));
+    const hasImg = names.some(n => MANGA_IMG_RE.test(n));
+    setArchiveFlags(entry.key, { hasArchive: true, arcHasTxt: hasTxt, arcHasImg: hasImg });
+    const eligible = isEntryManga(entry) ? hasTxt : hasImg;
+    return eligible ? { hasTxt, hasImg } : null;
+  } catch (e) { return null; }
+}
+let switchBusy = false;
+async function switchBookMode(entry, toManga){
+  if (!entry || switchBusy) { if (switchBusy) toast("別の切り替え処理中です"); return; }
+  switchBusy = true;
+  setLoading(true);
+  try {
+    await new Promise(r => setTimeout(r, 40));
+    const key = entry.key;
+    const fileName = entry.fileName || entry.title || "";
+    const isRarName = /\.(rar|cbr)$/i.test(fileName);
+    const arch = await loadBookArchive(key);
+    if (!arch) { toast("エラー：『" + entry.title + "』の元のファイルが端末に保持されていないため、切り替えできません", 3600); return; }
+    const buf = (typeof Blob !== "undefined" && arch instanceof Blob) ? await arch.arrayBuffer() : arch;
+    const zipObj = await loadArchiveBuf(buf, fileName);
+    const names = zipEntryNames(zipObj);
+    const hasTxt = names.some(n => /\.txt$/i.test(n));
+    const hasImg = names.some(n => MANGA_IMG_RE.test(n));
+    if (toManga && !hasImg) { toast("このアーカイブには画像が含まれていないため、漫画として読めません", 3600); return; }
+    if (!toManga && !hasTxt) { toast("このアーカイブにはテキスト（.txt）が含まれていないため、小説として読めません", 3600); return; }
+    let newEpisodes = null, newMangaState = null, newThumb = null, newNote = "";
+    if (toManga) {
+      const mangaBook = buildMangaFromZip(zipObj, fileName);
+      newEpisodes = mangaBook.episodes;
+      newMangaState = mangaBook.mangaState;
+      newNote = isRarName ? "画像RAR（漫画）" : "画像ZIP（漫画）";
+      try {
+        const e0 = mangaBook.mangaState.entries[0];
+        if (e0) {
+          const ab = await e0.entry.async("arraybuffer");
+          newThumb = await thumbFromBlob(new Blob([ab], { type: mimeForImageName(e0.name) }));
+        }
+      } catch (err) { newThumb = null; }
+    } else {
+      const textBook = await parseZipBook(buf, fileName, zipObj);
+      newEpisodes = textBook.episodes;
+      newNote = isRarName ? "RAR" : "青空文庫ZIP";
+      try { newThumb = await thumbFromEpisodes(newEpisodes, false); } catch (err) { newThumb = null; }
+    }
+    if (!newEpisodes || !newEpisodes.length) { toast("切り替え先の中身を読み取れませんでした", 3600); return; }
+    /* 読書位置・しおり・読了はリセットする（話の構成が変わるため） */
+    delete S.positions[key];
+    if (S.finished) delete S.finished[key];
+    S.bookmarks = S.bookmarks.filter(m => m.bookKey !== key);
+    const titleKeep = entry.title;
+    const isCurrent = !!(S.work && S.work.key === key);
+    /* 小説へ切り替える場合は、差し替えた本文を本文DBへも保存する。
+       これをしないと、次に本棚から開くときに切り替えが戻ってしまう */
+    let textStored = true;
+    if (!toManga) textStored = await saveBookContent(key, newEpisodes);
+    if (isCurrent) {
+      /* 今開いている本は、メモリ上の本文もその場で差し替える。
+         位置は上で消してあるので setBook は先頭から開き直す */
+      setBook({ title: titleKeep, note: newNote }, newEpisodes, key,
+        { kind: toManga ? "manga" : "file", fileName, stored: toManga ? true : textStored, mangaState: newMangaState, thumb: newThumb || null });
+      const e2 = S.library.find(x => x.key === key);
+      if (e2) {
+        e2.hasArchive = true; e2.arcHasTxt = hasTxt; e2.arcHasImg = hasImg;
+        if (newThumb) { e2.thumb = newThumb; e2.thumbSize = THUMB_MAX_DIM; }
+        else if (!toManga && !newEpisodes.some(ep => ep.paragraphs.some(p => p.img && p.src))) { delete e2.thumb; delete e2.thumbSize; }
+        persist();
+      }
+    } else {
+      const storedFlag = textStored;
+      registerBook(key, titleKeep, newNote, toManga ? "manga" : "file", fileName, newEpisodes, toManga ? true : storedFlag);
+      const e2 = S.library.find(x => x.key === key);
+      if (e2) {
+        e2.hasArchive = true; e2.arcHasTxt = hasTxt; e2.arcHasImg = hasImg;
+        if (newThumb) { e2.thumb = newThumb; e2.thumbSize = THUMB_MAX_DIM; }
+        else if (!toManga && !newEpisodes.some(ep => ep.paragraphs.some(p => p.img && p.src))) { delete e2.thumb; delete e2.thumbSize; }
+        persist();
+      }
+      if (!toManga && !storedFlag) setTimeout(() => toast("切り替えましたが、この端末に保存できませんでした（容量不足など）", 3600), 400);
+    }
+    buildShelf();
+    toast(toManga
+      ? "『" + titleKeep + "』を漫画として読むように切り替えました"
+      : "『" + titleKeep + "』を小説として読むように切り替えました", 3200);
+  } catch (err) {
+    const code = err && err.message;
+    if (code === "nozip") toast("zip／EPUBを開く部品（JSZip）を読み込めませんでした。通信環境を確認してください", 3600);
+    else if (code === "norar") toast("RAR／CBRを開く部品（展開ライブラリ）を読み込めませんでした。通信環境を確認してください", 3600);
+    else if (code === "rar-encrypted") toast("このRAR／CBRは暗号化（パスワード付き）されているため切り替えできません", 3600);
+    else if (code === "rar-unsupported") toast("このRAR／CBRは対応していない形式のため切り替えできませんでした", 3600);
+    else if (code === "notext") toast(toManga ? "画像が含まれていないため、漫画として読めません" : "読み取れるテキスト（.txt）が含まれていないため、小説として読めません", 3600);
+    else toast("切り替えに失敗しました。時間をおいて再試行してください", 3600);
+  } finally {
+    switchBusy = false;
+    setLoading(false);
+  }
+}
 function openBookMenu(entry){
   if (!entry || entry.kind === "guide") return;
   $("#bookSheetTitle").textContent = entry.title;
@@ -3511,6 +3648,7 @@ function openBookMenu(entry){
     b.textContent = label;
     b.addEventListener("click", () => { closeSheetsUI(); fn(); });
     box.appendChild(b);
+    return b;
   };
   if (entry.key.indexOf("narou:") === 0) {
     /* 取得途中のなろう作品では、差分取得を「続きを取得」として出す。
@@ -3519,10 +3657,41 @@ function openBookMenu(entry){
     const incomplete = isEntryIncomplete(entry);
     addAct(incomplete ? "続きを取得" : "更新を確認", () => nCheckUpdate(entry));
   }
+  /* 読み方の切り替え：アーカイブ原本が保持されている本だけ、現在の種別の
+     反対を1つ出す。判定材料（hasArchive／arcHasTxt／arcHasImg）が揃って
+     いれば同期的に出し、無い旧来の本はシートを開いたあとで非同期に
+     確認して、該当する場合だけダウンロードの前に差し込む */
+  const mangaNow = isEntryManga(entry);
+  const switchLabel = mangaNow ? "小説として読む" : "漫画として読む";
+  let dlBtn = null;
+  let switchKnown = false, switchEligible = false;
+  if (entry.key.indexOf("narou:") !== 0 && isArchiveFileName(entry.fileName) && entry.hasArchive
+      && entry.arcHasTxt !== undefined && entry.arcHasImg !== undefined) {
+    switchKnown = true;
+    switchEligible = mangaNow ? !!entry.arcHasTxt : !!entry.arcHasImg;
+  }
+  if (switchKnown && switchEligible) {
+    addAct(switchLabel, () => switchBookMode(entry, !mangaNow));
+  }
   /* ダウンロード：端末内DBの本をファイルとして端末へ保存する */
-  addAct("ダウンロード", () => downloadBookFromShelf(entry, null));
+  dlBtn = addAct("ダウンロード", () => downloadBookFromShelf(entry, null));
   addAct("削除", () => deleteBookFromShelf(entry), true);
   openSheetUI("#bookSheet");
+  if (!switchKnown && entry.key.indexOf("narou:") !== 0 && isArchiveFileName(entry.fileName)) {
+    probeArchiveSwitch(entry).then(info => {
+      if (!info) return;
+      /* シートがまだ同じ本で開いている場合だけ差し込む（二重追加も防ぐ） */
+      if (!$("#bookSheet").classList.contains("open")) return;
+      if ($("#bookSheetTitle").textContent !== entry.title) return;
+      if ([...box.querySelectorAll(".bookact")].some(b => b.textContent === switchLabel)) return;
+      const b = document.createElement("button");
+      b.className = "bookact";
+      b.textContent = switchLabel;
+      b.addEventListener("click", () => { closeSheetsUI(); switchBookMode(entry, !mangaNow); });
+      if (dlBtn && dlBtn.parentNode === box) box.insertBefore(b, dlBtn);
+      else box.appendChild(b);
+    });
+  }
 }
 function deleteBookFromShelf(entry){
   if (!entry || entry.kind === "guide") return;
@@ -4951,11 +5120,13 @@ $("#fileInput").addEventListener("change", async e => {
       const isRarName = /\.(rar|cbr)$/i.test(file.name);
       let mangaBook = null;
       let peeked = null;
+      let arcHasTxt = false, arcHasImg = false, arcPeeked = false;
       try {
         peeked = await loadArchiveBuf(buf, file.name);
         const names = zipEntryNames(peeked);
         const hasTxt = names.some(n => /\.txt$/i.test(n));
         const hasImg = names.some(n => MANGA_IMG_RE.test(n));
+        arcHasTxt = hasTxt; arcHasImg = hasImg; arcPeeked = true;
         if (!hasTxt && hasImg) mangaBook = buildMangaFromZip(peeked, file.name);
       } catch (e) {
         /* RARの暗号化・未対応・部品読み込み失敗は、理由が確定しているので
@@ -4979,6 +5150,8 @@ $("#fileInput").addEventListener("change", async e => {
         } catch (err) { mThumb = null; }
         const resumed = setBook({ title: mangaBook.title, note: isRarName ? "画像RAR（漫画）" : "画像ZIP（漫画）" }, mangaBook.episodes, key,
           { kind: "manga", fileName: file.name, stored, mangaState: mangaBook.mangaState, thumb: mThumb });
+        if (arcPeeked) setArchiveFlags(key, { hasArchive: stored, arcHasTxt, arcHasImg });
+        else if (stored) setArchiveFlags(key, { hasArchive: true });
         toast(resumed ? "前回の続きから開きました"
           : "『" + mangaBook.title + "』を開きました（" +
             (mangaBook.episodes.length > 1
@@ -4989,10 +5162,17 @@ $("#fileInput").addEventListener("change", async e => {
         const book = await parseZipBook(buf, file.name, peeked);
         const key = keyFor(book.title);
         const stored = await saveBookContent(key, book.episodes);
+        /* テキストとして取り込んだアーカイブも、後から「漫画として読む」へ
+           切り替えられるよう、原本アーカイブ自体も保持する（自動判定は
+           従来どおりで、保持は切り替えの可否判定にだけ使う）。
+           保持できなかった場合は hasArchive を立てず、切り替え項目は出ない */
+        const arcStored = await saveBookArchive(key, file);
         /* サムネイルは本文で最初に現れる画像からこの時点で一度だけ作る */
         const zThumb = await thumbFromEpisodes(book.episodes, false);
         const resumed = setBook({ title: book.title, note: isRarName ? "RAR" : "青空文庫ZIP" }, book.episodes, key,
           { kind: "file", fileName: file.name, stored, thumb: zThumb });
+        if (arcPeeked) setArchiveFlags(key, { hasArchive: arcStored, arcHasTxt, arcHasImg });
+        else if (arcStored) setArchiveFlags(key, { hasArchive: true });
         toast(resumed ? "前回の続きから開きました" : "『" + book.title + "』を開きました");
         notifyNotStored(stored);
       }
@@ -5156,10 +5336,14 @@ async function importInboxBook(rec){
     const isRarName = /\.(rar|cbr)$/i.test(fileName);
     let mangaBook = null;
     let peeked = null;
+    let arcHasTxt = false, arcHasImg = false, arcPeeked = false;
     try {
       peeked = await loadArchiveBuf(buf, fileName);
       const names = zipEntryNames(peeked);
-      if (!names.some(n => /\.txt$/i.test(n)) && names.some(n => MANGA_IMG_RE.test(n)))
+      arcHasTxt = names.some(n => /\.txt$/i.test(n));
+      arcHasImg = names.some(n => MANGA_IMG_RE.test(n));
+      arcPeeked = true;
+      if (!arcHasTxt && arcHasImg)
         mangaBook = buildMangaFromZip(peeked, fileName);
     } catch (e) {
       const code = e && e.message;
@@ -5168,12 +5352,15 @@ async function importInboxBook(rec){
     if (mangaBook) {
       const stored = await saveBookArchive(key, blob);
       registerBook(key, mangaBook.title, isRarName ? "画像RAR（漫画）" : "画像ZIP（漫画）", "manga", fileName, mangaBook.episodes, stored);
+      if (arcPeeked) setArchiveFlags(key, { hasArchive: stored, arcHasTxt, arcHasImg });
       return mangaBook.title;
     }
     const book = await parseZipBook(buf, fileName, peeked);
     const stored = await saveBookContent(key, book.episodes);
+    const arcStored = await saveBookArchive(key, blob);
     const thumb = await thumbFromEpisodes(book.episodes, false);
     registerBook(key, book.title, isRarName ? "RAR" : "青空文庫ZIP", "file", fileName, book.episodes, stored);
+    if (arcPeeked) setArchiveFlags(key, { hasArchive: arcStored, arcHasTxt, arcHasImg });
     if (thumb) {
       const e = S.library.find(x => x.key === key);
       if (e) { e.thumb = thumb; e.thumbSize = THUMB_MAX_DIM; persist(); }
