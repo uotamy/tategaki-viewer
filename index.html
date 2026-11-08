@@ -305,7 +305,7 @@
     max-width: 720px; margin: 0 auto;
     padding: calc(env(safe-area-inset-top, 0px) + 22px) 18px calc(env(safe-area-inset-bottom, 0px) + 30px);
   }
-  .shelf-head { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 6px; }
+  .shelf-head { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 18px; }
   .shelf-head > div { flex: 1 1 auto; min-width: 0; }
   .shelf-head h2 {
     font-size: 21px; margin: 0; font-weight: 600;
@@ -345,7 +345,7 @@
   .bookcard .bprog { height: 5px; border-radius: 3px; background: var(--line); margin: 11px 0 9px; overflow: hidden; }
   .bookcard .bprog i { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
   .bookcard .bfoot { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--sub); }
-  .bookcard .bfoot .go { margin-left: auto; color: var(--accent); font-weight: 600; font-size: 13.5px; white-space: nowrap; }
+  .bookcard .bfoot > button:first-of-type { margin-left: auto; }
   .bookcard .bneed { color: var(--accent); border: 1px solid var(--accent); border-radius: 999px; padding: 1px 8px; font-size: 11px; white-space: nowrap; }
   .bookcard .bdel { border: 0; background: transparent; color: var(--sub); font: inherit; font-size: 12px; cursor: pointer; padding: 4px 6px; flex: none; }
   .bookcard { user-select: none; -webkit-user-select: none; }
@@ -463,22 +463,17 @@
   .additem .dl-title { display: block; font-size: 16px; font-weight: 600; }
   .additem .dl-sub { display: block; font-size: 11.5px; font-weight: 400; color: var(--sub); margin-top: 2px; }
   .additem:active { background: var(--tint); }
-  /* 取得途中の作品（レジューム）リスト */
-  #npartialBox { margin: 14px 0 2px; }
-  #npartialBox h3 { font-size: 14px; margin: 0 2px 9px; font-family: var(--font); }
-  .npartial-card {
-    background: var(--sheet); border: 1px solid var(--accent); border-radius: 14px;
-    padding: 13px 16px 12px; margin-bottom: 10px;
-  }
-  .npartial-card .pt { font-size: 15.5px; font-weight: 600; line-height: 1.45; font-family: var(--font); }
-  .npartial-card .pm { font-size: 12.5px; color: var(--sub); margin-top: 3px; line-height: 1.6; }
-  .npartial-card .pactions { display: flex; gap: 8px; margin-top: 11px; }
-  .npartial-card .pactions .nbtn { padding: 10px; font-size: 13.5px; }
-  /* 本棚カードの「更新を確認」ボタン（なろう作品のみ） */
+  /* 本棚カードの「更新を確認／続きを取得」ボタン（なろう作品のみ） */
   .bookcard .bupd {
     border: 0; background: transparent; color: var(--accent); font: inherit;
     font-size: 12px; font-weight: 600; cursor: pointer; padding: 4px 6px; flex: none; white-space: nowrap;
   }
+  /* 本棚カードの「ダウンロード」ボタン */
+  .bookcard .bdl {
+    border: 0; background: transparent; color: var(--accent); font: inherit;
+    font-size: 12px; font-weight: 600; cursor: pointer; padding: 4px 6px; flex: none; white-space: nowrap;
+  }
+  .bookcard .bdl:disabled { opacity: .45; }
   /* 取得進捗シート（なろう画面の上に重ねる） */
   #nprog {
     position: fixed; left: 0; right: 0; bottom: 0; z-index: 47; margin: 0 auto; max-width: 620px;
@@ -685,11 +680,6 @@
         </div>
       </div>
 
-      <section id="npartialBox" hidden aria-label="取得途中の作品">
-        <h3>取得途中の作品</h3>
-        <div id="npartialList"></div>
-      </section>
-
       <nav class="ntabs" aria-label="なろう機能切り替え">
         <button data-ntab="search" aria-selected="true">検索</button>
         <button data-ntab="ranking" aria-selected="false">ランキング</button>
@@ -755,12 +745,17 @@
 
       <section class="npanel" id="npanel-recommend">
         <div class="nform">
-          <p class="nchip-label">プリセット（高評価プール最大100件からランダム10件）</p>
+          <p class="nchip-label">プリセット（上位プール最大100件からランダム10件）</p>
           <div class="nchips" id="nrecPresets">
-            <button type="button" class="nchip" data-preset="0" aria-pressed="false">完結の高評価・推理</button>
-            <button type="button" class="nchip" data-preset="1" aria-pressed="false">短編の良作</button>
-            <button type="button" class="nchip" data-preset="2" aria-pressed="false">完結の大長編</button>
-            <button type="button" class="nchip" data-preset="3" aria-pressed="false">完結の高評価</button>
+            <button type="button" class="nchip" data-preset="0" aria-pressed="false">完結の高評価</button>
+            <button type="button" class="nchip" data-preset="1" aria-pressed="false">短編の掘り出し物</button>
+            <button type="button" class="nchip" data-preset="2" aria-pressed="false">長編大作</button>
+            <button type="button" class="nchip" data-preset="3" aria-pressed="false">お気に入り多数</button>
+            <button type="button" class="nchip" data-preset="4" aria-pressed="false">感想・レビュー多数</button>
+          </div>
+          <div class="nfield" style="margin-top:12px; margin-bottom:0;">
+            <label for="nrecGenre">分野（どのプリセットにも共通で絞り込みます）</label>
+            <select id="nrecGenre"></select>
           </div>
           <button type="button" class="nbtn" id="nrecAgain" style="margin-top:12px;" disabled>もう一度ひく</button>
         </div>
@@ -924,12 +919,13 @@ const GUIDE_EPISODES = [
       "本棚は、端末のフォルダを読み込むものではなく、これまでに開いた本の履歴です。最近開いた順に並び、本を選ぶと読んでいた位置からそのまま開きます。進み具合もパーセントで表示されます。本の最後まで読むと、最終ページの後ろに「読了」のページが現れ、本棚では「読了」と表示されます。",
       "各本の左側にはサムネイルが付きます。EPUBでは表紙画像、テキストやzipでは本文で最初に現れる画像、漫画zipでは先頭ページの画像が使われ、画像のない本はアイコン表示になります。サムネイルは本を取り込むときに小さく作って保存されるので、本棚を開くたびに作り直すことはありません。表示は設定の「本棚のサムネイル」で切り替えられます。",
       "履歴の本は、各カードの「削除」ボタンから履歴を削除できます。削除すると、その本の読書位置・しおり・端末に保存した本文も一緒に消えます（元のファイル自体は消えません）。この「使い方」は組み込みのため、削除ボタンは付きません。",
+      "各カードの「ダウンロード」からは、その本をファイルとして端末へ保存できます。ダウンローダーやテキストから取り込んだ本は、話ごとのテキストファイル（Shift_JIS）をまとめた青空文庫形式のzip（ファイル名は書名）になり、このビューワーでそのまま開き直せます。取り込み時の原本ファイルが端末に残っている本（漫画zipなど）は、原本がそのまま保存されます。",
       { t: "なろうダウンローダー", cls: "head" },
       "本の追加は、本棚の「本追加」ボタンから開く「本を追加」画面に集約されています。ファイルを開く（端末内のファイルの取り込み）、なろうダウンローダー、青空文庫ダウンローダーの3つが並びます。",
       "「なろうダウンローダー」からは、「小説家になろう」の作品を検索・ランキング・おすすめ・URL指定で探し、全話を取得してそのまま本棚へ登録できます。話数が多い作品は、取得に時間がかかります。別ページのダウンローダーで登録した本も、従来どおり前面に戻ったときに自動で本棚へ追加されます。",
       "「青空文庫ダウンローダー」からは、青空文庫の作品を作品名・著者名で検索し、テキストzipを取得してそのまま本棚へ登録できます。作品リスト（インデックス）は青空文庫の公式のものを使い、端末内にキャッシュされます。「インデックスを更新」で最新のリストに取り直せます。掲載は著作権の消滅した作品のみです。",
-      "取得は1話ごとに端末へ保存されるため、途中で閉じたり中断したりしても、取れた話は残ります。なろう画面の上部に「取得途中の作品」として出るので、「続きから再開」で不足分だけを取得できます。",
-      "本棚のなろう作品のカードには「更新を確認」があります。実行すると目次だけを取得して手元の控えと比べ、増えた話と、更新日が変わった（書き換えられた）話だけを取得して本へ取り込みます。新しい話は末尾へ追加され、読書位置やしおりはそのまま残ります。差分がなければ「更新はありません」と表示されます。",
+      "取得は1話ごとに端末へ保存されます。途中で中断しても、取得済みの話だけで本として本棚へ登録されます。その本は本棚で「取得途中 n/総話」と表示され、取得済み範囲の末尾まで読んでも読了にはならず、続きを案内するページが出ます。",
+      "本棚のなろう作品のカードには「更新を確認」があります（取得途中の本では「続きを取得」になります）。実行すると目次だけを取得して手元の控えと比べ、増えた話と、更新日が変わった（書き換えられた）話だけを取得して本へ取り込みます。新しい話は末尾へ追加され、読書位置やしおりはそのまま残ります。差分がなければ「更新はありません」と表示されます。",
       { t: "しおり", cls: "head" },
       "メニューの「しおり」から、今開いているページにしおりを挟めます。しおりは本ごとに保存され、一覧からいつでもそのページへ戻れます。",
       { t: "保存のしくみ", cls: "head" },
@@ -1340,6 +1336,9 @@ function bookProgress(entry){
 function isBookFinished(entry){
   const key = typeof entry === "string" ? entry : (entry && entry.key);
   if (!key) return false;
+  /* 取得途中の本は、取得済み範囲の末尾に着いても読了にはしない */
+  const ent = (entry && typeof entry === "object") ? entry : S.library.find(x => x.key === key);
+  if (ent && isEntryIncomplete(ent)) return false;
   if (S.finished && S.finished[key]) return true;
   const pos = S.positions[key];
   return !!(pos && pos.fin);
@@ -1804,6 +1803,14 @@ function singlePageW(){ return stage.clientWidth / Math.max(1, computePpv()); }
 function isFullIllus(para){
   return !!(para && para.img && para.imgW && para.imgW > singlePageW());
 }
+/* 本の末尾ページ：通常は「読了」ページ。取得途中の本では読了にせず、
+   取得済み範囲の終わりを知らせる案内ページにする */
+function bookTailPage(paragraphCount){
+  const p = { tiers: [], start: { pi: paragraphCount, off: 0 } };
+  if (currentBookIncomplete()) p.partial = true;
+  else p.finish = true;
+  return p;
+}
 function paginate(epIdx){
   if (S.cache.has(epIdx)) return S.cache.get(epIdx);
   const ep = S.episodes[epIdx];
@@ -1814,7 +1821,7 @@ function paginate(epIdx){
     /* 最後の話の末尾には「読了」ページを付ける（start が本文末尾を指すため、
        このページを開くと進捗が100%になる） */
     if (epIdx === S.episodes.length - 1) {
-      pages.push({ tiers: [], start: { pi: ep.paragraphs.length, off: 0 }, finish: true });
+      pages.push(bookTailPage(ep.paragraphs.length));
     }
     S.cache.set(epIdx, pages);
     return pages;
@@ -1860,7 +1867,7 @@ function paginate(epIdx){
      100%（読了）になる。最終ページを開いただけでも読了扱いにしたいので、
      読了の確定そのものは afterNav 側の fin フラグでも行う */
   if (epIdx === S.episodes.length - 1) {
-    pages.push({ tiers: [], start: { pi: ep.paragraphs.length, off: 0 }, finish: true });
+    pages.push(bookTailPage(ep.paragraphs.length));
   }
   S.cache.set(epIdx, pages);
   return pages;
@@ -1919,6 +1926,42 @@ function buildPageEl(pageData){
       pokeUI();
     });
     inner.appendChild(toShelf);
+    el.appendChild(inner);
+    return el;
+  }
+  /* 取得途中の案内ページ：取得済み範囲の末尾に付く仮想ページ（読了ページの代わり）。
+     読了ラッチは立てず、続きの取得へ案内する */
+  if (pageData.partial) {
+    el.classList.add("finish");
+    const inner = document.createElement("div");
+    inner.className = "fin-inner";
+    const mark = document.createElement("div");
+    mark.className = "fin-mark";
+    mark.textContent = "取得途中";
+    const ttl = document.createElement("div");
+    ttl.className = "fin-title";
+    ttl.textContent = S.work.title || "";
+    const ent = S.library.find(x => x.key === S.work.key);
+    const have = ent && ent.epTitles ? ent.epTitles.length : S.episodes.length;
+    const total = ent && ent.narouTotal ? ent.narouTotal : have;
+    const sub = document.createElement("div");
+    sub.className = "fin-sub";
+    sub.textContent = "ここまで取得済みです（" + have + "／" + total + "話）。続きは『続きを取得』で取得できます";
+    inner.appendChild(mark);
+    inner.appendChild(ttl);
+    inner.appendChild(sub);
+    const mkFinBtn = (label, fn) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "fin-btn";
+      b.textContent = label;
+      ["pointerdown", "pointerup", "touchstart", "touchend"].forEach(evName =>
+        b.addEventListener(evName, e => e.stopPropagation()));
+      b.addEventListener("click", e => { e.stopPropagation(); fn(); });
+      return b;
+    };
+    if (ent) inner.appendChild(mkFinBtn("続きを取得", () => nCheckUpdate(ent)));
+    inner.appendChild(mkFinBtn("本棚に戻る", () => { closeSheets(); showShelf(); pokeUI(); }));
     el.appendChild(inner);
     return el;
   }
@@ -1984,8 +2027,9 @@ function afterNav(){
      開いただけでは charInEp が本の末尾に届かず、進捗が90%台で止まって
      しまっていた。最終話の最終ページ（読了ページを含む見開き）が画面に
      出たら、その時点で読了として記録する */
-  const lastContentIdx = pages.length - 1 - (pages[pages.length - 1] && pages[pages.length - 1].finish ? 1 : 0);
-  const fin = S.ep === S.episodes.length - 1 && S.page + ppv - 1 >= lastContentIdx;
+  const lastPg = pages[pages.length - 1];
+  const lastContentIdx = pages.length - 1 - (lastPg && (lastPg.finish || lastPg.partial) ? 1 : 0);
+  const fin = !currentBookIncomplete() && S.ep === S.episodes.length - 1 && S.page + ppv - 1 >= lastContentIdx;
   /* 読了は一度達成したら保持する（ラッチ）。位置レコードはページ移動のたびに
      作り直されるため、以前は fin をそこへだけ置いていて、目次から先頭の章へ
      戻った途端に読了が消え、本棚が「未読」に戻っていた。読了は位置とは独立した
@@ -2690,6 +2734,195 @@ async function ensureShelfThumb(key){
   }
 }
 
+/* ---------------- 本棚からのダウンロード（端末へファイルを保存） ----------------
+   本棚の各カードの「ダウンロード」から、端末内DBに保存されている本を
+   ブラウザのダウンロードとして端末へ保存する。
+   - 原本アーカイブ（漫画zipなど、取り込み時にファイル自体を保存した本）が
+     あれば、その原本をそのまま出す
+   - それ以外のテキスト本は、保存済みの話データからダウンローダーと同じ
+     青空文庫形式のzipを組み立てる：話ごとに「NNN_話タイトル.txt」、
+     本文は Shift_JIS、zipのファイル名は「書名.zip」。挿絵は画像ファイル
+     として同梱し、本文中は［＃挿絵（ファイル名）入る］で参照するので、
+     このzipは本アプリの取り込みでそのまま開き直せる（往復できる）
+   - 生成は1話ずつ逐次行い、数話ごとに処理を譲るので、話数が多くても
+     画面が固まらない。開始・完了・失敗はトーストとボタン表示で知らせる */
+let encPromise = null;
+function ensureEncodingLib(){
+  if (typeof Encoding !== "undefined") return Promise.resolve();
+  if (!encPromise) {
+    encPromise = new Promise((resolve, reject) => {
+      const s = document.createElement("script");
+      s.src = "https://cdnjs.cloudflare.com/ajax/libs/encoding-japanese/2.0.0/encoding.min.js";
+      s.onload = () => resolve();
+      s.onerror = () => { encPromise = null; reject(new Error("noenc")); };
+      document.head.appendChild(s);
+    });
+  }
+  return encPromise;
+}
+function sjisBytes(str){
+  /* Shift_JIS化できない文字（絵文字など）はライブラリ側で「?」に置き換わる */
+  return new Uint8Array(Encoding.convert(String(str), { to: "SJIS", type: "array" }));
+}
+function sanitizeFileName(name){
+  return String(name || "").replace(/[\\/:*?"<>|\u0000-\u001f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 80);
+}
+function dataUrlToBytes(dataUrl){
+  const bin = atob(dataUrl.slice(dataUrl.indexOf(",") + 1));
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+function triggerFileDownload(blob, fileName){
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => { try { URL.revokeObjectURL(url); } catch (e) { /* noop */ } }, 60000);
+}
+/* ユニット列を青空文庫形式のテキストに戻す。ルビは｜漢字《かんじ》、
+   傍点は直後の［＃「…」に傍点］、太字は［＃太字］〜［＃太字終わり］で表す
+   （いずれも取り込み側の textToUnits がそのまま読み戻せる形式） */
+function unitsToAozoraText(units){
+  let out = "";
+  let i = 0;
+  while (i < units.length) {
+    const eOn = !!units[i].e, bOn = !!units[i].b;
+    let j = i + 1;
+    while (j < units.length && !!units[j].e === eOn && !!units[j].b === bOn) j++;
+    const run = units.slice(i, j);
+    let seg = run.map(u => u.c !== undefined ? u.c : "｜" + u.r + "《" + u.t + "》").join("");
+    if (eOn) seg += "［＃「" + run.map(u => u.c !== undefined ? u.c : u.r).join("") + "」に傍点］";
+    if (bOn) seg = "［＃太字］" + seg + "［＃太字終わり］";
+    out += seg;
+    i = j;
+  }
+  return out;
+}
+/* 1話分の段落列を青空文庫形式テキスト（1ファイル分）にする。
+   regImg は挿絵段落を受け取り、zipへ同梱する画像のエントリ名を返す
+   （同梱できない画像は null を返し、その段落は落とす） */
+function episodeToAozoraText(ep, regImg){
+  const blocks = [];
+  let lastText = -1; /* ［＃改行］で連結できる直前の本文ブロック */
+  (ep.paragraphs || []).forEach(p => {
+    const prefix = p.breakBefore ? "［＃改ページ］\n" : (p.breakTier ? "［＃改段］\n" : "");
+    if (p.table && p.table.length) {
+      /* 表はMarkdownのパイプ記法で書き出す（取り込み側が表として読み戻す） */
+      const cell = c => String(c).replace(/\|/g, "｜");
+      const row = r => "| " + r.map(cell).join(" | ") + " |";
+      const lines = [row(p.table[0]), "| " + p.table[0].map(() => "---").join(" | ") + " |"];
+      for (let r = 1; r < p.table.length; r++) lines.push(row(p.table[r]));
+      blocks.push(prefix + lines.join("\n"));
+      lastText = -1;
+      return;
+    }
+    if (p.img) {
+      const name = regImg ? regImg(p) : null;
+      if (name) blocks.push(prefix + "［＃挿絵（" + name + "）入る］");
+      lastText = -1;
+      return;
+    }
+    const text = unitsToAozoraText(p.units || []);
+    if (!text) return;
+    if (p.cls === "cont" && lastText >= 0) {
+      blocks[lastText] += "［＃改行］" + text;
+      return;
+    }
+    if (p.cls === "head" || p.cls === "title") {
+      const inner = text.indexOf("［＃") >= 0 ? unitsToText(p.units) : text;
+      blocks.push(prefix + text + "［＃「" + inner + "」は中見出し］");
+      lastText = -1;
+      return;
+    }
+    blocks.push(prefix + text);
+    lastText = blocks.length - 1;
+  });
+  /* ダウンローダー形式と同じく、先頭に話タイトルを見出しとして置く。
+     ただし本文の先頭段落がすでに同じタイトル行の本（なろう取得分など）は
+     重ねない（書き出し→取り込みを繰り返しても本文が増殖しないように） */
+  const title = (ep.title || "").trim();
+  const firstPara = (ep.paragraphs || []).find(p => !p.img && !p.table && p.units && p.units.length);
+  if (title && !(firstPara && firstPara.cls !== "head" && firstPara.cls !== "title"
+      && unitsToText(firstPara.units) === title))
+    blocks.unshift(title);
+  return blocks.join("\n\n") + "\n";
+}
+let shelfDlBusy = false;
+async function downloadBookFromShelf(entry, btn){
+  if (!entry) return;
+  if (shelfDlBusy) { toast("別の本をダウンロード中です"); return; }
+  shelfDlBusy = true;
+  const origLabel = btn ? btn.textContent : "";
+  if (btn) { btn.disabled = true; btn.textContent = "準備中…"; }
+  try {
+    toast("『" + entry.title + "』のダウンロードを準備しています…", 3000);
+    /* 原本アーカイブが端末内に保持されている本は、原本をそのまま出す */
+    if (entry.kind !== "guide") {
+      const arch = await loadBookArchive(entry.key);
+      if (arch) {
+        triggerFileDownload(arch, entry.fileName || ((sanitizeFileName(entry.title) || "book") + ".zip"));
+        toast("『" + entry.title + "』の原本ファイルをダウンロードしました", 3200);
+        return;
+      }
+    }
+    /* テキスト本：保存済みの話データから青空文庫形式zipを組み立てる */
+    let episodes = null;
+    if (entry.kind === "guide") episodes = makeEpisodesFromGuide();
+    else episodes = await loadBookContent(entry.key);
+    if ((!episodes || !episodes.length) && S.work.key === entry.key && S.episodes.length)
+      episodes = S.episodes;
+    if (!episodes || !episodes.length) {
+      toast("エラー：『" + entry.title + "』の本文が端末に保存されていないため、ダウンロードできません", 3600);
+      return;
+    }
+    await ensureJSZip();
+    await ensureEncodingLib();
+    /* 挿絵の同梱登録：同じ画像は1つだけ入れ、同名で別画像のときは名前をずらす */
+    const imgBySrc = new Map(), imgNames = new Set(), imgList = [];
+    const regImg = p => {
+      if (!p.src || p.src.indexOf("data:") !== 0) return null;
+      if (imgBySrc.has(p.src)) return imgBySrc.get(p.src);
+      let name = sanitizeFileName(p.img) || "image.jpg";
+      if (imgNames.has(name)) {
+        const dot = name.lastIndexOf(".");
+        const stem = dot > 0 ? name.slice(0, dot) : name, ext = dot > 0 ? name.slice(dot) : "";
+        let n = 2;
+        while (imgNames.has(stem + "_" + n + ext)) n++;
+        name = stem + "_" + n + ext;
+      }
+      imgBySrc.set(p.src, name);
+      imgNames.add(name);
+      imgList.push({ name, src: p.src });
+      return name;
+    };
+    const zip = new JSZip();
+    const width = Math.max(3, String(episodes.length).length);
+    for (let i = 0; i < episodes.length; i++) {
+      const num = String(i + 1).padStart(width, "0");
+      const fname = num + "_" + (sanitizeFileName(episodes[i].title) || "本文") + ".txt";
+      zip.file(fname, sjisBytes(episodeToAozoraText(episodes[i], regImg)));
+      if (btn && episodes.length > 1) btn.textContent = "生成中 " + (i + 1) + "/" + episodes.length;
+      if (i % 8 === 7) await new Promise(r => setTimeout(r, 0)); /* 逐次生成：UIへ処理を譲る */
+    }
+    imgList.forEach(im => zip.file(im.name, dataUrlToBytes(im.src)));
+    const blob = await zip.generateAsync({ type: "blob", compression: "DEFLATE", compressionOptions: { level: 6 } });
+    triggerFileDownload(blob, (sanitizeFileName(entry.title) || "book") + ".zip");
+    toast("『" + entry.title + "』をダウンロードしました（青空文庫形式zip・全" + episodes.length + "話）", 3400);
+  } catch (e) {
+    const code = e && e.message;
+    if (code === "nozip") toast("zipを作成する部品（JSZip）を読み込めませんでした。通信環境を確認してください", 3600);
+    else if (code === "noenc") toast("Shift_JIS変換の部品を読み込めませんでした。通信環境を確認してください", 3600);
+    else toast("ダウンロードに失敗しました。時間をおいて再試行してください", 3600);
+  } finally {
+    shelfDlBusy = false;
+    if (btn) { btn.disabled = false; btn.textContent = origLabel; }
+  }
+}
+
 /* ---------------- 本棚 ---------------- */
 const shelfEl = $("#shelf");
 function fmtReadDate(ts){
@@ -2764,12 +2997,15 @@ function buildShelf(){
        読了後に先頭へ戻っても、バーは満ちたまま「読了」表示が残る */
     const pct = Math.round(bookProgress(entry) * 100);
     const finished = isBookFinished(entry);
+    const incomplete = isEntryIncomplete(entry);
     const barPct = finished ? 100 : pct;
     const epName = pos && entry.epTitles && entry.epTitles[pos.ep] ? entry.epTitles[pos.ep] : "";
     const started = !!(pos && (pos.ep > 0 || (pos.charInEp || 0) > 0));
     let meta = esc(entry.note || entry.fileName || "");
     if (entry.manga) meta += (meta ? "　・　" : "") + "画像の本・全" + (entry.pageCount || entry.totalChars || 0) + "ページ";
-    else if (epName) meta += (meta ? "　・　" : "") + "読書中：" + esc(epName);
+    /* 先頭固定される読書中の本は、位置と赤枠（.current）が目印になるので
+       「読書中」の文字ラベルは付けない。それ以外の本は読んでいる話を示す */
+    else if (epName) meta += (meta ? "　・　" : "") + (entry.key === pinKey ? "" : "読書中：") + esc(epName);
     else if (entry.epTitles) meta += (meta ? "　・　" : "") + "全" + entry.epTitles.length + (entry.kind === "file" ? "章" : "話");
     /* 左側サムネイル（設定でOFFのときは一切付けない）。画像が無い本は標準アイコン */
     let thumbHtml = "";
@@ -2786,36 +3022,50 @@ function buildShelf(){
       '<div class="bfoot"><span>' + (finished ? "読了" : started ? pct + "%まで読了" : "未読") + "</span>" +
       (entry.lastRead ? "<span>" + fmtReadDate(entry.lastRead) + "</span>" : "") +
       (!entry.stored && entry.kind !== "guide" ? '<span class="bneed">本文が保存されていません</span>' : "") +
-      '<span class="go">' + (entry.key === S.work.key ? "読書中" : (started ? "続きから読む" : "開く")) + "</span></div>" +
+      (incomplete ? '<span class="bneed">取得途中 ' + (entry.epTitles || []).length + "/" + entry.narouTotal + "話</span>" : "") +
+      "</div>" +
       "</div>";
     /* カードのタップで、その本を最後に読んでいたページから開く */
     card.addEventListener("click", () => openFromShelf(entry));
-    /* 削除ボタンはカード上に常時表示する（「使い方」は組み込みのため付けない） */
-    if (entry.kind !== "guide") {
+    /* アクションボタンはカード上に常時表示する（「使い方」は組み込みのため削除は付けない） */
+    {
       const foot = card.querySelector(".bfoot");
       /* なろうから取り込んだ本には、差分更新の「更新を確認」を出す。
          実行はなろうモジュール側（目次だけ取得して台帳と比べ、増えた話・
          変わった話だけを取り込む） */
-      if (entry.key.indexOf("narou:") === 0) {
+      if (entry.kind !== "guide" && entry.key.indexOf("narou:") === 0) {
         const upd = document.createElement("button");
         upd.className = "bupd";
-        upd.textContent = "更新を確認";
-        upd.setAttribute("aria-label", "「" + entry.title + "」の更新を確認");
+        /* 取得途中の本では、同じ差分取得を「続きを取得」として出す */
+        upd.textContent = incomplete ? "続きを取得" : "更新を確認";
+        upd.setAttribute("aria-label", "「" + entry.title + "」の" + (incomplete ? "続きを取得" : "更新を確認"));
         upd.addEventListener("click", e => {
           e.stopPropagation();
           nCheckUpdate(entry);
         });
         foot.insertBefore(upd, foot.querySelector(".go"));
       }
-      const del = document.createElement("button");
-      del.className = "bdel";
-      del.textContent = "削除";
-      del.setAttribute("aria-label", "「" + entry.title + "」を履歴から削除");
-      del.addEventListener("click", e => {
+      /* ダウンロード：端末内DBの本をファイルとして端末へ保存する（全ての本に付ける） */
+      const dl = document.createElement("button");
+      dl.className = "bdl";
+      dl.textContent = "ダウンロード";
+      dl.setAttribute("aria-label", "「" + entry.title + "」をダウンロード");
+      dl.addEventListener("click", e => {
         e.stopPropagation();
-        deleteBookFromShelf(entry);
+        downloadBookFromShelf(entry, dl);
       });
-      foot.insertBefore(del, foot.querySelector(".go"));
+      foot.insertBefore(dl, foot.querySelector(".go"));
+      if (entry.kind !== "guide") {
+        const del = document.createElement("button");
+        del.className = "bdel";
+        del.textContent = "削除";
+        del.setAttribute("aria-label", "「" + entry.title + "」を履歴から削除");
+        del.addEventListener("click", e => {
+          e.stopPropagation();
+          deleteBookFromShelf(entry);
+        });
+        foot.insertBefore(del, foot.querySelector(".go"));
+      }
     }
     list.appendChild(card);
   });
@@ -3736,7 +3986,12 @@ async function parseZipBook(buf, fileName){
       const p = members[0];
       if (/\.txt$/i.test(p.rel)) {
         const b = await zip.files[p.orig].async("arraybuffer");
-        parts.push({ title: baseName(p.rel).replace(/\.txt$/i, ""), text: decodeTxtBytes(b) });
+        /* 話タイトルは「NNN_話タイトル.txt」形式の連番接頭辞を取り除いて取る
+           （フォルダ内ファイルの head と同じ扱い。本棚から書き出したzipを
+           そのまま開き直したときに、話タイトルへ連番が残らないようにする） */
+        const rawTitle = baseName(p.rel).replace(/\.txt$/i, "");
+        const partTitle = rawTitle.replace(/^\d+[_＿\s]+/, "") || rawTitle;
+        parts.push({ title: partTitle, text: decodeTxtBytes(b) });
       } else {
         let nz = null;
         try { nz = await loadZipBuf(await zip.files[p.orig].async("arraybuffer")); }
@@ -3835,9 +4090,13 @@ async function parseZipBook(buf, fileName){
     return { title: p.title, paragraphs: paras };
   }).filter(ep => ep.paragraphs.length);
   if (!episodes.length) throw new Error("notext");
-  /* ラッパーフォルダを剥がした場合は、最外のフォルダ名を書名にする */
+  /* ラッパーフォルダを剥がした場合は、最外のフォルダ名を書名にする。
+     共通接頭辞は2文字以上のときだけ書名として採用する（「第一話／第二話」の
+     ような話タイトル群では接頭辞が「第」の1文字だけになり、書名にならない。
+     その場合はzipのファイル名＝書名として書き出された名前を使う） */
+  const cpTitle = commonPrefixTitle(parts.map(p => p.title));
   const title = wrapperName
-    || commonPrefixTitle(parts.map(p => p.title))
+    || (cpTitle.length >= 2 ? cpTitle : "")
     || String(fileName || "").replace(/\.(zip|cbz)$/i, "")
     || parts[0].title;
   return { title, episodes };
@@ -4212,7 +4471,6 @@ function showNarou(){
   hideAddUI();
   hideAozoraUI();
   showNarouUI();
-  nRenderPartials();
   if (histView !== "narou") {
     histView = "narou";
     try { history.pushState({ v: "narou" }, ""); histLive.narou = true; }
@@ -4243,6 +4501,16 @@ function nCardHTML(n, rank, periodOrder){
   }
   const kw = (n.keyword || "").trim();
   const aff = nAffURL(n.title);
+  /* 本棚に登録済みの作品は二重に作らず、既存の本と台帳に合流させる。
+     カード側でも登録済み（取得途中なら話数つき）であることを示す */
+  const regEntry = S.library.find(x => x.key === "narou:" + String(n.ncode).toUpperCase());
+  const regInc = regEntry ? isEntryIncomplete(regEntry) : false;
+  const regBadge = regEntry
+    ? '<span class="nbadge done">' + (regInc
+        ? "取得途中 " + (regEntry.epTitles || []).length + "/" + regEntry.narouTotal + "話・本棚に登録済み"
+        : "本棚に登録済み") + "</span>"
+    : "";
+  const dlLabel = regEntry ? (regInc ? "続きを取得" : "本棚で開く") : "全話取得して本棚へ";
   return '<article class="ncard">' +
     '<div class="ntop">' +
       (rank ? '<div class="nrank' + (rank <= 3 ? " top" : "") + '">' + rank + "</div>" : "") +
@@ -4255,6 +4523,7 @@ function nCardHTML(n, rank, periodOrder){
       '<span class="nbadge">' + esc(nGenreName(n.genre)) + "</span>" +
       '<span class="nbadge' + (status === "完結" ? " done" : "") + '">' + status + "</span>" +
       '<span class="nbadge">' + esc(String(n.ncode).toUpperCase()) + "</span>" +
+      regBadge +
     "</div>" +
     '<div class="nmeta">' +
       "<span>" + eps + "</span>" +
@@ -4266,7 +4535,7 @@ function nCardHTML(n, rank, periodOrder){
     (n.story ? "<details><summary>あらすじ</summary><p class=\"nstory\">" + esc(n.story) + "</p></details>" : "") +
     (kw ? '<p class="nkw">キーワード：' + esc(kw) + "</p>" : "") +
     '<div class="nactions">' +
-      '<button type="button" class="nbtn primary" data-ndl="' + esc(String(n.ncode).toUpperCase()) + '">全話取得して本棚へ</button>' +
+      '<button type="button" class="nbtn primary" data-ndl="' + esc(String(n.ncode).toUpperCase()) + '">' + dlLabel + "</button>" +
       '<button type="button" class="nbtn" data-nsimilar="' + esc(String(n.ncode).toUpperCase()) + '">似た作品</button>' +
     "</div>" +
     (aff ? '<div class="naff"><a href="' + esc(aff) + '" target="_blank" rel="noopener sponsored">書籍版を探す（Amazon）</a></div>' : "") +
@@ -4407,12 +4676,16 @@ function nLoadRanking(reset){
 }
 
 /* ---------- おすすめ ---------- */
+/* プリセットはジャンルを含まない「作品の形」だけにする。分野の絞り込みは
+   #nrecGenre（分野セレクタ）側で、どのプリセットにも共通に掛ける */
 const NAROU_PRESETS = [
-  { label: "完結の高評価・推理", params: { genre: 304, type: "er", order: "hyoka" } },
-  { label: "短編の良作", params: { type: "ter", maxlen: 60000, order: "hyoka" } },
-  { label: "完結の大長編", params: { type: "er", minlen: 500000, order: "hyoka" } },
-  { label: "完結の高評価", params: { type: "er", order: "hyoka" } }
+  { label: "完結の高評価", params: { type: "er", order: "hyoka" } },
+  { label: "短編の掘り出し物", params: { type: "ter", maxlen: 60000, order: "hyoka" } },
+  { label: "長編大作", params: { minlen: 500000, order: "hyoka" } },
+  { label: "お気に入り多数", params: { order: "favnovelcnt" } },
+  { label: "感想・レビュー多数", params: { order: "impressioncnt" } }
 ];
+nFillGenreSelect($("#nrecGenre"));
 const nRecState = { idx: -1, pool: [] };
 function nShufflePick(arr, num){
   const a = arr.slice();
@@ -4429,16 +4702,14 @@ function nDrawRecommend(){
     emptyText: "候補がありませんでした。"
   });
 }
-$("#nrecPresets").addEventListener("click", ev => {
-  const btn = ev.target.closest("[data-preset]");
-  if (!btn) return;
-  document.querySelectorAll("#nrecPresets .nchip").forEach(c => c.setAttribute("aria-pressed", "false"));
-  btn.setAttribute("aria-pressed", "true");
-  nRecState.idx = Number(btn.dataset.preset);
+function nFetchRecommend(){
+  if (nRecState.idx < 0) return;
   nRecState.pool = [];
   $("#nrecAgain").disabled = true;
   $("#nrecResults").innerHTML = '<div class="nempty">候補を集めています…</div>';
   const params = Object.assign({}, NAROU_PRESETS[nRecState.idx].params, { lim: 100 });
+  const genre = $("#nrecGenre").value;
+  if (genre) params.genre = genre; /* 分野は全プリセット共通の絞り込み */
   nApiFetch(params).then(res => {
     nRecState.pool = res.novels;
     if (!nRecState.pool.length) {
@@ -4450,7 +4721,17 @@ $("#nrecPresets").addEventListener("click", ev => {
   }).catch(() => {
     $("#nrecResults").innerHTML = '<div class="nempty">取得に失敗しました。時間をおいて再試行してください。</div>';
   });
+}
+$("#nrecPresets").addEventListener("click", ev => {
+  const btn = ev.target.closest("[data-preset]");
+  if (!btn) return;
+  document.querySelectorAll("#nrecPresets .nchip").forEach(c => c.setAttribute("aria-pressed", "false"));
+  btn.setAttribute("aria-pressed", "true");
+  nRecState.idx = Number(btn.dataset.preset);
+  nFetchRecommend();
 });
+/* 分野を変えたら、選択中のプリセットはその分野で候補を取り直す */
+$("#nrecGenre").addEventListener("change", () => { if (nRecState.idx >= 0) nFetchRecommend(); });
 $("#nrecAgain").addEventListener("click", () => { if (nRecState.pool.length) nDrawRecommend(); });
 
 /* ---------- URL指定 ---------- */
@@ -4506,7 +4787,15 @@ narouEl.addEventListener("click", ev => {
   const dl = ev.target.closest("[data-ndl]");
   if (dl) {
     const n = nNovelStore[String(dl.dataset.ndl).toUpperCase()];
-    if (n) nStartDownload(n);
+    if (n) {
+      /* 登録済みで全話そろっている作品は、二重に作らず本棚の本を開く。
+         取得途中の作品は同期エンジンが既存の本と台帳に合流させる */
+      const entry = S.library.find(x => x.key === "narou:" + String(n.ncode).toUpperCase());
+      if (entry && !isEntryIncomplete(entry)) {
+        showShelf();
+        openFromShelf(entry);
+      } else nStartDownload(n);
+    }
     return;
   }
   const sim = ev.target.closest("[data-nsimilar]");
@@ -4710,8 +4999,16 @@ function nProgressDone(novel, key, stored){
   else { affEl.style.display = "none"; affEl.removeAttribute("href"); }
   nInitAdSlots();
 }
-function nProgressCancelled(){
-  $("#nprogText").textContent = "中止しました。取得済みの話は保存してあるので、なろう画面の「取得途中の作品」から続きを取得できます。";
+function nProgressCancelled(count, total){
+  /* 中断時は取得済み分を本棚へ登録するのが原則（本棚一本化）。
+     count は登録・反映できた本の話数、total は目次上の総話数 */
+  if (count && total && count < total) {
+    $("#nprogText").textContent = "中止しました。取得済みの" + count + "話で本棚に登録しました（全" + total + "話）。続きは本棚の「続きを取得」から取得できます。";
+  } else if (count) {
+    $("#nprogText").textContent = "中止しました。取得済みの分は本棚の本に反映しました。";
+  } else {
+    $("#nprogText").textContent = "中止しました。まだ本棚に登録できる話がありませんでした。";
+  }
   $("#nprogMainActions").style.display = "none";
   $("#nprogDoneActions").style.display = "none";
   $("#nprogFullActions").style.display = "none";
@@ -4949,55 +5246,96 @@ function nUpdateLibraryEntry(key, episodes){
   persist();
 }
 
-/* ---------- 取得途中の作品リスト（レジューム導線） ---------- */
-async function nRenderPartials(){
-  const box = $("#npartialBox"), list = $("#npartialList");
-  if (!box || !list) return;
-  const mans = await nsAllManifests();
-  const items = [];
-  mans.forEach(m => {
-    if (!m || !Array.isArray(m.episodes) || !m.episodes.length) return;
-    if (m.bookId) return; /* 本棚登録済みは差分更新側の担当 */
-    const have = m.episodes.filter(e => e.state !== "none").length;
-    if (!have) return;
-    items.push({ m, have, total: m.episodes.length, pending: have >= m.episodes.length });
-  });
-  items.sort((a, b) => (b.m.updatedAt || 0) - (a.m.updatedAt || 0));
-  if (!items.length) { box.hidden = true; list.innerHTML = ""; return; }
-  box.hidden = false;
-  list.innerHTML = "";
-  items.forEach(it => {
-    const card = document.createElement("div");
-    card.className = "npartial-card";
-    card.innerHTML =
-      '<div class="pt">' + esc(it.m.title || "なろう作品") + "</div>" +
-      '<div class="pm">' + esc(it.m.writer || "") + "／" +
-      (it.pending ? "全話の取得が済んでいます（本棚への登録待ち）"
-                  : "途中まで取得済み（" + it.have + " / " + it.total + "話）") + "</div>";
-    const acts = document.createElement("div");
-    acts.className = "pactions";
-    const resume = document.createElement("button");
-    resume.type = "button";
-    resume.className = "nbtn primary";
-    resume.textContent = it.pending ? "本棚へ登録する" : "続きから再開";
-    resume.addEventListener("click", () => {
-      if (it.m.novel) nStartDownload(it.m.novel);
-    });
-    const drop = document.createElement("button");
-    drop.type = "button";
-    drop.className = "nbtn";
-    drop.textContent = "破棄";
-    drop.addEventListener("click", async () => {
-      await nsClearWorkTexts(it.m.ncode, it.m.episodes);
-      await nsDel(NS_MAN_STORE, it.m.ncode);
-      nRenderPartials();
-      toast("取得途中のデータを破棄しました");
-    });
-    acts.appendChild(resume);
-    acts.appendChild(drop);
-    card.appendChild(acts);
-    list.appendChild(card);
-  });
+/* ---------- 未完（取得途中）の判定と、中断時の本棚登録（本棚一本化） ----------
+   レジュームの導線は本棚に一本化した：取得を中断したら、取得済みの話
+   だけでも本として本棚へ登録する。未完かどうかは本棚エントリの
+   narouTotal（最後に確認した目次上の総話数）と、実際に本へ入っている
+   話数（epTitles の長さ）の比較で判定する */
+function nSetEntryTotal(key, total){
+  const e = S.library.find(x => x.key === key);
+  if (!e) return;
+  if (total) e.narouTotal = total;
+  else delete e.narouTotal;
+  persist();
+}
+function isEntryIncomplete(entry){
+  if (!entry || typeof entry.key !== "string" || entry.key.indexOf("narou:") !== 0) return false;
+  const total = entry.narouTotal || 0;
+  if (!total) return false;
+  return (Array.isArray(entry.epTitles) ? entry.epTitles.length : 0) < total;
+}
+function currentBookIncomplete(){
+  if (!S.work || !S.work.key) return false;
+  return isEntryIncomplete(S.library.find(x => x.key === S.work.key));
+}
+/* 同期ストアに取得済みの話（state === "stored"）を、本棚の本へ取り込む。
+   本がある場合は差分マージ（差し替え・末尾追加）、無い場合は取得済みの
+   話だけを目次順に組み立てて新規登録する。登録できたら本の話数を返し、
+   1話も登録できなければ null を返す。中断時の登録と、保存失敗で
+   「登録待ち」になった分の回収に使う */
+async function nAssemblePartialBook(novel, m, key, note){
+  const ncodeU = m.ncode;
+  const headingOf = e => (e.chapter ? e.chapter + "　" + e.title : e.title);
+  const parseStored = async e => {
+    const text = await nsGet(NS_EP_STORE, nsEpKey(ncodeU, e.no));
+    if (text == null) return null;
+    const heading = headingOf(e);
+    return mergeParsedEpisodes(parseTextBook(text, heading + ".txt"), heading);
+  };
+  try {
+    if (m.bookId === key) {
+      const existingBook = await loadBookContent(key);
+      if (existingBook) {
+        const book = existingBook.slice();
+        let changed = false;
+        for (const e of m.episodes) {
+          if (e.state !== "stored") continue;
+          const parsed = await parseStored(e);
+          if (!parsed || !parsed.paragraphs.length) { e.state = "none"; e.bookIndex = null; continue; }
+          if (e.bookIndex != null && e.bookIndex < book.length) book[e.bookIndex] = parsed;
+          else { e.bookIndex = book.length; book.push(parsed); }
+          e.state = "inbook";
+          changed = true;
+        }
+        if (changed) {
+          const ok = await saveBookContent(key, book);
+          if (!ok) return null;
+          nUpdateLibraryEntry(key, book);
+        }
+        nSetEntryTotal(key, m.episodes.length);
+        for (const e of m.episodes) if (e.state === "inbook") await nsDel(NS_EP_STORE, nsEpKey(ncodeU, e.no));
+        await nSaveManifest(m);
+        buildShelf();
+        return book.length;
+      }
+      m.bookId = null;
+    }
+    const episodes = [];
+    for (const e of m.episodes) {
+      if (e.state !== "stored") { e.bookIndex = null; continue; }
+      const parsed = await parseStored(e);
+      if (parsed && parsed.paragraphs.length) {
+        e.bookIndex = episodes.length;
+        episodes.push(parsed);
+        e.state = "inbook";
+      } else { e.state = "none"; e.bookIndex = null; }
+    }
+    if (!episodes.length) { await nSaveManifest(m); return null; }
+    const stored = await saveBookContent(key, episodes);
+    if (!stored) {
+      /* 保存できなければ取得済み本文は同期ストアに残し、次回に回す */
+      m.episodes.forEach(e => { if (e.state === "inbook") e.state = "stored"; e.bookIndex = null; });
+      await nSaveManifest(m);
+      return null;
+    }
+    registerBook(key, novel.title, note, "file", "", episodes, stored);
+    m.bookId = key;
+    await nSaveManifest(m);
+    for (const e of m.episodes) if (e.state === "inbook") await nsDel(NS_EP_STORE, nsEpKey(ncodeU, e.no));
+    nSetEntryTotal(key, m.episodes.length);
+    buildShelf();
+    return episodes.length;
+  } catch (err) { return null; }
 }
 
 /* ---------- 同期エンジン（全話取得・レジューム・差分更新を一本化） ----------
@@ -5022,9 +5360,16 @@ async function nRunSync(novel, opts){
   ndl.startedAt = Date.now();
   openNProgress(novel);
   if (fromCheck) $("#nprogText").textContent = "目次を確認しています…";
+  let mRef = null; /* 中断・例外時にも、取得済み分を本棚へ登録するために台帳を控える */
   try {
     const collected = await nCollectEpisodes(novel, base);
-    if (ndl.cancelled) { nProgressCancelled(); return; }
+    if (ndl.cancelled) {
+      /* 目次取得の段階で中断しても、前回までの取得済み分があれば本棚へ登録する */
+      const m0 = await nLoadManifest(ncodeU);
+      const cnt = m0 ? await nAssemblePartialBook(novel, m0, key, note) : null;
+      nProgressCancelled(cnt, m0 ? m0.episodes.length : 0);
+      return;
+    }
     const toc = collected.episodes;
     const tocByNo = {};
     toc.forEach(e => { tocByNo[e.no] = e; });
@@ -5035,6 +5380,7 @@ async function nRunSync(novel, opts){
     m.title = novel.title;
     m.writer = novel.writer || "";
     m.novel = nNovelSnapshot(novel);
+    mRef = m;
 
     /* 登録済みの本の本文が端末から消えている場合は、本棚リンクを無効として
        全話取り直し→組み立て直しの経路に倒す（位置・しおりはキーに紐づくので残る） */
@@ -5057,6 +5403,7 @@ async function nRunSync(novel, opts){
         m.bookId = key;
         m.lastCheck = Date.now();
         await nSaveManifest(m);
+        nSetEntryTotal(key, toc.length);
         ndl.total = toc.length;
         nProgressPlainDone("『" + novel.title + "』の更新はありませんでした（全" + toc.length + "話・最新です）。次回から差分だけを確認できます。");
         return;
@@ -5132,7 +5479,12 @@ async function nRunSync(novel, opts){
       nProgressUpdate(e.title);
       if (i < needFetch.length - 1) await nSleep(700); /* 各話の間隔は礼儀正しく空ける */
     }
-    if (ndl.cancelled) { nProgressCancelled(); return; }
+    if (ndl.cancelled) {
+      /* 中断時は、取得済みの話だけでも本として本棚へ登録する（本棚一本化） */
+      const cnt = await nAssemblePartialBook(novel, m, key, note);
+      nProgressCancelled(cnt, toc.length);
+      return;
+    }
 
     /* 反映フェーズ */
     $("#nprogText").textContent = m.bookId ? "本へ反映しています…" : "本棚へ登録しています…";
@@ -5167,6 +5519,7 @@ async function nRunSync(novel, opts){
       const storedOk = await saveBookContent(key, book);
       if (!storedOk) throw new Error("更新した本を保存できませんでした（容量不足など）。取得した本文は残してあるので、再試行できます。");
       nUpdateLibraryEntry(key, book);
+      nSetEntryTotal(key, toc.length);
       /* 本へ取り込んだ話の同期ストア側コピーは片付ける（台帳は残す） */
       for (const e of merged) if (e.state === "inbook") await nsDel(NS_EP_STORE, nsEpKey(ncodeU, e.no));
       m.episodes = merged;
@@ -5208,6 +5561,7 @@ async function nRunSync(novel, opts){
     ndl.lastBook = { key, title: novel.title, note, episodes, stored };
     if (stored) {
       m.bookId = key;
+      nSetEntryTotal(key, toc.length);
       merged.forEach(e => { if (e.bookIndex != null) e.state = "inbook"; });
       m.episodes = merged;
       await nSaveManifest(m);
@@ -5221,11 +5575,13 @@ async function nRunSync(novel, opts){
     nProgressDone(novel, key, stored);
     if (stored) toast("『" + novel.title + "』を本棚に追加しました", 3000);
   } catch (err) {
-    if (ndl.cancelled) nProgressCancelled();
+    if (ndl.cancelled) {
+      const cnt = mRef ? await nAssemblePartialBook(novel, mRef, key, note) : null;
+      nProgressCancelled(cnt, mRef ? mRef.episodes.length : 0);
+    }
     else nProgressError(err && err.message ? err.message : "取得に失敗しました。時間をおいて再試行してください。");
   } finally {
     ndl.downloading = false;
-    nRenderPartials();
   }
 }
 /* 作品カードの「全話取得して本棚へ」／レジュームの入口 */
@@ -5537,8 +5893,6 @@ ensureGuideEntry();
   /* なろうダウンローダーからの受け渡しは、起動時に確認し、その後も
      アプリが前面に戻るたびに再確認する（上のリスナー側） */
   checkDownloaderInbox();
-  /* 取得途中の作品リストも起動時に用意しておく（なろう画面を開いたときに見える） */
-  nRenderPartials();
   if (!lsOK) {
     /* 保存できない環境では止めずに、保存なしモードとして読書を続けられるようにする */
     setTimeout(() => toast("この環境では保存できないため、保存なしモードで動作します"), 600);
