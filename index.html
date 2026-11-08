@@ -544,7 +544,7 @@ const GUIDE_EPISODES = [
       "このビューワーは、日本語の小説を読むための縦書きビューワーです。縦書き・右から左へのページ送り、上下二段組みの組版で、紙の文庫本を読む感覚に寄せてあります。",
       "この文章は、ビューワーの使い方そのものです。サンプル小説の代わりに入っています。まずはこのまま読み進めながら、ページ送りやメニューの操作を試してみてください。",
       "読めるファイルは、テキストファイル（.txt）、Markdown（.md）、EPUB（.epub）、青空文庫の配布形式（.zip）です。Shift_JISのテキストや、青空文庫形式のルビ記法、EPUB内のルビにも対応しています。青空文庫の注記（改ページ・改段・見出し・傍点など）も処理され、.zipに画像が同梱されていれば挿絵も表示されます。挿絵は画像の大きさで自動的に切り替わり、本文に収まる小さい画像は本文の流れの中に、大きな画像（口絵など）は改ページして1ページ全面に表示されます。",
-      "テキストファイルが複数入った.zipも開けます。その場合はファイル名の順に連結して1冊として扱い、各ファイルが目次の1話になります。zipの中にzipが入っている場合は、1階層まで開いて同じように連結します。",
+      "テキストファイルが複数入った.zipも開けます。その場合は1冊に連結して扱い、「話」の区切りはzipのルート直下で決まります。ルート直下にフォルダがある場合はフォルダごとに1話になり、フォルダ内のファイルはその話の中でファイル名の順に連結されます（「次の話／前の話」ではフォルダの先頭へ移動します）。フォルダに入っていないファイルは1ファイルで1話、zipの中にzipがある場合はそのzip全体で1話になり、1階層まで開いて連結します。",
       "画像だけが入った.zip（漫画のアーカイブ）も開けます。その場合は「画像の本」として扱われ、画像1枚が1ページになり、ファイル名の数値順（1、2、…、10の順）に並びます。ページ送りの方向や方式は小説と同じで、本棚・進み具合・しおりもそのまま使えます。画像はページを表示するタイミングで1枚ずつ読み出されるので、大きなzipでもまとめて展開はしません。",
       "なお、Kindle本のようなDRM（コピー防止）付きの本は開けません。対象は、自分の原稿や青空文庫など、DRMのないファイルです。"
     ]
@@ -557,6 +557,7 @@ const GUIDE_EPISODES = [
       { t: "ページ送り", cls: "head" },
       "画面の左側をタップすると次のページ、右側をタップすると前のページへ進みます。左右へのスワイプでも送れます。中央をタップするとメニューの表示・非表示が切り替わります。",
       "メニューはしばらくすると自動で隠れ、本文だけの全画面に戻ります。本文を長押ししてもメニューが開きます。",
+      "読書中に端末（ブラウザ）の「戻る」ボタンを押すと、本棚に戻ります。目次や設定などのシートが開いているときは、戻るボタンでまずシートが閉じます。本棚が表示されているときに「戻る」を押すとアプリを終了します（ブラウザの通常の動作です）。読書位置は自動で保存されているので、本棚から同じ本を開けば続きから読めます。",
       "メニュー下部のスライダーを動かすと、話の中をまとめて移動できます。「前の話」「次の話」ボタンでは、話や章をまたいで移動できます。",
       "タブレットを横向きにするなど画面が横長になると、自動で見開き2ページ表示になり、2ページずつ送ります。"
     ]
@@ -661,6 +662,22 @@ function persistLoad(){
     if (Array.isArray(d.bookmarks)) S.bookmarks = d.bookmarks;
     if (Array.isArray(d.library)) S.library = d.library;
     S.lastKey = d.lastKey || null;
+    /* 旧版で文字化けしたまま保存された書名・話タイトルは、読み込み時に自己修復する
+       （repairMojibake は後方で定義されるが、呼び出し時点では評価済み） */
+    let metaRepaired = false;
+    S.library.forEach(en => {
+      if (!en || typeof en !== "object") return;
+      const t = repairMojibake(en.title);
+      if (t !== en.title) { en.title = t; metaRepaired = true; }
+      if (Array.isArray(en.epTitles)) {
+        en.epTitles = en.epTitles.map(x => {
+          const r = repairMojibake(x);
+          if (r !== x) metaRepaired = true;
+          return r;
+        });
+      }
+    });
+    if (metaRepaired) persist();
     return true;
   } catch (e) { return false; }
 }
@@ -1249,16 +1266,35 @@ function mimeForImageName(name){
   return { jpg: "image/jpeg", jpeg: "image/jpeg", jfif: "image/jpeg", png: "image/png",
            webp: "image/webp", gif: "image/gif", bmp: "image/bmp", avif: "image/avif" }[ext] || "image/jpeg";
 }
-/* ファイル名の自然順：数字の塊を数値として比べる（1, 2, …, 10 の順になる） */
+/* ファイル名の自然順：数字の塊を数値として比べる（1, 2, …, 10 の順になる）。
+   漢数字の塊（一、二、…、十二、…）も数値として比べる：Unicodeの文字順では
+   一＜三＜二 になってしまい、巻数や話数の並びが崩れるため */
+function kanjiNum(s){
+  const d = { "零":0, "一":1, "二":2, "三":3, "四":4, "五":5, "六":6, "七":7, "八":8, "九":9 };
+  const m = { "十":10, "百":100, "千":1000 };
+  let total = 0, cur = 0, seen = false;
+  for (const ch of s) {
+    if (d[ch] !== undefined) { cur = d[ch]; seen = true; }
+    else if (m[ch] !== undefined) { total += (cur || 1) * m[ch]; cur = 0; seen = true; }
+    else return NaN;
+  }
+  return seen ? total + cur : NaN;
+}
+function numToken(t){
+  if (/^\d+$/.test(t)) return parseInt(t, 10);
+  if (/^[０-９]+$/.test(t)) return parseInt(t.replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xfee0)), 10);
+  if (/^[一二三四五六七八九十百千零]+$/.test(t)) return kanjiNum(t);
+  return NaN;
+}
 function naturalCompare(a, b){
-  const ca = String(a).split(/(\d+)/), cb = String(b).split(/(\d+)/);
+  const parts = s => String(s).split(/(\d+|[０-９]+|[一二三四五六七八九十百千零]+)/);
+  const ca = parts(a), cb = parts(b);
   const n = Math.max(ca.length, cb.length);
   for (let i = 0; i < n; i++) {
     if (ca[i] === undefined) return -1;
     if (cb[i] === undefined) return 1;
     if (ca[i] === cb[i]) continue;
-    const na = /^\d+$/.test(ca[i]) ? parseInt(ca[i], 10) : NaN;
-    const nb = /^\d+$/.test(cb[i]) ? parseInt(cb[i], 10) : NaN;
+    const na = numToken(ca[i]), nb = numToken(cb[i]);
     if (!isNaN(na) && !isNaN(nb)) return na - nb;
     return ca[i] < cb[i] ? -1 : 1;
   }
@@ -1346,8 +1382,12 @@ async function parseMangaArchive(buf, fileName){
    収まる小さい画像は本文の流れの中にインライン表示し、収まらない大きな画像
    （口絵など）は改ページして段組みを無視した全面表示にする。
    実寸が記録されていない挿絵（旧形式で保存された本など）は本文内表示にする */
+/* 全面判定の基準は「1ページ分の幅」。見開き（2ページ同時表示）でも比較対象を
+   見開き全体の幅にしてしまうと、大きな口絵ほど永遠に全面にならないため、
+   ページ数（ppv）は呼び出し時点の画面から取り直して1ページ幅に換算する */
+function singlePageW(){ return stage.clientWidth / Math.max(1, computePpv()); }
 function isFullIllus(para){
-  return !!(para && para.img && para.imgW && para.imgW > panelW());
+  return !!(para && para.img && para.imgW && para.imgW > singlePageW());
 }
 function paginate(epIdx){
   if (S.cache.has(epIdx)) return S.cache.get(epIdx);
@@ -1723,17 +1763,46 @@ function toast(msg, ms){
 }
 function setLoading(on){ $("#loading").classList.toggle("show", !!on); }
 
-/* ---------------- シート ---------------- */
+/* ---------------- シート ----------------
+   画面遷移は History API と連動させる（読書中の「戻る」ボタン対策）。
+   histView は現在の履歴エントリが指す画面、histLive は実際に pushState が
+   成功して履歴に積まれているエントリ。履歴が使えない環境（サンドボックス
+   内など）では pushState が例外になるので、その場合は表示切替だけで動き、
+   存在しないエントリへ向けて history.back() を呼ばないようにする */
+let histView = "shelf";
+const histLive = { reading: false, sheet: false };
 const sheets = ["#tocSheet", "#markSheet", "#setSheet"];
-function openSheet(sel){
+let lastSheetSel = null;
+function openSheetUI(sel){
   clearTimeout(uiHideTimer);
-  closeSheets(true);
+  closeSheetsUI(true);
   $(sel).classList.add("open");
   $("#scrim").classList.add("show");
 }
-function closeSheets(keepScrim){
+function closeSheetsUI(keepScrim){
   sheets.forEach(s => $(s).classList.remove("open"));
   if (!keepScrim) $("#scrim").classList.remove("show");
+}
+/* シートを開く操作は履歴にも積む：端末の戻るボタンで、まずシートが閉じる */
+function openSheet(sel){
+  lastSheetSel = sel;
+  openSheetUI(sel);
+  if (histView !== "sheet") {
+    histView = "sheet";
+    try { history.pushState({ v: "sheet" }, ""); histLive.sheet = true; }
+    catch (e) { histLive.sheet = false; /* 履歴が使えない環境では表示切替だけで動く */ }
+  }
+}
+/* シートを閉じる操作：履歴にシートのエントリが積まれていれば、戻る操作として消費する */
+function closeSheets(keepScrim){
+  closeSheetsUI(keepScrim);
+  if (histView === "sheet") {
+    histView = "reading";
+    if (histLive.sheet) {
+      histLive.sheet = false;
+      try { history.back(); } catch (e) { /* noop */ }
+    }
+  }
 }
 $("#scrim").addEventListener("click", () => closeSheets());
 $("#btnToc").addEventListener("click", () => { buildToc(); openSheet("#tocSheet"); pokeUI(); });
@@ -1920,11 +1989,14 @@ function loadImageForThumb(src){
     im.src = src;
   });
 }
+/* サムネイルの保存解像度：表示は52×72pxだが、高密度ディスプレイでも粗く
+   見えないよう、保存する画像の長辺は192pxで作る */
+const THUMB_MAX_DIM = 192;
 async function makeThumbnail(src){
   try {
     const im = await loadImageForThumb(src);
     if (!im || !im.naturalWidth) return null;
-    const maxDim = 96;
+    const maxDim = THUMB_MAX_DIM;
     const scale = Math.min(1, maxDim / Math.max(im.naturalWidth, im.naturalHeight));
     const cv = document.createElement("canvas");
     cv.width = Math.max(1, Math.round(im.naturalWidth * scale));
@@ -1956,15 +2028,19 @@ async function thumbFromEpisodes(episodes, isManga){
   } catch (e) { /* noop */ }
   return null;
 }
-/* サムネイル未生成の本は、開いたタイミングで生成して保存する（既存本棚の救済） */
+/* サムネイル未生成の本と、旧解像度（長辺96px）で作られた本は、開いた
+   タイミングで現行解像度（長辺192px）で生成・再生成して保存する（自己修復）。
+   再生成済みかどうかはエントリの thumbSize（作ったときの長辺px）で判定する */
 async function ensureShelfThumb(key){
   const entry = S.library.find(x => x.key === key);
-  if (!entry || entry.kind === "guide" || entry.thumb) return;
+  if (!entry || entry.kind === "guide") return;
+  if (entry.thumb && (entry.thumbSize || 0) >= THUMB_MAX_DIM) return;
   const thumb = await thumbFromEpisodes(S.episodes, !!(entry.manga || entry.kind === "manga"));
   if (!thumb) return;
   const e2 = S.library.find(x => x.key === key);
-  if (e2 && !e2.thumb) {
+  if (e2 && e2.thumb !== thumb) {
     e2.thumb = thumb;
+    e2.thumbSize = THUMB_MAX_DIM;
     persist();
     if (shelfEl.classList.contains("show")) buildShelf();
   }
@@ -2049,8 +2125,54 @@ function buildShelf(){
     list.appendChild(card);
   });
 }
-function showShelf(){ buildShelf(); shelfEl.classList.add("show"); }
-function hideShelf(){ shelfEl.classList.remove("show"); }
+function showShelfUI(){ buildShelf(); shelfEl.classList.add("show"); }
+function hideShelfUI(){ shelfEl.classList.remove("show"); }
+/* 本棚を出す。読書中から来た場合は、履歴に積んだ読書（＋シート）のエントリを
+   戻る操作で消費して本棚エントリに戻る。本棚自体は履歴に積み増さないので、
+   本棚で端末の戻るボタンを押せば通常どおりアプリが終わる（無限に捕捉しない） */
+function showShelf(){
+  closeSheetsUI();
+  showShelfUI();
+  if (histView === "reading" || histView === "sheet") {
+    let backs = 0;
+    if (histView === "sheet" && histLive.sheet) backs++;
+    if (histLive.reading) backs++;
+    histView = "shelf";
+    histLive.sheet = false;
+    histLive.reading = false;
+    try { for (let i = 0; i < backs; i++) history.back(); } catch (e) { /* noop */ }
+  } else histView = "shelf";
+}
+/* 本棚を閉じて読書へ戻る。履歴に読書エントリを積み、次に端末の戻るボタンを
+   押したとき本棚へ戻れるようにする */
+function hideShelf(){
+  closeSheetsUI();
+  hideShelfUI();
+  if (histView === "shelf") {
+    histView = "reading";
+    try { history.pushState({ v: "reading" }, ""); histLive.reading = true; }
+    catch (e) { histLive.reading = false; /* 履歴が使えない環境では表示切替だけで動く */ }
+  } else if (histView === "sheet") {
+    histView = "reading";
+    if (histLive.sheet) {
+      histLive.sheet = false;
+      try { history.back(); } catch (e) { /* noop */ }
+    }
+  }
+}
+/* 端末・ブラウザの戻る／進む：履歴エントリの指す画面に表示を合わせる。
+   読書中に戻れば本棚が表示され、シートが開いていればまずそれが閉じる。
+   読書位置は afterNav が常時保存しているが、ここでも即時保存して続きを保証する */
+window.addEventListener("popstate", e => {
+  const v = (e.state && e.state.v) || "shelf";
+  histView = v;
+  histLive.reading = v !== "shelf";
+  histLive.sheet = v === "sheet";
+  persistNow();
+  if (v === "shelf") { closeSheetsUI(); showShelfUI(); }
+  else if (v === "sheet") { hideShelfUI(); if (lastSheetSel) openSheetUI(lastSheetSel); else closeSheetsUI(); }
+  else { hideShelfUI(); closeSheetsUI(); }
+});
 async function openFromShelf(entry){
   if (entry.key === S.work.key && S.episodes.length) { hideShelf(); return; }
   if (entry.kind === "guide") {
@@ -2094,8 +2216,46 @@ $("#btnShelfClose").addEventListener("click", () => hideShelf());
 $("#btnShelfOpen").addEventListener("click", () => { $("#fileInput").click(); });
 
 /* ---------------- 本を開く ---------------- */
+/* 旧形式で保存された本は挿絵の実寸（全面表示の判定材料）を持たないことがある。
+   開いたときに画像を測り直して実寸を補い、全面になる挿絵があれば現在位置を
+   保ったまま割り付けし直す。実寸を補った本文は保存し直し、次回から判定できる
+   ようにする（保存に失敗しても読書は続ける） */
+async function repairIllusDims(key, episodes){
+  const bySrc = new Map();
+  episodes.forEach(ep => ep.paragraphs.forEach(p => {
+    if (p.img && p.src && !p.imgW) {
+      if (!bySrc.has(p.src)) bySrc.set(p.src, []);
+      bySrc.get(p.src).push(p);
+    }
+  }));
+  if (!bySrc.size) return;
+  let changed = false;
+  await Promise.all([...bySrc.keys()].map(async src => {
+    const im = await loadImageForThumb(src);
+    if (!im || !im.naturalWidth) return;
+    bySrc.get(src).forEach(p => { p.imgW = im.naturalWidth; p.imgH = im.naturalHeight; });
+    changed = true;
+  }));
+  if (!changed || S.work.key !== key || S.episodes !== episodes) return;
+  const pos = currentPos(), ep = S.ep;
+  S.cache.clear();
+  const pages = paginate(ep);
+  S.page = findPageForPos(pages, pos);
+  renderCurrent(null);
+  if (!S.work.manga) saveBookContent(key, episodes);
+}
 function setBook(work, episodes, key, opts){
   opts = opts || {};
+  /* 旧版で文字化けしたまま保存された書名・話タイトルは、開いたときに正しい
+     文字列へ直し、本棚メタデータと保存済み本文へ反映する（自己修復） */
+  let titleRepaired = false;
+  const rt = repairMojibake(work.title);
+  if (rt !== work.title) { work = Object.assign({}, work, { title: rt }); titleRepaired = true; }
+  episodes.forEach(ep => {
+    if (!ep || typeof ep.title !== "string") return;
+    const et = repairMojibake(ep.title);
+    if (et !== ep.title) { ep.title = et; titleRepaired = true; }
+  });
   S.work = { title: work.title, note: work.note || "", key };
   /* 漫画の本なら遅延読み出し用のzip目録状態を差し替え、そうでなければ破棄する */
   const isMangaBook = episodes.some(ep => ep.isManga);
@@ -2112,7 +2272,7 @@ function setBook(work, episodes, key, opts){
      無い本（旧バージョンで取り込んだ本など）は開いたこのタイミングで作る */
   if (opts.thumb) {
     const e = S.library.find(x => x.key === key);
-    if (e && e.thumb !== opts.thumb) { e.thumb = opts.thumb; persist(); }
+    if (e && e.thumb !== opts.thumb) { e.thumb = opts.thumb; e.thumbSize = THUMB_MAX_DIM; persist(); }
   } else if (key !== "guide") {
     ensureShelfThumb(key);
   }
@@ -2121,6 +2281,10 @@ function setBook(work, episodes, key, opts){
   if (saved && episodes[saved.ep]) goToPos(saved.ep, saved.pos);
   else openEpisode(0, 0);
   buildToc();
+  /* 自己修復の反映：タイトルを直した本は保存済み本文も書き直し、次回から
+     化けたタイトルが蘇らないようにする。挿絵の実寸が無い本は測り直して補う */
+  if (titleRepaired && key !== "guide" && !isMangaBook) saveBookContent(key, episodes);
+  if (key !== "guide" && !isMangaBook) repairIllusDims(key, episodes);
   return resumed;
 }
 /* ---- .txt / .md ---- */
@@ -2482,6 +2646,36 @@ function decodeZipEntryName(bytes){
 async function loadZipBuf(buf){
   return JSZip.loadAsync(buf, { decodeFileName: decodeZipEntryName });
 }
+/* ---------------- 文字化けした書名の自己修復 ----------------
+   旧版はzip内ファイル名を「1バイト＝1文字」で文字化けさせて読んでいたため、
+   旧版で登録した本は書名・話タイトルが化けた文字列のまま本棚メタデータと
+   保存済み本文に残っている。この化け方は可逆なので、文字列を元のバイト列に
+   戻し、decodeZipEntryName と同じ順（UTF-8→Shift_JIS）で復号し直せば
+   正しいタイトルに戻せる。化けていない文字列（日本語・ASCIIのみ等）は
+   対象外として一切触らない */
+function looksMojibake(s){
+  if (!s || typeof s !== "string") return false;
+  let score = 0;
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    if (c > 0xff) return false; /* 日本語などが混ざる文字列はバイト列化けではない */
+    if (c >= 0x80 && c <= 0x9f) score += 2; /* C1制御文字は化けの強い兆候 */
+    else if (c >= 0xa0) score += 1;
+  }
+  return score >= 2;
+}
+function repairMojibake(s){
+  if (!looksMojibake(s)) return s;
+  const bytes = new Uint8Array(s.length);
+  for (let i = 0; i < s.length; i++) bytes[i] = s.charCodeAt(i) & 0xff;
+  for (const enc of ["utf-8", "shift_jis"]) {
+    try {
+      const t = new TextDecoder(enc, { fatal: true }).decode(bytes);
+      if (t && t !== s && /[぀-ヿ一-鿿]/.test(t) && !looksMojibake(t)) return t;
+    } catch (e) { /* 次の復号を試す */ }
+  }
+  return s;
+}
 function decodeTxtBytes(bytes){
   try { return new TextDecoder("utf-8", { fatal: true }).decode(bytes); }
   catch (e) { return new TextDecoder("shift_jis").decode(bytes); }
@@ -2489,9 +2683,11 @@ function decodeTxtBytes(bytes){
 
 /* ---- .zip（青空文庫の配布形式：テキストと画像の同梱） ----
    txtが1本だけのzipは従来どおり。そのほかに、複数巻・複数話のtxtが
-   まとめて入ったzipにも対応する：ファイル名の自然順に並べ、各txtを
-   1話として連結した1冊にする（目次にはファイルごとの話が並ぶ）。
-   zipの中のzipは1階層だけ展開し、その中のtxt群は連結して1話にする。 */
+   まとめて入ったzipにも対応する：「話」の単位はルート直下で決まる。
+   ルート直下のフォルダはフォルダ全体で1話（フォルダ内のtxtは自然順に
+   連結し、ファイルの継ぎ目には見出しを入れる）、ルート直下のtxtファイルは
+   1ファイルで1話、zipの中のzipは1階層だけ展開してそのzip全体で1話。
+   目次と「次の話／前の話」はこの単位で動き、話の先頭はフォルダの先頭になる */
 function mergeParsedEpisodes(parsed, title){
   const paras = [];
   parsed.episodes.forEach((ep, i) => {
@@ -2519,29 +2715,74 @@ async function parseZipBook(buf, fileName){
   const names = zipEntryNames(zip);
   const items = names.filter(n => /\.txt$/i.test(n) || /\.zip$/i.test(n)).sort(naturalCompare);
   if (!items.length) throw new Error("notext");
-  /* まず全テキストを読み、話の部品（パート）に分ける。入れ子zipは1階層だけ開く */
+  /* まず全テキストを読み、話の部品（パート）に分ける。パートの区切りは
+     ルート直下：フォルダはフォルダ単位、ルート直下のファイルはファイル単位。
+     入れ子zipは1階層だけ開き、フォルダ内にある場合はそのフォルダの話の
+     一部として（ルート直下ならzip自体を1話として）取り込む */
+  const readSubTexts = async zipObj => {
+    const inner = zipEntryNames(zipObj).filter(x => /\.txt$/i.test(x)).sort(naturalCompare);
+    const subs = [];
+    for (const nn of inner) {
+      const b = await zipObj.files[nn].async("arraybuffer");
+      subs.push({
+        head: baseName(nn).replace(/\.txt$/i, "").replace(/^\d+[_＿\s]*/, ""),
+        raw: baseName(nn).replace(/\.txt$/i, ""),
+        text: decodeTxtBytes(b)
+      });
+    }
+    return subs;
+  };
+  const groups = new Map(); /* ルート直下の名前 -> その配下のエントリ名（自然順） */
+  items.forEach(n => {
+    const seg = n.split("/")[0];
+    if (!groups.has(seg)) groups.set(seg, []);
+    groups.get(seg).push(n);
+  });
   const parts = [];
-  for (const n of items) {
-    if (/\.txt$/i.test(n)) {
-      const b = await zip.files[n].async("arraybuffer");
-      parts.push({ title: baseName(n).replace(/\.txt$/i, ""), text: decodeTxtBytes(b) });
-    } else {
-      let nz = null;
-      try { nz = await loadZipBuf(await zip.files[n].async("arraybuffer")); }
-      catch (e) { nz = null; }
-      if (!nz) continue;
-      const inner = zipEntryNames(nz).filter(x => /\.txt$/i.test(x)).sort(naturalCompare);
-      if (!inner.length) continue;
-      const subTexts = [];
-      for (const nn of inner) {
-        const b = await nz.files[nn].async("arraybuffer");
+  for (const [seg, members] of groups) {
+    const isFolder = members.some(n => n.includes("/"));
+    if (!isFolder) {
+      const n = members[0];
+      if (/\.txt$/i.test(n)) {
+        const b = await zip.files[n].async("arraybuffer");
+        parts.push({ title: baseName(n).replace(/\.txt$/i, ""), text: decodeTxtBytes(b) });
+      } else {
+        let nz = null;
+        try { nz = await loadZipBuf(await zip.files[n].async("arraybuffer")); }
+        catch (e) { nz = null; }
+        if (!nz) continue;
+        const subTexts = await readSubTexts(nz);
+        if (subTexts.length) parts.push({ title: baseName(n).replace(/\.zip$/i, ""), subTexts });
+      }
+      continue;
+    }
+    /* フォルダ：配下のtxt（深い階層も含む）を自然順に連結して1話にする。
+       フォルダ内の入れ子zipはその位置で展開し、同じ話の一部にする */
+    const subTexts = [];
+    for (const n of members) {
+      if (/\.txt$/i.test(n)) {
+        const b = await zip.files[n].async("arraybuffer");
         subTexts.push({
-          head: baseName(nn).replace(/\.txt$/i, "").replace(/^\d+[_＿\s]*/, ""),
+          head: baseName(n).replace(/\.txt$/i, "").replace(/^\d+[_＿\s]*/, ""),
+          raw: baseName(n).replace(/\.txt$/i, ""),
           text: decodeTxtBytes(b)
         });
+      } else {
+        let nz = null;
+        try { nz = await loadZipBuf(await zip.files[n].async("arraybuffer")); }
+        catch (e) { nz = null; }
+        if (!nz) continue;
+        const innerSubs = await readSubTexts(nz);
+        innerSubs.forEach(s => subTexts.push(s));
       }
-      parts.push({ title: baseName(n).replace(/\.zip$/i, ""), subTexts });
     }
+    if (subTexts.length) parts.push({ title: seg, subTexts });
+  }
+  /* フォルダ（や入れ子zip）に包まれているだけで実質txtが1本だけの本は、
+     従来どおりそのtxt自体を1冊として読む（話タイトルもファイル名から取る） */
+  if (parts.length === 1 && parts[0].subTexts && parts[0].subTexts.length === 1) {
+    const only = parts[0].subTexts[0];
+    parts[0] = { title: only.raw || only.head || parts[0].title, text: only.text };
   }
   if (!parts.length) throw new Error("notext");
   /* 同梱画像はデータURL化して、［＃挿絵（ファイル名）入る］の位置に表示できるようにする。
@@ -2751,6 +2992,9 @@ ensureGuideEntry();
   if (!openedLast) {
     setBook(GUIDE_WORK, makeEpisodesFromGuide(), "guide");
   }
+  /* 起動直後の履歴エントリを本棚として確定させる（読書エントリは本を開くたびに積む） */
+  histView = "shelf";
+  try { history.replaceState({ v: "shelf" }, ""); } catch (e) { /* noop */ }
   showShelf();
   if (!lsOK) {
     /* 保存できない環境では止めずに、保存なしモードとして読書を続けられるようにする */
