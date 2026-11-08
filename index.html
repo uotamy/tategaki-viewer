@@ -1915,8 +1915,23 @@ function decodeMangaImage(idx){
   const done = () => mangaDecoding.delete(idx);
   p.then(done, done);
 }
+/* キャッシュ済みオブジェクトURLを破棄して次回は取り直させる。
+   URLが失効していた場合の自己回復に使う */
+function dropMangaURL(idx){
+  if (mangaURLCache.has(idx)) {
+    try { URL.revokeObjectURL(mangaURLCache.get(idx)); } catch (e) { /* noop */ }
+    mangaURLCache.delete(idx);
+  }
+}
 async function loadMangaImageInto(idx, imgEl){
-  const url = await getMangaURL(idx);
+  let url = await getMangaURL(idx);
+  /* 開いた直後の最初のページは、展開器の初期化や他の読み込みと重なって
+     一時的に失敗することがある（ページ送り・戻りで読み直すと出る症状）。
+     失敗を即確定にせず、少し置いて1回だけ取り直す */
+  if (!url && imgEl.isConnected) {
+    await new Promise(r => setTimeout(r, 500));
+    if (imgEl.isConnected) url = await getMangaURL(idx);
+  }
   if (url && imgEl.isConnected) imgEl.src = url;
   else if (!url && imgEl.isConnected) imgEl.alt = "画像を読み込めませんでした";
 }
@@ -2231,6 +2246,15 @@ function buildPageEl(pageData){
       if (img.naturalWidth)
         mangaDims.set(pageData.manga, { w: img.naturalWidth, h: img.naturalHeight });
       applyImgCenter(el);
+    });
+    img.addEventListener("error", () => {
+      /* 差したURLが失効していた等で画像の読み込み自体が失敗したら、
+         そのURLを破棄して1回だけ取り直す（失敗したまま固定せず、
+         ページ送り・戻りをしなくても自己回復するように） */
+      if (img.dataset.retried || !img.isConnected) return;
+      img.dataset.retried = "1";
+      dropMangaURL(pageData.manga);
+      loadMangaImageInto(pageData.manga, img);
     });
     el.appendChild(img);
     /* オブジェクトURLが用意済みなら同期で差す。非同期に差すと
@@ -4735,7 +4759,9 @@ async function loadZipBuf(buf){
    { dir, async(type) } } } を返すので、漫画の組み立て（buildMangaFromZip）
    もテキストzipの解析（parseZipBook）も、zipと共通の経路のまま使える。
    画像・テキストの実データは zip と同様、エントリの async() が呼ばれた
-   ときにその1件だけを展開する（展開済みはキャッシュする）。
+   ときに初めて展開する（展開済みはキャッシュする）。ただし展開器の
+   都合で、同時に出た要求は1回の走査にまとめて処理する（詳細は
+   loadRarBuf 内の pumpExtract のコメントを参照）。
    対応範囲：RAR4／RAR5（公式UnRARベース）。暗号化（ヘッダ暗号化・
    ファイル暗号化）されたものは "rar-encrypted"、分割RAR（マルチ
    ボリューム）・破損・RARでないものは "rar-unsupported" を投げ、
@@ -4827,29 +4853,111 @@ async function loadRarBuf(buf){
       cache.delete(oldest);
     }
   };
-  const extractOne = async name => {
-    if (cache.has(name)) {
-      const hit = cache.get(name);
-      cache.delete(name); cache.set(name, hit); /* LRU: 最近使ったものへ */
-      return hit;
-    }
-    let found = null;
+  /* 展開は「待ち行列に集めて、1回の走査でまとめて取る」。
+     node-unrar-js の展開器はアーカイブを先頭から順に読む1本の状態機械で、
+     extract() を呼ぶたびに走査は先頭から始まる。ソリッド形式のRARでは
+     途中のファイルの読み飛ばしにも解凍が要るため、ページごとに
+     extract() を呼ぶ従来の作りでは「先頭からそのページまでの解凍」が
+     ページ数だけ繰り返されていた。開くときは表示ページ（最大6枚）＋
+     先読み＋サムネイル生成が一度に要求を出すので、再開位置が深い
+     2回目以降の読み込みほど作業量とWASMヒープ消費が膨らみ、スピナーが
+     遅くなってアプリごと落ちた（zipはエントリごとに独立して伸長できる
+     ので無事だった）。最初の表示ページの展開がその負荷の山で失敗して
+     「読み込めませんでした」になり、後で単独で読み直すと出るのも同根。
+     そこで要求を一旦プールし、キューが回るたびに、その時点で溜まって
+     いる要求を全部 extract({files}) に渡して1回の走査で受け取る。
+     直列化も兼ねるので、展開器へ同時に触ることもなくなる */
+  let extractChain = Promise.resolve();
+  const extractWaiters = new Map(); /* エントリ名 -> {resolve, reject, promise} */
+  let rarReleased = false;
+  /* 展開器の後片付け：ライブラリは extract() のジェネレータを最後まで
+     回したときにだけ WASM 側のアーカイブを閉じる（closeArc）。目的の
+     ファイルを取り終えて途中で break すると、その後片付けが走らず、
+     WASMヒープにアーカイブ状態が1回分ずつ残留して膨らみ続ける。
+     break したときはこちらから明示的に閉じる（内部構造が想定と違って
+     いても壊れないよう、存在確認と例外握りつぶし付き） */
+  const closeArcQuietly = () => {
     try {
-      const res = extractor.extract({ files: [name] });
-      for (const f of res.files) {
-        if (f && f.fileHeader && f.fileHeader.name === name && f.extraction) { found = f.extraction; break; }
-      }
-    } catch (e) { throw mapRarError(e); }
-    /* 展開ライブラリ側の内部コピーは役目を終えたので捨てる（二重持ち防止。
-       内部構造が変わっていても壊れないよう、失敗しても無視する） */
-    try {
-      if (typeof extractor.getExtractedFileName === "function" && extractor.dataFiles)
-        delete extractor.dataFiles[extractor.getExtractedFileName(name)];
+      if (extractor && extractor._archive && typeof extractor.closeArc === "function")
+        extractor.closeArc();
     } catch (e) { /* noop */ }
-    if (!found) throw new Error("rar-unsupported");
-    const u8 = found instanceof Uint8Array ? found : new Uint8Array(found);
-    cachePut(name, u8);
-    return u8;
+  };
+  const cacheHit = name => {
+    if (!cache.has(name)) return null;
+    const hit = cache.get(name);
+    cache.delete(name); cache.set(name, hit); /* LRU: 最近使ったものへ */
+    return hit;
+  };
+  const pumpExtract = async () => {
+    if (rarReleased || !extractor) {
+      extractWaiters.forEach(w => w.reject(new Error("rar-unsupported")));
+      extractWaiters.clear();
+      return;
+    }
+    /* キャッシュで解決できる要求は走査せずに返す */
+    Array.from(extractWaiters.keys()).forEach(name => {
+      const hit = cacheHit(name);
+      if (hit) {
+        const w = extractWaiters.get(name);
+        extractWaiters.delete(name);
+        w.resolve(hit);
+      }
+    });
+    if (!extractWaiters.size) return;
+    const wanted = new Set(extractWaiters.keys());
+    let gen = null;
+    try {
+      const res = extractor.extract({ files: Array.from(wanted) });
+      gen = res && res.files;
+      for (const f of gen) {
+        if (!f || !f.fileHeader) continue;
+        const nm = f.fileHeader.name;
+        if (!wanted.has(nm)) continue;
+        const ex = f.extraction;
+        /* フォルダ等のエントリは extraction が文字列のまま来る。実データ
+           （バイト列）のときだけ受け取る */
+        if (!ex || typeof ex === "string") continue;
+        const u8 = ex instanceof Uint8Array ? ex : new Uint8Array(ex);
+        cachePut(nm, u8);
+        const w = extractWaiters.get(nm);
+        if (w) { extractWaiters.delete(nm); w.resolve(u8); }
+        /* 展開ライブラリ側の内部コピーは捨てる（二重持ち防止） */
+        try {
+          if (typeof extractor.getExtractedFileName === "function" && extractor.dataFiles)
+            delete extractor.dataFiles[extractor.getExtractedFileName(nm)];
+        } catch (e) { /* noop */ }
+        if (!extractWaiters.size) break;
+      }
+    } catch (e) {
+      const err = mapRarError(e);
+      wanted.forEach(nm => {
+        const w = extractWaiters.get(nm);
+        if (w) { extractWaiters.delete(nm); w.reject(err); }
+      });
+    } finally {
+      /* ジェネレータを明示的に終わらせ、閉じ忘れた WASM 側アーカイブを
+         その場で破棄する（正常に最後まで回った場合は既に閉じられていて
+         何も起きない） */
+      if (gen && typeof gen.return === "function") { try { gen.return(); } catch (e) { /* noop */ } }
+      closeArcQuietly();
+    }
+    /* 走査しても見つからなかった要求は未対応として失敗させる */
+    wanted.forEach(nm => {
+      const w = extractWaiters.get(nm);
+      if (w) { extractWaiters.delete(nm); w.reject(new Error("rar-unsupported")); }
+    });
+  };
+  const extractOne = name => {
+    const existing = extractWaiters.get(name);
+    if (existing) return existing.promise;
+    const hit = cacheHit(name);
+    if (hit) return Promise.resolve(hit);
+    let resolveFn = null, rejectFn = null;
+    const promise = new Promise((res, rej) => { resolveFn = res; rejectFn = rej; });
+    extractWaiters.set(name, { resolve: resolveFn, reject: rejectFn, promise });
+    /* キューは常に前進させる（ポンプ側は内部で例外を処理する） */
+    extractChain = extractChain.then(pumpExtract, pumpExtract);
+    return promise;
   };
   const files = {};
   headers.forEach(h => {
@@ -4875,8 +4983,15 @@ async function loadRarBuf(buf){
      ではGCまかせになり、閉じた直後に別の本を開くと旧・新のピークが重なって
      落ちやすかったため、閉じる経路（clearMangaState）から必ず呼ぶ */
   const release = () => {
+    rarReleased = true;
     cache.clear();
     cacheBytes = 0;
+    /* 待ち行列に残っている要求は失敗として終わらせ、解放済みの
+       展開器には二度と触らない */
+    extractWaiters.forEach(w => w.reject(new Error("rar-unsupported")));
+    extractWaiters.clear();
+    /* 展開途中で閉じられた場合に残っている WASM 側アーカイブも閉じる */
+    closeArcQuietly();
     extractor = null;
   };
   return { files, __release: release };
