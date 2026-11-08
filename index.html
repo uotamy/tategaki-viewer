@@ -997,6 +997,65 @@ const $ = s => document.querySelector(s);
 const app = $("#app"), stage = $("#stage"), pageHost = $("#pageHost");
 const esc = s => String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 
+/* ---------------- 目次ラベル（話タイトル）の整形 ----------------
+   EPUBの目次ラベルには、生成ツール側でルビのマークアップが「文字列として
+   エスケープされたまま」入っていることがある（実測例：『宮本武蔵（全編）』
+   の toc.ncx／nav のラベル174件が &lt;ruby&gt;毒茸&lt;rt&gt;どくだけ
+   &lt;/rt&gt;&lt;/ruby&gt; の形で、本文側のルビは実タグで正常だった）。
+   DOMParser の textContent 経由で取り込むと、この文字列は
+   「<ruby>毒茸<rt>どくだけ</rt></ruby>」という生文字列のタイトルになり、
+   目次シート・上部バー・本棚・しおりでそのまま露出してしまう。
+   ここでは表示・取り込みの両方で使う整形を1か所に置く：
+   - タグらしい文字列（実タグ／エスケープされたタグ）を含まないタイトルは
+     一切触らない（正常なEPUBのクリーンなラベルは従来どおり表示する）
+   - エスケープされたタグは実タグに戻してから解釈する
+   - <ruby> は基底文字だけを残し、<rt>（読み）と <rp>（括弧）は落とす。
+     その他のタグも落としてテキストだけを残す */
+function cleanEpTitle(s){
+  if (typeof s !== "string" || !s) return s;
+  const hasEscapedTag = /&lt;\/?[a-zA-Z][^&]*?&gt;/i.test(s);
+  const hasRealTag = /<\/?[a-zA-Z][^>]*>/.test(s);
+  if (!hasEscapedTag && !hasRealTag) return s;
+  let t = s;
+  if (hasEscapedTag) t = t.replace(/&lt;(\/?[a-zA-Z][^&<>]*?)&gt;/gi, "<$1>");
+  t = t.replace(/<br\s*\/?>/gi, " ");
+  let out = "";
+  try {
+    /* 本の目次ラベルは本ファイルの作者側が書いた文字列であり、信頼できない。
+       エスケープを戻した文字列を実文書の要素の innerHTML へ渡すと、ラベルに
+       仕込まれたイベントハンドラや外部リソースが読み手の画面で実行・取得
+       されてしまうため、解析は必ず不活性な文書（DOMParser）の中で行い、
+       textContent だけを読み出す（スクリプト実行もリソース取得も起きない） */
+    const inert = new DOMParser().parseFromString(t, "text/html");
+    inert.querySelectorAll("rt, rp").forEach(el => el.remove());
+    out = (inert.body && inert.body.textContent) || "";
+  } catch (e) { out = ""; }
+  if (!out) {
+    out = t.replace(/<rt\b[^>]*>[\s\S]*?<\/rt\s*>/gi, "")
+           .replace(/<rp\b[^>]*>[\s\S]*?<\/rp\s*>/gi, "")
+           .replace(/<[^>]+>/g, "");
+  }
+  out = out.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"')
+           .replace(/&#0?39;|&apos;/g, "'").replace(/&amp;/g, "&")
+           .replace(/[\s　]+/g, " ").trim();
+  return out || s;
+}
+/* 目次要素（navの <a> や ncx の <text>）からラベル文字列を取り出す。
+   実タグのルビが入っている場合は textContent が読みまで連結してしまう
+   （例：「毒茸どくだけ」）ため、複製側で <rt>/<rp> を落としてから読む。
+   エスケープ文字列の形で入っている場合は textContent が生文字列を返す
+   ので、仕上げは cleanEpTitle に任せる */
+function tocLabelFromNode(node){
+  if (!node) return "";
+  let raw = "";
+  try {
+    const clone = node.cloneNode(true);
+    clone.querySelectorAll("rt, rp").forEach(el => el.remove());
+    raw = clone.textContent || "";
+  } catch (e) { raw = node.textContent || ""; }
+  return cleanEpTitle(raw.trim());
+}
+
 /* ---------------- 使い方（組み込みガイド） ----------------
    以前の小説サンプルは廃止し、代わりにこの「使い方」を組み込みの1冊として置く。
    本棚には常に並び、履歴からの削除対象にはならない（本文はコード内蔵）。 */
@@ -1188,20 +1247,21 @@ function persistLoad(){
     let metaRepaired = false;
     S.library.forEach(en => {
       if (!en || typeof en !== "object") return;
-      const t = repairMojibake(en.title);
+      const t = cleanEpTitle(repairMojibake(en.title));
       if (t !== en.title) { en.title = t; metaRepaired = true; }
       if (Array.isArray(en.epTitles)) {
         en.epTitles = en.epTitles.map(x => {
-          const r = repairMojibake(x);
+          const r = cleanEpTitle(repairMojibake(x));
           if (r !== x) metaRepaired = true;
           return r;
         });
       }
     });
-    /* しおりに保存された話タイトルも同じ化け方をしていることがあるので、あわせて直す */
+    /* しおりに保存された話タイトルも同じ化け方をしていることがあるので、あわせて直す。
+       あわせて、目次ラベルにエスケープされたルビ文字列が残っている場合も整形する */
     S.bookmarks.forEach(m => {
       if (!m || typeof m.epTitle !== "string") return;
-      const r = repairMojibake(m.epTitle);
+      const r = cleanEpTitle(repairMojibake(m.epTitle));
       if (r !== m.epTitle) { m.epTitle = r; metaRepaired = true; }
     });
     if (metaRepaired) persist();
@@ -2570,7 +2630,7 @@ function afterNav(){
   $("#pageText").textContent = label;
   const sl = $("#pageSlider");
   sl.max = pages.length - 1; sl.value = S.page;
-  $("#epTitle").textContent = S.episodes[S.ep] ? S.episodes[S.ep].title : "";
+  $("#epTitle").textContent = S.episodes[S.ep] ? cleanEpTitle(S.episodes[S.ep].title) : "";
   $("#btnPrevEp").disabled = S.ep <= 0;
   $("#btnNextEp").disabled = S.ep >= S.episodes.length - 1;
   const cp = currentPos();
@@ -3478,7 +3538,7 @@ function buildToc(){
     const chars = ep.paragraphs.reduce((a, p) => a + p.units.length, 0);
     const metaTxt = ep.isManga ? ep.paragraphs.length.toLocaleString() + "ページ"
                                 : chars.toLocaleString() + "字";
-    b.innerHTML = '<span class="tt">' + esc(ep.title) + "</span>" +
+    b.innerHTML = '<span class="tt">' + esc(cleanEpTitle(ep.title)) + "</span>" +
       (i === S.ep ? '<span class="reading">読書中</span>' : "") +
       '<span class="meta">' + metaTxt + "</span>";
     b.addEventListener("click", () => { closeSheets(); openEpisode(i, 0); });
@@ -3499,7 +3559,7 @@ function buildMarks(){
     row.className = "markrow";
     const go = document.createElement("button");
     go.className = "go";
-    go.innerHTML = '<div class="t1">' + esc(m.epTitle) + '</div><div class="t2">' + esc(m.label) + "</div>";
+    go.innerHTML = '<div class="t1">' + esc(cleanEpTitle(m.epTitle)) + '</div><div class="t2">' + esc(m.label) + "</div>";
     go.addEventListener("click", () => { closeSheets(); goToPos(m.ep, m.pos); });
     const del = document.createElement("button");
     del.className = "del"; del.textContent = "削除";
@@ -4387,11 +4447,11 @@ function buildShelf(){
   let shelfRepaired = false;
   S.library.forEach(entry => {
     if (!entry || typeof entry !== "object" || entry.kind === "guide") return;
-    const t = repairMojibake(entry.title);
+    const t = cleanEpTitle(repairMojibake(entry.title));
     if (t !== entry.title) { entry.title = t; shelfRepaired = true; }
     if (Array.isArray(entry.epTitles)) {
       entry.epTitles = entry.epTitles.map(x => {
-        const r = repairMojibake(x);
+        const r = cleanEpTitle(repairMojibake(x));
         if (r !== x) shelfRepaired = true;
         return r;
       });
@@ -4453,7 +4513,7 @@ function buildShelf(){
     const finished = isBookFinished(entry);
     const incomplete = isEntryIncomplete(entry);
     const barPct = finished ? 100 : pct;
-    const epName = pos && entry.epTitles && entry.epTitles[pos.ep] ? entry.epTitles[pos.ep] : "";
+    const epName = pos && entry.epTitles && entry.epTitles[pos.ep] ? cleanEpTitle(entry.epTitles[pos.ep]) : "";
     const started = !!(pos && (pos.ep > 0 || (pos.charInEp || 0) > 0));
     let meta = esc(entry.note || entry.fileName || "");
     if (entry.manga) meta += (meta ? "　・　" : "") + "画像の本・全" + (entry.pageCount || entry.totalChars || 0) + "ページ";
@@ -4859,11 +4919,16 @@ function setBook(work, episodes, key, opts){
   /* 旧版で文字化けしたまま保存された書名・話タイトルは、開いたときに正しい
      文字列へ直し、本棚メタデータと保存済み本文へ反映する（自己修復） */
   let titleRepaired = false;
-  const rt = repairMojibake(work.title);
+  const rt = cleanEpTitle(repairMojibake(work.title));
   if (rt !== work.title) { work = Object.assign({}, work, { title: rt }); titleRepaired = true; }
   episodes.forEach(ep => {
     if (!ep || typeof ep.title !== "string") return;
-    const et = repairMojibake(ep.title);
+    /* 文字化け修復に加え、目次ラベルに残ったエスケープ済みルビ文字列も
+       ここで整形する。取り込み済みの本（例：宮本武蔵）でも、次に開いた
+       ときに目次が整形済みになり、保存済み本文へも書き戻される。
+       ただし節単位への分割のような「話の区切り直し」はここではできない
+       （三国志のようにフラグメント分割が必要な本は再取り込みが必要） */
+    const et = cleanEpTitle(repairMojibake(ep.title));
     if (et !== ep.title) { ep.title = et; titleRepaired = true; }
   });
   S.work = { title: work.title, note: work.note || "", key };
@@ -5153,16 +5218,39 @@ function inlineUnits(node, out){
 }
 function extractChapter(doc){
   const paras = [];
+  /* フラグメント（#id）付き目次による節分割のためのアンカー記録。
+     要素の id は「次に作られる段落」へ紐付けて覚える（包み要素の id は
+     その内側の最初の段落へ、見出し要素自身の id はその見出し段落へ、
+     空のアンカー要素の id は次の段落へ）。段落オブジェクト自体への参照で
+     覚えるので、後段の空行整理や先頭見出しの取り除きで位置がずれても、
+     最終的な段落配列の中での位置へ変換し直せる */
+  const anchorParas = new Map(); /* id -> 段落オブジェクト（最初に紐付いたもの） */
+  let pendingAnchors = [];       /* 次の段落を待っている id 群 */
+  const noteAnchorId = id => {
+    if (id && !anchorParas.has(id) && !pendingAnchors.includes(id)) pendingAnchors.push(id);
+  };
+  const bindAnchors = paraObj => {
+    if (!pendingAnchors.length) return;
+    pendingAnchors.forEach(id => { if (!anchorParas.has(id)) anchorParas.set(id, paraObj); });
+    pendingAnchors = [];
+  };
   const processEl = el => {
     const tag = el.tagName.toLowerCase();
+    if (el.getAttribute) noteAnchorId(el.getAttribute("id"));
     const hasBlockChild = [...el.children].some(c => BLOCK_TAGS.has(c.tagName.toLowerCase()));
     if (hasBlockChild) { [...el.children].forEach(c => processEl(c)); return; }
+    /* リーフ要素の中にあるインラインのアンカー（<a id="…"> 等）も拾う */
+    if (el.querySelectorAll) el.querySelectorAll("[id]").forEach(n => noteAnchorId(n.getAttribute("id")));
     const units = [];
     inlineUnits(el, units);
     let cur = [];
     const flush = () => {
       const u = trimSpaceUnits(cur); cur = [];
-      if (u.length) paras.push({ units: u, cls: /^h[1-6]$/.test(tag) ? "head" : "" });
+      if (u.length) {
+        const paraObj = { units: u, cls: /^h[1-6]$/.test(tag) ? "head" : "" };
+        paras.push(paraObj);
+        bindAnchors(paraObj);
+      }
     };
     const before = paras.length;
     units.forEach(u => { if (u.br) flush(); else cur.push(u); });
@@ -5184,12 +5272,22 @@ function extractChapter(doc){
     paras.length = 0;
     cleaned.forEach(p => paras.push(p));
   }
-  let heading = "";
+  let heading = "", headingPara = null;
   if (paras.length && paras[0].cls === "head") {
+    headingPara = paras[0];
     heading = unitsToText(paras[0].units);
     paras.shift();
   }
-  return { paras, heading };
+  /* アンカーを最終的な段落位置（インデックス）へ変換する。紐付いた段落が
+     先頭見出しとして取り除かれた場合は、その節は本文先頭（0）から始まる
+     ものとして扱う。空行整理で消えた段落へのアンカーは対象外にする */
+  const anchors = {};
+  anchorParas.forEach((paraObj, id) => {
+    const idx = paras.indexOf(paraObj);
+    if (idx >= 0) anchors[id] = idx;
+    else if (paraObj === headingPara) anchors[id] = 0;
+  });
+  return { paras, heading, anchors };
 }
 async function parseEpub(buf, fileName){
   const zip = await loadZipBuf(buf);
@@ -5218,33 +5316,107 @@ async function parseEpub(buf, fileName){
   const spineIds = [...odoc.getElementsByTagName("itemref")]
     .filter(r => r.getAttribute("linear") !== "no")
     .map(r => r.getAttribute("idref"));
-  const labelByFile = {};
+  /* 目次情報は2系統で持つ。
+     (1) labelByPath／labelByFile：ファイル単位のラベル（従来の話タイトル用）。
+         キーは「パス全体」を主とし、ベース名は予備。従来はベース名だけが
+         キーで、同じ名前のファイルが別フォルダにあるとラベルが衝突した。
+         また nav 側は従来「後勝ち」で、同じファイルへの節リンク（フラグ
+         メント付き）が並ぶとファイルのラベルが最後の節名で上書きされて
+         いたため、nav／ncx とも「最初に現れたラベル」をファイルのラベル
+         とする（先勝ち）にそろえる。ラベルは cleanEpTitle／tocLabelFromNode
+         で整形してから入れる（エスケープ済みルビ文字列の除去を含む）。
+     (2) tocEntries：フラグメント付き見出しまで含めた目次エントリの列
+         （{path, frag, label}、文書順）。1ファイルに複数の節見出しが
+         ある本（例：『三国志（全編）』は spine 16項目に対し ncx 324件で、
+         1ファイルの中に #part02-ch1 のような節アンカーが並ぶ）では、
+         このエントリを使ってファイルを節単位のエピソードへ分割する */
+  const labelByPath = {}, labelByFile = {};
+  const navEntries = [], ncxEntries = [];
+  const dirOf = p => (p.includes("/") ? p.slice(0, p.lastIndexOf("/") + 1) : "");
+  const setFileLabel = (path, base, label) => {
+    if (!label) return;
+    if (path && !(path in labelByPath)) labelByPath[path] = label;
+    if (base && !(base in labelByFile)) labelByFile[base] = label;
+  };
+  const splitRef = (ref, fromPath) => {
+    const parts = String(ref || "").split("#");
+    const filePart = parts[0], frag = parts.length > 1 ? parts.slice(1).join("#") : "";
+    if (!filePart) return { path: fromPath, frag };
+    let fragDec = frag;
+    try { fragDec = decodeURIComponent(frag); } catch (e) { /* そのまま使う */ }
+    return { path: joinPath(dirOf(fromPath), filePart), frag: fragDec };
+  };
   const navItem = Object.values(manifest).find(m => m.props.split(/\s+/).includes("nav"));
   if (navItem) {
-    const navHtml = await getText(joinPath(opfDir, navItem.href));
+    const navPath = joinPath(opfDir, navItem.href);
+    const navHtml = await getText(navPath);
     if (navHtml) {
       const nd = new DOMParser().parseFromString(navHtml, "text/html");
-      nd.querySelectorAll("a[href]").forEach(a => {
-        const href = a.getAttribute("href").split("#")[0];
-        if (href) labelByFile[baseName(href)] = a.textContent.trim();
+      /* 目次nav（epub:type="toc"）があればその中のリンクだけを目次として
+         読む。ランドマーク等の別navに同じファイルへのリンクがあっても
+         目次ラベルを上書きしないようにするため。無ければ従来どおり文書
+         全体のリンクを読む */
+      const navEls = [...nd.querySelectorAll("nav")];
+      const tocNav = navEls.find(n => (n.getAttribute("epub:type") || "").split(/\s+/).includes("toc")) || navEls[0];
+      const scope = tocNav || nd;
+      scope.querySelectorAll("a[href]").forEach(a => {
+        const ref = splitRef(a.getAttribute("href"), navPath);
+        const label = tocLabelFromNode(a);
+        if (!label) return;
+        navEntries.push({ path: ref.path, frag: ref.frag, label });
+        if (!ref.frag) setFileLabel(ref.path, baseName(ref.path), label);
+        else if (!(ref.path in labelByPath) && !(baseName(ref.path) in labelByFile))
+          setFileLabel(ref.path, baseName(ref.path), label);
       });
     }
   }
   const ncxItem = Object.values(manifest).find(m => m.mt === "application/x-dtbncx+xml");
   if (ncxItem) {
-    const ncx = await getText(joinPath(opfDir, ncxItem.href));
+    const ncxPath = joinPath(opfDir, ncxItem.href);
+    const ncx = await getText(ncxPath);
     if (ncx) {
       const xd = new DOMParser().parseFromString(ncx, "text/xml");
       [...xd.getElementsByTagName("navPoint")].forEach(np => {
-        const content = np.getElementsByTagName("content")[0];
-        const label = np.getElementsByTagName("text")[0];
-        if (content && label) {
-          const src = (content.getAttribute("src") || "").split("#")[0];
-          if (src && !labelByFile[baseName(src)]) labelByFile[baseName(src)] = label.textContent.trim();
+        /* navLabel／content は自要素の直下のものだけを取る（入れ子の
+           navPoint の子孫を誤って拾わないため）。取れない場合は従来の
+           子孫検索へ落とす */
+        let content = null, labelEl = null;
+        [...np.children].forEach(c => {
+          const tn = c.tagName.toLowerCase();
+          if (tn === "content") content = c;
+          else if (tn === "navlabel") labelEl = c.getElementsByTagName("text")[0] || null;
+        });
+        if (!content) content = np.getElementsByTagName("content")[0];
+        if (!labelEl) labelEl = np.getElementsByTagName("text")[0];
+        if (content && labelEl) {
+          const ref = splitRef(content.getAttribute("src") || "", ncxPath);
+          const label = tocLabelFromNode(labelEl);
+          if (!label) return;
+          ncxEntries.push({ path: ref.path, frag: ref.frag, label });
+          if (!ref.frag) setFileLabel(ref.path, baseName(ref.path), label);
+          else if (!(ref.path in labelByPath) && !(baseName(ref.path) in labelByFile))
+            setFileLabel(ref.path, baseName(ref.path), label);
         }
       });
     }
   }
+  /* 節分割に使うエントリ列：フラグメント付きエントリを含む側を優先する
+     （ncx 優先、無ければ nav）。どちらにもフラグメントが無ければ分割は
+     行わず、従来どおりファイル単位のエピソードになる */
+  const splitEntries = ncxEntries.some(e => e.frag) ? ncxEntries
+    : (navEntries.some(e => e.frag) ? navEntries : []);
+  const splitByPath = new Map();
+  splitEntries.forEach(e => {
+    if (!splitByPath.has(e.path)) splitByPath.set(e.path, []);
+    splitByPath.get(e.path).push(e);
+  });
+  const splitByBase = new Map();
+  splitEntries.forEach(e => {
+    const b = baseName(e.path);
+    if (!splitByBase.has(b)) splitByBase.set(b, []);
+    splitByBase.get(b).push(e);
+  });
+  const fileLabelFor = itemPath => labelByPath[itemPath] || labelByFile[baseName(itemPath)] || "";
   /* 本棚サムネイル：表紙画像を小さく作って返す（取り込み時に一度だけ）。
      優先順位は (1) カバー指定（meta name="cover" / properties="cover-image"）
      (2) 本文（spineの文書）で最初に現れる画像 (3) マニフェストの最初の画像 */
@@ -5290,13 +5462,53 @@ async function parseEpub(buf, fileName){
   for (const id of spineIds) {
     const item = manifest[id];
     if (!item || !/html|xml/.test(item.mt)) continue;
-    const html = await getText(joinPath(opfDir, item.href));
+    const itemPath = joinPath(opfDir, item.href);
+    const html = await getText(itemPath);
     if (!html) continue;
     const doc = new DOMParser().parseFromString(html, "text/html");
-    const { paras, heading } = extractChapter(doc);
+    const { paras, heading, anchors } = extractChapter(doc);
     if (!paras.length) continue;
-    const ttl = labelByFile[baseName(item.href)] || heading || ("第" + (episodes.length + 1) + "章");
-    episodes.push({ title: ttl, paragraphs: paras });
+    const fileLabel = fileLabelFor(itemPath);
+    /* 節分割：このファイル宛てのフラグメント付き目次エントリがあり、
+       各アンカーが本文段落へ解決できる場合は、ファイルを節単位の
+       エピソードへ分ける（三国志型：spine は巻ファイル単位でも、目次は
+       他作品と同じ節単位で出るようになる）。分割が成立しない場合
+       （アンカーが見つからない／実質1節しかない等）は、従来どおり
+       ファイル全体を1エピソードにする。なお、この分割は取り込み時の
+       構造変換なので、取り込み済みの本へは効かない（再取り込みが必要）。
+       ラベルの整形だけは表示時にも効くため、そちらは再取り込み不要 */
+    let splitDone = false;
+    const entriesForFile = splitByPath.get(itemPath) ||
+      (splitByPath.has(itemPath) ? [] : (splitByBase.get(baseName(item.href)) || []));
+    if (entriesForFile && entriesForFile.some(e => e.frag)) {
+      const bounds = [];
+      entriesForFile.forEach(e => {
+        let start = null;
+        if (!e.frag) start = 0;
+        else if (anchors && anchors[e.frag] !== undefined) start = anchors[e.frag];
+        if (start !== null) bounds.push({ start, label: e.label });
+      });
+      /* 本文位置の順に並べる（Array.prototype.sort は安定ソートなので、
+         同じ位置に重なるエントリ同士は目次順＝親→子の順を保つ） */
+      bounds.sort((a, b) => a.start - b.start);
+      const slices = [];
+      if (bounds.length && bounds[0].start > 0)
+        slices.push({ title: fileLabel || heading || ("第" + (episodes.length + 1) + "章"),
+                      paragraphs: paras.slice(0, bounds[0].start) });
+      bounds.forEach((b, i) => {
+        const end = i + 1 < bounds.length ? bounds[i + 1].start : paras.length;
+        if (end > b.start) slices.push({ title: b.label, paragraphs: paras.slice(b.start, end) });
+        /* 同じ位置に重なったエントリ（巻見出しと、その巻の最初の節など）は
+           空のスライスになる側が落ち、実際に本文を持つ側のラベルが残る */
+      });
+      if (slices.length >= 2) {
+        slices.forEach(s => episodes.push({ title: cleanEpTitle(s.title), paragraphs: s.paragraphs }));
+        splitDone = true;
+      }
+    }
+    if (splitDone) continue;
+    const ttl = fileLabel || heading || ("第" + (episodes.length + 1) + "章");
+    episodes.push({ title: cleanEpTitle(ttl), paragraphs: paras });
   }
   if (!episodes.length) throw new Error("notext");
   return { title: workTitle, episodes, thumb };
