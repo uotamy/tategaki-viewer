@@ -2638,6 +2638,49 @@ async function parseEpub(buf, fileName){
 /* デコード結果の「汚れ」の数：化けた読みには半角カナ（U+FF61–FF9F）や
    制御文字が混ざりやすい。正しく読めた日本語のファイル名には通常含まれ
    ないため、候補の採否の目安にする */
+/* ---- CP437グリフ経由の二重文字化けの復元 ----
+   日本の古いツールや他OS経由で作られたzipには、エントリ名が
+   「CP932のバイト列をCP437のグリフ文字列として読み違えたもの」を
+   UTF-8で書き直し、UTF-8フラグを立てて収められているものがある
+   （例：第一話 → æµêΩÿb）。この形ではJSZipはフラグを見てUTF-8として
+   読むため、化けたグリフ文字列がそのまま名前になり、従来の
+   「1バイト＝1文字」前提の修復（repairMojibake）も Ω（U+03A9）や
+   ∞（U+221E）のような U+00FF 超のグリフで弾かれて届かなかった。
+   復元はその逆変換：文字列をCP437でバイト列に戻し、Shift_JISとして
+   読み直す。CP437で戻せない文字（正しい日本語など）を含む文字列、
+   高位グリフが1つだけの文字列、Shift_JISとして厳密に読めないもの、
+   復号結果に半角カナが混ざるものは「化けていない」とみなして触らない */
+const CP437_HIGH = [199,252,233,226,228,224,229,231,234,235,232,239,238,236,196,197,201,230,198,244,246,242,251,249,255,214,220,162,163,165,8359,402,225,237,243,250,241,209,170,186,191,8976,172,189,188,161,171,187,9617,9618,9619,9474,9508,9569,9570,9558,9557,9571,9553,9559,9565,9564,9563,9488,9492,9524,9516,9500,9472,9532,9566,9567,9562,9556,9577,9574,9568,9552,9580,9575,9576,9572,9573,9561,9560,9554,9555,9579,9578,9496,9484,9608,9604,9612,9616,9600,945,223,915,960,931,963,181,964,934,920,937,948,8734,966,949,8745,8801,177,8805,8804,8992,8993,247,8776,176,8729,183,8730,8319,178,9632,160];
+const CP437_REV = (() => {
+  const m = new Map();
+  CP437_HIGH.forEach((cp, i) => m.set(cp, 0x80 + i));
+  return m;
+})();
+function cp437Encode(s){
+  const bytes = [];
+  for (const ch of s) {
+    const cp = ch.codePointAt(0);
+    if (cp < 0x80) bytes.push(cp);
+    else if (CP437_REV.has(cp)) bytes.push(CP437_REV.get(cp));
+    else return null;
+  }
+  return new Uint8Array(bytes);
+}
+function recoverCp437Mojibake(s){
+  if (!s || typeof s !== "string") return null;
+  const bytes = cp437Encode(s);
+  if (!bytes) return null;
+  let high = 0;
+  for (let i = 0; i < bytes.length; i++) if (bytes[i] >= 0x80) high++;
+  if (high < 2) return null;
+  let t;
+  try { t = new TextDecoder("shift_jis", { fatal: true }).decode(bytes); }
+  catch (e) { return null; }
+  if (!t || t === s) return null;
+  if (!/[぀-ヿ一-鿿]/.test(t)) return null;
+  if (/[\uFF61-\uFF9F\uFFFD]/.test(t)) return null; /* 半角カナ・置換文字が混ざる読みは誤復号 */
+  return t;
+}
 function nameDecodeScore(s){
   let bad = 0;
   for (let i = 0; i < s.length; i++) {
@@ -2646,7 +2689,7 @@ function nameDecodeScore(s){
   }
   return bad;
 }
-function decodeZipEntryName(bytes, flags){
+function decodeZipEntryNameRaw(bytes, flags){
   if (!bytes || !bytes.length) return "";
   let ascii = true;
   for (let i = 0; i < bytes.length; i++) { if (bytes[i] > 0x7f) { ascii = false; break; } }
@@ -2672,6 +2715,13 @@ function decodeZipEntryName(bytes, flags){
   const sj = tryDec("shift_jis"), u8 = tryDec("utf-8");
   if (sj !== null && u8 !== null) return nameDecodeScore(u8) < nameDecodeScore(sj) ? u8 : sj;
   return sj || u8 || new TextDecoder("shift_jis").decode(bytes);
+}
+/* エントリ名デコードの公開窓口：生バイト列からの復号（上記Raw）に加え、
+   復号結果がCP437グリフ経由の二重文字化けなら、ここで正しい日本語へ
+   戻してから返す。エントリ名を使うすべての経路はこの関数を通る */
+function decodeZipEntryName(bytes, flags){
+  const s = decodeZipEntryNameRaw(bytes, flags);
+  return recoverCp437Mojibake(s) || s;
 }
 /* セントラルディレクトリを走査し、エントリごとの
    { flags, nameBytes, flagOff } を記録順に返す。ZIP64や壊れたzipでは
@@ -2765,6 +2815,11 @@ function looksMojibake(s){
   return score >= 2;
 }
 function repairMojibake(s){
+  if (!s || typeof s !== "string") return s;
+  /* CP437グリフ経由の二重文字化け（第一話→æµêΩÿb の形）は、Ωなど
+     U+00FF超の文字を含むため looksMojibake の対象外だった。こちらを先に試す */
+  const cp437Fixed = recoverCp437Mojibake(s);
+  if (cp437Fixed) return cp437Fixed;
   if (!looksMojibake(s)) return s;
   const bytes = new Uint8Array(s.length);
   for (let i = 0; i < s.length; i++) bytes[i] = s.charCodeAt(i) & 0xff;
