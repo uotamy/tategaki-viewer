@@ -1703,13 +1703,17 @@ function renderChunks(tierEl, chunks){
     return '<p class="' + ch.cls + '">' + chunkHTML(ch.units) + "</p>";
   }).join("");
 }
-function probeFits(chunks){
+function probeSize(chunks){
   renderChunks(probeTier, chunks);
   const r = document.createRange();
   r.selectNodeContents(probeTier);
   const b = r.getBoundingClientRect();
   r.detach();
-  return b.width <= probeTier.clientWidth + 1.5 && b.height <= probeTier.clientHeight + 1.5;
+  return { w: b.width, h: b.height, cw: probeTier.clientWidth, ch: probeTier.clientHeight };
+}
+function probeFits(chunks){
+  const s = probeSize(chunks);
+  return s.w <= s.cw + 1.5 && s.h <= s.ch + 1.5;
 }
 
 /* ---------------- ページ分割 ---------------- */
@@ -1865,7 +1869,7 @@ function headExtra(para, off){
    一部として扱う（「Shift_JIS」のような並びを割らない） */
 const WORD_CHAR = /[0-9A-Za-zÀ-ÖØ-öø-ÿ_]/;
 function isWordUnit(u){ return u.c !== undefined && WORD_CHAR.test(u.c); }
-function simulateSplit(para, off, colsAvail, ind){
+function simulateSplit(para, off, colsAvail, ind, trace){
   const pre = paraPrefix(para), total = para.units.length;
   const capFull = colCap();
   /* 見出しはフォントが1.06倍で、列方向への進みも1.06倍になる。容量判定を
@@ -1914,6 +1918,7 @@ function simulateSplit(para, off, colsAvail, ind){
         if (cols >= colsAvail) return { n: brk - off, cols };
         cols++;
         colStart = brk; lastBreak = -1; capNow = capFull;
+        if (trace && brk > off && brk < total) trace.push(brk);
         compSet = new Set(); saved = 0;
         i = brk;
         continue;
@@ -2001,6 +2006,39 @@ function chunksHaveBoten(chunks){
   }
   return false;
 }
+/* 実測で「高さ」がはみ出た段の修復：チャンクを列モデルの改列位置で
+   分割し、実描画の列境界をモデルに一致させる。はみ出しの主因は列の
+   内部で起きる実描画とのずれ（例：列末の「？＋全角空白」を行頭禁則の
+   ぶら下げで列の外へはみ出させる実描画。モデルは手前で改列するため
+   列の高さが段を超えて測れる）で、段の幅（予算）を削っても犯人の列は
+   段の中に残り続け、直らないまま段だけが痩せていく。チャンクを予測
+   改列位置で割れば、その列はチャンク末尾として確定し、次は新しい
+   チャンク（＝新しい列）から始まるため、ぶら下げが起きなくなる。
+   分割しても段の内容・終端位置は変わらない */
+function splitTierChunks(chunks, paras){
+  const out = [];
+  for (const ch of chunks) {
+    if (!ch.units || !ch.units.length || ch.pi === undefined || ch.table || ch.img) { out.push(ch); continue; }
+    const para = paras[ch.pi];
+    if (!para) { out.push(ch); continue; }
+    const ind = !/(cont|noind|head|title|endmark)/.test(ch.cls || "");
+    const breaks = [];
+    simulateSplit(para, ch.off, 1e9, ind, breaks);
+    const end = ch.off + ch.units.length;
+    const cuts = breaks.filter(b => b > ch.off && b < end);
+    if (!cuts.length) { out.push(ch); continue; }
+    let start = 0;
+    cuts.concat([end]).forEach(b => {
+      const cut = b - ch.off;
+      if (cut <= start) return;
+      out.push({ units: ch.units.slice(start, cut),
+                 cls: start === 0 ? ch.cls : chunkClsFor(para, ch.off + start),
+                 pi: ch.pi, off: ch.off + start });
+      start = cut;
+    });
+  }
+  return out;
+}
 /* 割り付け結果の同一判定キー（予算を削っても結果が変わらない段を
    見分けるため） */
 function tierSig(res){
@@ -2023,6 +2061,18 @@ function fillTier(paras, pos, prefix){
   const suspect = firstColHasRuby(paras, pos, prefix) || chunksHaveBoten(res0.chunks);
   if (!suspect) return res0;
   if (probeFits(res0.chunks)) return res0;
+  /* 高さのはみ出し（列内部のぶら下げ等で列が段より高く測れる型）は、
+     幅を削る従来の修復では直らない。犯人の列は段の中に残り続け、
+     予算を1列ずつ削るたびに段の末尾だけが痩せて、大きな空白のある
+     段が量産された（実例：刀語第1話、214・216ページ相当。傍点段を
+     実測対象に加えた第40版以降、傍点を含む段のすべてがこの経路に
+     入るようになった）。この型は先に列分割で修復する */
+  let repaired = null;
+  const sz0 = probeSize(res0.chunks);
+  if (sz0.h > sz0.ch + 1.5) {
+    repaired = splitTierChunks(res0.chunks, paras);
+    if (probeFits(repaired)) return { chunks: repaired, pos: res0.pos };
+  }
   /* 実測で収まらない場合は、予算を削って割り付け直す。まず従来どおり
      rubyPad を差し引き（段幅の余りが小さいときは引き算が列数の floor を
      跨いで列が落ちるため、差し引くのは実測で収まらなかった場合に限る、
@@ -2043,6 +2093,8 @@ function fillTier(paras, pos, prefix){
     prevSig = sig;
     budget -= M.lh;
   }
+  /* どの修復でも収まらなかった場合は従来どおりループの最終結果を返す
+     （未検証の分割版を返すと、欠けた字が混じる恐れがあるため） */
   return res;
 }
 function fillTierCore(paras, pos, prefix, budget){
@@ -2092,10 +2144,12 @@ function fillTierCore(paras, pos, prefix, budget){
     const sim = simulateSplit(para, off, colsAvail, ind);
     const n = sim.n;
     if (n === 0) {
-      if (chunks.length === baseLen) { chunks.push({ units: para.units.slice(off, off + 1), cls: startCls }); off += 1; }
+      if (chunks.length === baseLen) { chunks.push({ units: para.units.slice(off, off + 1), cls: startCls, pi, off }); off += 1; }
       break;
     }
-    chunks.push({ units: para.units.slice(off, off + n), cls: startCls });
+    /* pi/off は実測修復（fillTier の列分割）が元の段落と開始位置を引くための注記。
+       描画・保存では使わない */
+    chunks.push({ units: para.units.slice(off, off + n), cls: startCls, pi, off });
     /* 模擬では丸ごと収まった場合は、使った列数ぶん予算を引いて次の段落の
        詰め込みを続ける */
     if (n >= total - off) { budget -= sim.cols * colW + extra; pi++; off = 0; continue; }
