@@ -1009,6 +1009,7 @@ const GUIDE_EPISODES = [
     paras: [
       { t: "本棚（履歴）", cls: "head" },
       "本棚は、端末のフォルダを読み込むものではなく、これまでに開いた本の履歴です。最近開いた順に並び、本を選ぶと読んでいた位置からそのまま開きます。進み具合もパーセントで表示されます。本の最後まで読むと、最終ページの後ろに「読了」のページが現れ、本棚では「読了」と表示されます。",
+      "本棚に戻ると、開いていた本はいったん閉じられ、本文は端末のメモリから解放されます（読書位置・しおりは保存されたままなので、次に開けば続きから読めます）。本を選んで開くときは、開き終わるまで「読み込み中」と表示されます。",
       "本が増えてきたら、本棚の上の「検索」ボタンで絞り込めます。タイトルで探せて、著者名のある本（なろう作品など）は著者名でも当たります。文字を打つとその場で絞り込まれ、件数が表示されます。一致する本がないときは「見つかりません」と出ます。「クリア」か「閉じる」で全件表示に戻ります。絞り込みは表示だけのもので、本の並び順や読書位置は変わりません。",
       "各本の左側にはサムネイルが付きます。EPUBでは表紙画像、テキストやzipでは本文で最初に現れる画像、漫画アーカイブ（zip／cbz／rar／cbr）では先頭ページの画像が使われ、画像のない本はアイコン表示になります。サムネイルは本を取り込むときに小さく作って保存されるので、本棚を開くたびに作り直すことはありません。表示は設定の「本棚のサムネイル」で切り替えられます。",
       "履歴の本の操作は、各カードの右下にあるメニューボタン（⋯）に集約されています。押すと、その本に使える操作（ダウンロード／削除など）だけが並んだシートが開きます。「削除」を選ぶと、その本の読書位置・しおり・端末に保存した本文も一緒に消えます（元のファイル自体は消えません）。この「使い方」は組み込みのため、メニューボタン自体が付きません。",
@@ -3840,12 +3841,50 @@ function buildShelf(){
     list.appendChild(card);
   });
 }
+/* ---------------- 本を閉じる（本棚へ戻るとき） ----------------
+   本棚に戻ったら、今開いている本は閉じる（閉じる優先）。保持していた
+   本文（S.episodes）・組版キャッシュ（S.cache）・先行組版済みのページ
+   要素・デコード済み漫画画像（オブジェクトURL／実寸キャッシュ／先読み
+   状態）・組版プローブを、すべてメモリから解放する。読書位置・しおり・
+   読了・本棚のメタデータは端末側の保存（localStorage／IndexedDB）に
+   残るので、次に本棚から開くときは従来の開く処理（openFromShelf）が
+   保存位置から再開する。閉じた本のキーは S.lastKey に残し、次回起動時の
+   再開対象（pendingRestore）の判定が従来どおり働くようにする。
+   起動直後の仮表示（使い方）を閉じる場合は pendingRestore を消さない
+   （再開対象の本はまだ本文を読み込んでいない＝閉じた状態と同じため） */
+function closeCurrentBook(){
+  const closedKey = S.work && S.work.key ? S.work.key : null;
+  if (!closedKey && !S.episodes.length && !mangaState) return;
+  persistNow();
+  if (closedKey && closedKey !== "guide") S.lastKey = closedKey;
+  if (adjacentPrefetchTimer !== null) {
+    try { if (typeof window.cancelIdleCallback === "function") window.cancelIdleCallback(adjacentPrefetchTimer); } catch (e) { /* noop */ }
+    try { clearTimeout(adjacentPrefetchTimer); } catch (e) { /* noop */ }
+    adjacentPrefetchTimer = null;
+  }
+  animating = false;
+  stage.classList.remove("sliding");
+  S.cache.clear();
+  clearPrebuiltPages();
+  clearMangaState();
+  S.episodes = [];
+  S.ep = 0; S.page = 0; winStart = 0;
+  S.work = { title: "", note: "", key: null };
+  track.innerHTML = "";
+  pageHost.querySelectorAll(".leafwrap").forEach(el => el.remove());
+  if (probePage) { probePage.remove(); probePage = null; probeTier = null; }
+  M = null;
+  persistNow();
+}
 function showShelfUI(){ buildShelf(); shelfEl.classList.add("show"); }
 function hideShelfUI(){ shelfEl.classList.remove("show"); }
 /* 本棚を出す。読書中から来た場合は、履歴に積んだ読書（＋シート）のエントリを
    戻る操作で消費して本棚エントリに戻る。本棚自体は履歴に積み増さないので、
    本棚で端末の戻るボタンを押せば通常どおりアプリが終わる（無限に捕捉しない） */
 function showShelf(){
+  /* 本棚に戻る＝開いていた本は閉じる。先に閉じてから本棚を組み立てる
+     ことで、本棚側の「読書中の本」固定・赤枠も閉じた状態で描かれる */
+  closeCurrentBook();
   closeSheetsUI();
   hideNarouUI();
   hideAddUI();
@@ -3873,6 +3912,11 @@ function showShelf(){
 /* 本棚を閉じて読書へ戻る。履歴に読書エントリを積み、次に端末の戻るボタンを
    押したとき本棚へ戻れるようにする */
 function hideShelf(){
+  /* 開いている本が無い（本棚へ戻って閉じた）ときは、本棚を閉じても
+     行き先が無い。空の読書ステージを見せないよう、本棚表示のままにする。
+     本を開く経路はすべて setBook の後にここへ来るので、このガードに
+     引っかかるのは「本が無いのに閉じようとした」場合だけ */
+  if (!S.work.key || !S.episodes.length) { showShelfUI(); return; }
   closeSheetsUI();
   hideNarouUI();
   hideAddUI();
@@ -3912,14 +3956,28 @@ window.addEventListener("popstate", e => {
   histLive.add = v === "add";
   histLive.aozora = v === "aozora";
   persistNow();
-  if (v === "shelf") { closeSheetsUI(); hideNarouUI(); hideAddUI(); hideAozoraUI(); showShelfUI(); }
+  /* 本棚へ戻る遷移では、関数経由（showShelf）と同じく開いていた本を閉じる。
+     また、閉じた後に読書／シートのエントリへ進んでしまった場合は、
+     空のステージを見せず本棚に留める */
+  if (v === "shelf") { closeCurrentBook(); closeSheetsUI(); hideNarouUI(); hideAddUI(); hideAozoraUI(); showShelfUI(); }
+  else if ((v === "reading" || v === "sheet") && (!S.work.key || !S.episodes.length)) {
+    histView = "shelf";
+    closeSheetsUI(); hideNarouUI(); hideAddUI(); hideAozoraUI(); showShelfUI();
+  }
   else if (v === "narou") { hideShelfUI(); closeSheetsUI(); hideAddUI(); hideAozoraUI(); showNarouUI(); }
   else if (v === "add") { hideShelfUI(); hideNarouUI(); hideAozoraUI(); closeSheetsUI(); showAddUI(); }
   else if (v === "aozora") { hideShelfUI(); hideNarouUI(); hideAddUI(); closeSheetsUI(); showAozoraUI(); }
   else if (v === "sheet") { hideShelfUI(); hideNarouUI(); hideAddUI(); hideAozoraUI(); if (lastSheetSel) openSheetUI(lastSheetSel); else closeSheetsUI(); }
   else { hideShelfUI(); hideNarouUI(); hideAddUI(); hideAozoraUI(); closeSheetsUI(); }
 });
+/* 本棚から本を開いている最中かどうか。開く処理は端末内データベースからの
+   読み出しと解析・組版で時間がかかることがあり、その間は無反応に見えて
+   何度もタップされやすい。処理中は「本を追加」の取り込み時と同じ
+   読み込み中表示（#loading）を出し、終わるまで次のタップを受け付けない。
+   読書中のページ送りには、この表示は出さない（従来どおり無言で送る） */
+let shelfOpenBusy = false;
 async function openFromShelf(entry){
+  if (shelfOpenBusy) return;
   /* 「使い方」を明示的に選んだ場合は、それが読書中の本になる。起動時の
      再開対象（pendingRestore）が残ったままだと、本棚で先頭固定と赤枠が
      別の本を指してしまうため、ここで再開対象を解除する */
@@ -3931,6 +3989,19 @@ async function openFromShelf(entry){
     toast(resumed ? "前回の続きから開きました" : "『" + entry.title + "』を開きました");
     return;
   }
+  shelfOpenBusy = true;
+  setLoading(true);
+  try {
+    /* 読み込み中表示を先に描画してから、重い読み出し・解析に入る
+       （ファイル取り込み時と同じ作法） */
+    await new Promise(r => setTimeout(r, 40));
+    return await openFromShelfLoad(entry);
+  } finally {
+    shelfOpenBusy = false;
+    setLoading(false);
+  }
+}
+async function openFromShelfLoad(entry){
   /* 漫画は本文ではなくzipアーカイブ自体が保存されている。目録だけ読み直して開く。
      保存済みかどうかのフラグ（entry.stored）は鵜呑みにせず、必ず実物の読み込みを試す。
      フラグが古い・誤っているだけで本文が残っている本を「開けない」と誤認しないため。
