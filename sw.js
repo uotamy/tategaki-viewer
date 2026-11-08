@@ -3,7 +3,7 @@
    - install: アプリ一式をキャッシュ + skipWaiting
    - activate: 旧キャッシュ削除 + clients.claim
    - fetch: ドキュメントも stale-while-revalidate（キャッシュから即起動し、更新は裏で取得して次回に反映） */
-var VERSION = "v10";
+var VERSION = "v11";
 var CACHE = "tategaki-viewer-" + VERSION;
 var SHELL = ["./", "./index.html", "./manifest.webmanifest",
   "./icon-192.png", "./icon-512.png", "./icon-maskable-512.png"];

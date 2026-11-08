@@ -138,6 +138,13 @@
     display: block; margin: .35em 0; text-align: center; max-height: 100%;
   }
   .tier .illus img { max-width: 92%; max-height: 100%; height: auto; }
+  /* 大きな挿絵（口絵など）：段組みを無視して1ページ全面にフィット表示する */
+  .page.fullimg {
+    align-items: center; justify-content: center; padding: 0; overflow: hidden;
+  }
+  .page.fullimg img {
+    display: block; width: 100%; height: 100%; object-fit: contain;
+  }
 
   /* ---------- 漫画（画像のみのzip）：1画像＝1ページの全面表示 ---------- */
   .page.manga {
@@ -303,7 +310,18 @@
   .bookcard {
     background: var(--sheet); border: 1px solid var(--line); border-radius: 14px;
     padding: 14px 16px 12px; margin-bottom: 10px; cursor: pointer;
+    display: flex; gap: 12px;
   }
+  .bookcard .bmain { flex: 1 1 auto; min-width: 0; }
+  /* 本棚サムネイル：取り込み時に小さく作って保存した画像を使い回す */
+  .bookcard .bthumb {
+    flex: none; width: 52px; height: 72px; border-radius: 6px;
+    object-fit: cover; border: 1px solid var(--line); background: var(--tint);
+  }
+  .bookcard .bthumb-icon {
+    display: flex; align-items: center; justify-content: center; color: var(--sub);
+  }
+  .bookcard .bthumb-icon svg { width: 26px; height: 26px; }
   .bookcard.current { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
   .bookcard .bt {
     font-size: 16.5px; font-weight: 600; line-height: 1.45;
@@ -467,6 +485,14 @@
     </div>
 
     <div class="setgroup">
+      <div class="lab">本棚のサムネイル</div>
+      <div class="seg" id="thumbSeg">
+        <button data-v="on">表示する</button>
+        <button data-v="off">表示しない</button>
+      </div>
+    </div>
+
+    <div class="setgroup">
       <div class="lab">保存について</div>
       <p class="worknote" style="margin:0;">読書位置・しおり・表示設定はこの端末の保存領域（localStorage）に、開いた本の本文は端末内データベース（IndexedDB）に保存されます。サーバーには送信されません。</p>
       <p class="worknote" style="margin:8px 0 0;">PWA対応：ブラウザのメニューに「アプリをインストール」や「ホーム画面に追加」が出る環境では、ホーム画面のアイコンからアプリのように起動でき、Space側を更新すると次回起動時に新しい版になります（ホスティング環境により、追加ができない場合があります）。</p>
@@ -517,7 +543,8 @@ const GUIDE_EPISODES = [
     paras: [
       "このビューワーは、日本語の小説を読むための縦書きビューワーです。縦書き・右から左へのページ送り、上下二段組みの組版で、紙の文庫本を読む感覚に寄せてあります。",
       "この文章は、ビューワーの使い方そのものです。サンプル小説の代わりに入っています。まずはこのまま読み進めながら、ページ送りやメニューの操作を試してみてください。",
-      "読めるファイルは、テキストファイル（.txt）、Markdown（.md）、EPUB（.epub）、青空文庫の配布形式（.zip）です。Shift_JISのテキストや、青空文庫形式のルビ記法、EPUB内のルビにも対応しています。青空文庫の注記（改ページ・改段・見出し・傍点など）も処理され、.zipに画像が同梱されていれば挿絵も表示されます。",
+      "読めるファイルは、テキストファイル（.txt）、Markdown（.md）、EPUB（.epub）、青空文庫の配布形式（.zip）です。Shift_JISのテキストや、青空文庫形式のルビ記法、EPUB内のルビにも対応しています。青空文庫の注記（改ページ・改段・見出し・傍点など）も処理され、.zipに画像が同梱されていれば挿絵も表示されます。挿絵は画像の大きさで自動的に切り替わり、本文に収まる小さい画像は本文の流れの中に、大きな画像（口絵など）は改ページして1ページ全面に表示されます。",
+      "テキストファイルが複数入った.zipも開けます。その場合はファイル名の順に連結して1冊として扱い、各ファイルが目次の1話になります。zipの中にzipが入っている場合は、1階層まで開いて同じように連結します。",
       "画像だけが入った.zip（漫画のアーカイブ）も開けます。その場合は「画像の本」として扱われ、画像1枚が1ページになり、ファイル名の数値順（1、2、…、10の順）に並びます。ページ送りの方向や方式は小説と同じで、本棚・進み具合・しおりもそのまま使えます。画像はページを表示するタイミングで1枚ずつ読み出されるので、大きなzipでもまとめて展開はしません。",
       "なお、Kindle本のようなDRM（コピー防止）付きの本は開けません。対象は、自分の原稿や青空文庫など、DRMのないファイルです。"
     ]
@@ -551,6 +578,7 @@ const GUIDE_EPISODES = [
     paras: [
       { t: "本棚（履歴）", cls: "head" },
       "本棚は、端末のフォルダを読み込むものではなく、これまでに開いた本の履歴です。最近開いた順に並び、本を選ぶと読んでいた位置からそのまま開きます。進み具合もパーセントで表示されます。",
+      "各本の左側にはサムネイルが付きます。EPUBでは表紙画像、テキストやzipでは本文で最初に現れる画像、漫画zipでは先頭ページの画像が使われ、画像のない本はアイコン表示になります。サムネイルは本を取り込むときに小さく作って保存されるので、本棚を開くたびに作り直すことはありません。表示は設定の「本棚のサムネイル」で切り替えられます。",
       "履歴の本は、各カードの「削除」ボタンから履歴を削除できます。削除すると、その本の読書位置・しおり・端末に保存した本文も一緒に消えます（元のファイル自体は消えません）。この「使い方」は組み込みのため、削除ボタンは付きません。",
       { t: "しおり", cls: "head" },
       "メニューの「しおり」から、今開いているページにしおりを挟めます。しおりは本ごとに保存され、一覧からいつでもそのページへ戻れます。",
@@ -586,6 +614,7 @@ const S = {
   episodes: [], ep: 0, page: 0,
   font: "ipaex", fsIdx: 2, lhIdx: 1, marginIdx: 1, mode: "double", turnStyle: "slide",
   theme: "light", customBg: "#f7f1e3", customInk: "#33302a",
+  showThumbs: true,         // 本棚サムネイルの表示ON/OFF（設定で切り替え）
   bookmarks: [],            // {bookKey, ep, pos:{pi,off}, epTitle, label}
   positions: {},            // bookKey -> {ep, pos, charInEp}
   library: [],              // 本棚: {key,kind,title,note,fileName,epTitles,epChars,totalChars,stored,lastRead}
@@ -613,6 +642,7 @@ function persistNow(){
     localStorage.setItem(LS_KEY, JSON.stringify({
       font: S.font, fsIdx: S.fsIdx, lhIdx: S.lhIdx, marginIdx: S.marginIdx, mode: S.mode,
       turnStyle: S.turnStyle, theme: S.theme, customBg: S.customBg, customInk: S.customInk,
+      showThumbs: S.showThumbs,
       positions: S.positions, bookmarks: S.bookmarks,
       library: S.library, lastKey: S.work.key || S.lastKey
     }));
@@ -625,7 +655,7 @@ function persistLoad(){
     const raw = localStorage.getItem(LS_KEY);
     if (!raw) return false;
     const d = JSON.parse(raw);
-    ["font","fsIdx","lhIdx","marginIdx","mode","turnStyle","theme","customBg","customInk"]
+    ["font","fsIdx","lhIdx","marginIdx","mode","turnStyle","theme","customBg","customInk","showThumbs"]
       .forEach(k => { if (d[k] !== undefined) S[k] = d[k]; });
     if (d.positions) S.positions = d.positions;
     if (Array.isArray(d.bookmarks)) S.bookmarks = d.bookmarks;
@@ -738,7 +768,8 @@ function serializeEpisodes(episodes){
     paras: ep.paragraphs.map(p => {
       const o = { t: unitsToMarkup(p.units), cls: p.cls || "" };
       if (p.table) o.tbl = p.table; /* 表はセル構造ごと保存し、復元時も表として描く */
-      if (p.img) { o.img = p.img; o.src = p.src; } /* 挿絵は画像データごと保存する */
+      if (p.img) { o.img = p.img; o.src = p.src; /* 挿絵は画像データごと保存する */
+        if (p.imgW) { o.iw = p.imgW; o.ih = p.imgH; } } /* 実寸も保存し、全面表示の判定に使う */
       if (p.breakBefore) o.pb = 1;
       if (p.breakTier) o.tb = 1;
       return o;
@@ -759,7 +790,7 @@ function deserializeEpisodes(data){
         paragraphs: paras.map(p => {
           const o = { units: textToUnits(p.t), cls: p.cls || "" };
           if (Array.isArray(p.tbl) && p.tbl.length) o.table = p.tbl;
-          if (p.img) { o.img = p.img; o.src = p.src; }
+          if (p.img) { o.img = p.img; o.src = p.src; if (p.iw) { o.imgW = p.iw; o.imgH = p.ih; } }
           if (p.pb) o.breakBefore = true;
           if (p.tb) o.breakTier = true;
           return o;
@@ -1115,6 +1146,8 @@ function fillTier(paras, pos, prefix){
     if (off >= total) { pi++; off = 0; continue; }
     /* ［＃改ページ］［＃改段］：段落の途中でなければ、ここで段を打ち切って次の段・ページへ送る */
     if (off === 0 && chunks.length > baseLen && (para.breakBefore || para.breakTier)) break;
+    /* 全面表示の挿絵は段に入れず、ページ分割側（paginate）の専用ページに委ねる */
+    if (off === 0 && isFullIllus(para)) break;
     /* 表・挿絵は原子ブロックとしてDOM実測で収め、その段はそこで打ち切る（頻度が低いための割り切り） */
     if (para.table || para.img) {
       const whole = { units: para.units.slice(), cls: para.table ? "table" : "illus",
@@ -1166,6 +1199,8 @@ function fillTierProbe(paras, pos, prefix){
     if (off >= total) { pi++; off = 0; continue; }
     /* ［＃改ページ］［＃改段］：段落の途中でなければ、ここで段を打ち切って次の段・ページへ送る */
     if (off === 0 && chunks.length > baseLen && (para.breakBefore || para.breakTier)) break;
+    /* 全面表示の挿絵は段に入れず、ページ分割側（paginate）の専用ページに委ねる */
+    if (off === 0 && isFullIllus(para)) break;
     /* 表・挿絵は途中で割らず、丸ごと1ブロックとして段に収める。
        入らない場合は次の段・ページへ送り、空の段でのみ（はみ出し覚悟で）そのまま置いて前進させる */
     if (para.table || para.img) {
@@ -1303,10 +1338,17 @@ function buildMangaFromZip(zip, fileName){
 }
 async function parseMangaArchive(buf, fileName){
   if (typeof JSZip === "undefined") throw new Error("nozip");
-  const zip = await JSZip.loadAsync(buf); /* 読むのは目録まで。画像は解凍しない */
+  const zip = await loadZipBuf(buf); /* 読むのは目録まで。画像は解凍しない */
   return buildMangaFromZip(zip, fileName);
 }
 
+/* 挿絵の表示自動切替：画像の実寸（natural size）の幅がページ幅（本文エリア）に
+   収まる小さい画像は本文の流れの中にインライン表示し、収まらない大きな画像
+   （口絵など）は改ページして段組みを無視した全面表示にする。
+   実寸が記録されていない挿絵（旧形式で保存された本など）は本文内表示にする */
+function isFullIllus(para){
+  return !!(para && para.img && para.imgW && para.imgW > panelW());
+}
 function paginate(epIdx){
   if (S.cache.has(epIdx)) return S.cache.get(epIdx);
   const ep = S.episodes[epIdx];
@@ -1322,6 +1364,14 @@ function paginate(epIdx){
   const pages = [];
   let pos = { pi: 0, off: 0 }, first = true;
   while (pos.pi < ep.paragraphs.length) {
+    /* 大きな挿絵は、本文の段組みから外して全面表示の専用ページにする */
+    if (pos.off === 0 && isFullIllus(ep.paragraphs[pos.pi])) {
+      const fp = ep.paragraphs[pos.pi];
+      pages.push({ tiers: [], start: { pi: pos.pi, off: 0 }, fullImg: { src: fp.src, name: fp.img } });
+      pos = { pi: pos.pi + 1, off: 0 };
+      first = false;
+      continue;
+    }
     const page = { tiers: [], start: { pi: pos.pi, off: pos.off } };
     for (let t = 0; t < tiersPer; t++) {
       /* ［＃改ページ］の段落は、段の途中ではなく必ずページ先頭から始める */
@@ -1384,6 +1434,16 @@ function buildPageEl(pageData){
     el.appendChild(ph);
     el.appendChild(img);
     loadMangaImageInto(pageData.manga, img);
+    return el;
+  }
+  /* 全面表示の挿絵ページ：段組みを持たず、画像をページ全体にフィットさせる */
+  if (pageData.fullImg) {
+    el.classList.add("fullimg");
+    const img = document.createElement("img");
+    img.src = pageData.fullImg.src;
+    img.alt = "挿絵" + (pageData.fullImg.name ? "（" + pageData.fullImg.name + "）" : "");
+    img.draggable = false;
+    el.appendChild(img);
     return el;
   }
   /* 描画側でも段数を保証する：データ側で段が不足していても、設定どおりの
@@ -1830,12 +1890,85 @@ function syncTurnSeg(){
     b.classList.toggle("on", b.dataset.v === S.turnStyle));
 }
 syncTurnSeg();
+$("#thumbSeg").addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  S.showThumbs = b.dataset.v === "on";
+  syncThumbSeg(); persistNow();
+  if (shelfEl.classList.contains("show")) buildShelf();
+});
+function syncThumbSeg(){
+  document.querySelectorAll("#thumbSeg button").forEach(b =>
+    b.classList.toggle("on", (b.dataset.v === "on") === !!S.showThumbs));
+}
+syncThumbSeg();
 $("#themeSeg").addEventListener("click", e => {
   const b = e.target.closest("button"); if (!b) return;
   S.theme = b.dataset.v; applyTheme();
 });
 $("#customBg").addEventListener("input", e => { S.customBg = e.target.value; S.theme = "custom"; applyTheme(); });
 $("#customInk").addEventListener("input", e => { S.customInk = e.target.value; S.theme = "custom"; applyTheme(); });
+
+/* ---------------- 本棚サムネイル ----------------
+   取り込み時に一度だけ小さくリサイズして作り、本棚エントリ（メタデータ）と
+   一緒に保存して使い回す。本棚を開くたびに原ファイルから抽出しないので、
+   巨大な漫画zipでも本棚は重くならない */
+function loadImageForThumb(src){
+  return new Promise(res => {
+    const im = new Image();
+    im.onload = () => res(im);
+    im.onerror = () => res(null);
+    im.src = src;
+  });
+}
+async function makeThumbnail(src){
+  try {
+    const im = await loadImageForThumb(src);
+    if (!im || !im.naturalWidth) return null;
+    const maxDim = 96;
+    const scale = Math.min(1, maxDim / Math.max(im.naturalWidth, im.naturalHeight));
+    const cv = document.createElement("canvas");
+    cv.width = Math.max(1, Math.round(im.naturalWidth * scale));
+    cv.height = Math.max(1, Math.round(im.naturalHeight * scale));
+    const cx = cv.getContext("2d");
+    cx.fillStyle = "#ffffff";
+    cx.fillRect(0, 0, cv.width, cv.height);
+    cx.drawImage(im, 0, 0, cv.width, cv.height);
+    return cv.toDataURL("image/jpeg", 0.72);
+  } catch (e) { return null; }
+}
+async function thumbFromBlob(blob){
+  if (!blob) return null;
+  const url = URL.createObjectURL(blob);
+  try { return await makeThumbnail(url); }
+  finally { try { URL.revokeObjectURL(url); } catch (e) { /* noop */ } }
+}
+/* 本文（または漫画の先頭ページ）で最初に現れる画像からサムネイルを作る */
+async function thumbFromEpisodes(episodes, isManga){
+  try {
+    if (isManga) {
+      const url = await getMangaURL(0);
+      return url ? await makeThumbnail(url) : null;
+    }
+    for (const ep of episodes) {
+      const p = ep.paragraphs.find(q => q.img && q.src);
+      if (p) return await makeThumbnail(p.src);
+    }
+  } catch (e) { /* noop */ }
+  return null;
+}
+/* サムネイル未生成の本は、開いたタイミングで生成して保存する（既存本棚の救済） */
+async function ensureShelfThumb(key){
+  const entry = S.library.find(x => x.key === key);
+  if (!entry || entry.kind === "guide" || entry.thumb) return;
+  const thumb = await thumbFromEpisodes(S.episodes, !!(entry.manga || entry.kind === "manga"));
+  if (!thumb) return;
+  const e2 = S.library.find(x => x.key === key);
+  if (e2 && !e2.thumb) {
+    e2.thumb = thumb;
+    persist();
+    if (shelfEl.classList.contains("show")) buildShelf();
+  }
+}
 
 /* ---------------- 本棚 ---------------- */
 const shelfEl = $("#shelf");
@@ -1881,14 +2014,23 @@ function buildShelf(){
     if (entry.manga) meta += (meta ? "　・　" : "") + "画像の本・全" + (entry.pageCount || entry.totalChars || 0) + "ページ";
     else if (epName) meta += (meta ? "　・　" : "") + "読書中：" + esc(epName);
     else if (entry.epTitles) meta += (meta ? "　・　" : "") + "全" + entry.epTitles.length + (entry.kind === "file" ? "章" : "話");
-    card.innerHTML =
+    /* 左側サムネイル（設定でOFFのときは一切付けない）。画像が無い本は標準アイコン */
+    let thumbHtml = "";
+    if (S.showThumbs) {
+      thumbHtml = entry.thumb
+        ? '<img class="bthumb" src="' + entry.thumb + '" alt="" />'
+        : '<div class="bthumb bthumb-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M5 4.5A1.5 1.5 0 0 1 6.5 3H19v15H6.5A1.5 1.5 0 0 0 5 19.5z"/><path d="M5 19.5A1.5 1.5 0 0 1 6.5 18H19v3H6.5A1.5 1.5 0 0 1 5 19.5z"/></svg></div>';
+    }
+    card.innerHTML = thumbHtml +
+      '<div class="bmain">' +
       '<div class="bt">' + esc(entry.title) + "</div>" +
       (meta ? '<div class="bmeta">' + meta + "</div>" : "") +
       '<div class="bprog"><i style="width:' + pct + '%"></i></div>' +
       '<div class="bfoot"><span>' + (started ? pct + "%まで読了" : "未読") + "</span>" +
       (entry.lastRead ? "<span>" + fmtReadDate(entry.lastRead) + "</span>" : "") +
       (!entry.stored && entry.kind !== "guide" ? '<span class="bneed">本文が保存されていません</span>' : "") +
-      '<span class="go">' + (entry.key === S.work.key ? "読書中" : (started ? "続きから読む" : "開く")) + "</span></div>";
+      '<span class="go">' + (entry.key === S.work.key ? "読書中" : (started ? "続きから読む" : "開く")) + "</span></div>" +
+      "</div>";
     /* カードのタップで、その本を最後に読んでいたページから開く */
     card.addEventListener("click", () => openFromShelf(entry));
     /* 削除ボタンはカード上に常時表示する（「使い方」は組み込みのため付けない） */
@@ -1966,6 +2108,14 @@ function setBook(work, episodes, key, opts){
   registerBook(key, work.title, work.note || "",
     opts.kind || (key === "guide" ? "guide" : "file"),
     opts.fileName || "", episodes, opts.stored);
+  /* サムネイル：取り込み時に作れたものは本棚エントリへ保存し、
+     無い本（旧バージョンで取り込んだ本など）は開いたこのタイミングで作る */
+  if (opts.thumb) {
+    const e = S.library.find(x => x.key === key);
+    if (e && e.thumb !== opts.thumb) { e.thumb = opts.thumb; persist(); }
+  } else if (key !== "guide") {
+    ensureShelfThumb(key);
+  }
   const saved = S.positions[key];
   const resumed = !!(saved && episodes[saved.ep] && (saved.ep > 0 || (saved.pos && (saved.pos.pi > 0 || saved.pos.off > 0))));
   if (saved && episodes[saved.ep]) goToPos(saved.ep, saved.pos);
@@ -1974,7 +2124,7 @@ function setBook(work, episodes, key, opts){
   return resumed;
 }
 /* ---- .txt / .md ---- */
-function parseTextBook(text, fileName, images){
+function parseTextBook(text, fileName, images, imageDims){
   const lines = text.split(/\r\n|\r|\n/);
   let workTitle = fileName.replace(/\.(txt|md|markdown)$/i, "");
   const episodes = [];
@@ -2024,6 +2174,10 @@ function parseTextBook(text, fileName, images){
     if (!src) return;
     ensureEp();
     const p = { units: textToUnits("挿絵"), cls: "illus", img: base, src };
+    /* 画像ファイル自体の実寸（natural size）を持たせる。表示時の自動切替
+       （本文内インライン／全面ページ）の判定に使う */
+    const dim = imageDims ? (imageDims[name] || imageDims[base]) : null;
+    if (dim) { p.imgW = dim.w; p.imgH = dim.h; }
     if (pendingBreak === 2) p.breakBefore = true;
     else if (pendingBreak === 1) p.breakTier = true;
     pendingBreak = 0;
@@ -2196,7 +2350,7 @@ function extractChapter(doc){
 }
 async function parseEpub(buf, fileName){
   if (typeof JSZip === "undefined") throw new Error("nozip");
-  const zip = await JSZip.loadAsync(buf);
+  const zip = await loadZipBuf(buf);
   const getText = async p => {
     const f = zip.file(p);
     return f ? await f.async("text") : null;
@@ -2249,6 +2403,47 @@ async function parseEpub(buf, fileName){
       });
     }
   }
+  /* 本棚サムネイル：表紙画像を小さく作って返す（取り込み時に一度だけ）。
+     優先順位は (1) カバー指定（meta name="cover" / properties="cover-image"）
+     (2) 本文（spineの文書）で最初に現れる画像 (3) マニフェストの最初の画像 */
+  let thumb = null;
+  try {
+    let imgPath = null;
+    const coverMeta = [...odoc.getElementsByTagName("meta")]
+      .find(m => m.getAttribute("name") === "cover");
+    if (coverMeta && manifest[coverMeta.getAttribute("content")])
+      imgPath = joinPath(opfDir, manifest[coverMeta.getAttribute("content")].href);
+    if (!imgPath) {
+      const ci = Object.values(manifest).find(m => m.props.split(/\s+/).includes("cover-image"));
+      if (ci) imgPath = joinPath(opfDir, ci.href);
+    }
+    if (!imgPath) {
+      for (const id of spineIds) {
+        const item = manifest[id];
+        if (!item || !/html|xml/.test(item.mt)) continue;
+        const html = await getText(joinPath(opfDir, item.href));
+        if (!html) continue;
+        const m = html.match(/<(?:img|image)[^>]+(?:src|href)\s*=\s*["']([^"']+)["']/i);
+        if (m) {
+          const docPath = joinPath(opfDir, item.href);
+          const dir = docPath.includes("/") ? docPath.slice(0, docPath.lastIndexOf("/") + 1) : "";
+          imgPath = joinPath(dir, m[1].split("#")[0]);
+          break;
+        }
+      }
+    }
+    if (!imgPath) {
+      const firstImg = Object.values(manifest).find(m => /^image\//.test(m.mt));
+      if (firstImg) imgPath = joinPath(opfDir, firstImg.href);
+    }
+    if (imgPath) {
+      const f = zip.file(imgPath);
+      if (f) {
+        const bytes = await f.async("arraybuffer");
+        thumb = await thumbFromBlob(new Blob([bytes], { type: mimeForImageName(imgPath) }));
+      }
+    }
+  } catch (e) { thumb = null; }
   const episodes = [];
   for (const id of spineIds) {
     const item = manifest[id];
@@ -2262,32 +2457,156 @@ async function parseEpub(buf, fileName){
     episodes.push({ title: ttl, paragraphs: paras });
   }
   if (!episodes.length) throw new Error("notext");
-  return { title: workTitle, episodes };
+  return { title: workTitle, episodes, thumb };
 }
 
-/* ---- .zip（青空文庫の配布形式：テキストと画像の同梱） ---- */
+/* ---- zipのエントリ名デコード ----
+   日本のツールで作られたzipは、エントリ名がShift_JIS（CP932）で記録され、
+   UTF-8フラグが立っていないことが多い。JSZipの既定デコーダはフラグなしの
+   名前もUTF-8として読むため、日本語ファイル名が文字化けし、書名まで化けて
+   いた。loadAsync の decodeFileName に、UTF-8として読めなければ
+   Shift_JISで読み直すデコーダを渡して直す（フラグありの名前はJSZip側が
+   UTF-8で読むので影響しない）。 */
+function decodeZipEntryName(bytes){
+  if (!bytes || !bytes.length) return "";
+  let ascii = true;
+  for (let i = 0; i < bytes.length; i++) { if (bytes[i] > 0x7f) { ascii = false; break; } }
+  if (ascii) {
+    let s = "";
+    for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
+    return s;
+  }
+  try { return new TextDecoder("utf-8", { fatal: true }).decode(bytes); }
+  catch (e) { return new TextDecoder("shift_jis").decode(bytes); }
+}
+async function loadZipBuf(buf){
+  return JSZip.loadAsync(buf, { decodeFileName: decodeZipEntryName });
+}
+function decodeTxtBytes(bytes){
+  try { return new TextDecoder("utf-8", { fatal: true }).decode(bytes); }
+  catch (e) { return new TextDecoder("shift_jis").decode(bytes); }
+}
+
+/* ---- .zip（青空文庫の配布形式：テキストと画像の同梱） ----
+   txtが1本だけのzipは従来どおり。そのほかに、複数巻・複数話のtxtが
+   まとめて入ったzipにも対応する：ファイル名の自然順に並べ、各txtを
+   1話として連結した1冊にする（目次にはファイルごとの話が並ぶ）。
+   zipの中のzipは1階層だけ展開し、その中のtxt群は連結して1話にする。 */
+function mergeParsedEpisodes(parsed, title){
+  const paras = [];
+  parsed.episodes.forEach((ep, i) => {
+    /* ファイル内部で章見出し等により分割された話は、見出しとして本文に戻す */
+    if (i > 0 && ep.title && ep.title !== parsed.title)
+      paras.push({ units: textToUnits(ep.title), cls: "head" });
+    ep.paragraphs.forEach(p => paras.push(p));
+  });
+  return { title, paragraphs: paras };
+}
+function commonPrefixTitle(bases){
+  if (!bases.length) return "";
+  let p = bases[0];
+  for (const b of bases.slice(1)) {
+    let i = 0;
+    while (i < p.length && i < b.length && p[i] === b[i]) i++;
+    p = p.slice(0, i);
+    if (!p) break;
+  }
+  return p.replace(/[\s　0-9０-９_\-―・、,，]+$/, "").trim();
+}
 async function parseZipBook(buf, fileName){
   if (typeof JSZip === "undefined") throw new Error("nozip");
-  const zip = await JSZip.loadAsync(buf);
-  const names = Object.keys(zip.files).filter(n => !zip.files[n].dir && !n.startsWith("__MACOSX"));
-  const txtName = names.find(n => /\.txt$/i.test(n));
-  if (!txtName) throw new Error("notext");
-  /* 同梱画像はデータURL化して、［＃挿絵（ファイル名）入る］の位置に表示できるようにする */
-  const images = {};
-  for (const n of names) {
-    if (/\.(jpe?g|png|gif)$/i.test(n)) {
-      const b64 = await zip.files[n].async("base64");
-      const ext = n.split(".").pop().toLowerCase();
-      const mime = ext === "png" ? "image/png" : ext === "gif" ? "image/gif" : "image/jpeg";
-      images[n] = "data:" + mime + ";base64," + b64;
-      images[baseName(n)] = images[n];
+  const zip = await loadZipBuf(buf);
+  const names = zipEntryNames(zip);
+  const items = names.filter(n => /\.txt$/i.test(n) || /\.zip$/i.test(n)).sort(naturalCompare);
+  if (!items.length) throw new Error("notext");
+  /* まず全テキストを読み、話の部品（パート）に分ける。入れ子zipは1階層だけ開く */
+  const parts = [];
+  for (const n of items) {
+    if (/\.txt$/i.test(n)) {
+      const b = await zip.files[n].async("arraybuffer");
+      parts.push({ title: baseName(n).replace(/\.txt$/i, ""), text: decodeTxtBytes(b) });
+    } else {
+      let nz = null;
+      try { nz = await loadZipBuf(await zip.files[n].async("arraybuffer")); }
+      catch (e) { nz = null; }
+      if (!nz) continue;
+      const inner = zipEntryNames(nz).filter(x => /\.txt$/i.test(x)).sort(naturalCompare);
+      if (!inner.length) continue;
+      const subTexts = [];
+      for (const nn of inner) {
+        const b = await nz.files[nn].async("arraybuffer");
+        subTexts.push({
+          head: baseName(nn).replace(/\.txt$/i, "").replace(/^\d+[_＿\s]*/, ""),
+          text: decodeTxtBytes(b)
+        });
+      }
+      parts.push({ title: baseName(n).replace(/\.zip$/i, ""), subTexts });
     }
   }
-  const txtBuf = await zip.files[txtName].async("arraybuffer");
-  let text;
-  try { text = new TextDecoder("utf-8", { fatal: true }).decode(txtBuf); }
-  catch (e) { text = new TextDecoder("shift_jis").decode(txtBuf); }
-  return parseTextBook(text, baseName(txtName), images);
+  if (!parts.length) throw new Error("notext");
+  /* 同梱画像はデータURL化して、［＃挿絵（ファイル名）入る］の位置に表示できるようにする。
+     実際に参照されている画像だけを変換する（大きな同梱zipでも無駄に展開しない） */
+  const refSet = new Set();
+  const scanRefs = t => {
+    const re = /［＃挿絵（(.+?)）入る］/g;
+    let m;
+    while ((m = re.exec(t))) refSet.add(m[1]);
+  };
+  parts.forEach(p => {
+    if (p.text !== undefined) scanRefs(p.text);
+    if (p.subTexts) p.subTexts.forEach(s => scanRefs(s.text));
+  });
+  const images = {};
+  for (const n of names) {
+    if (!/\.(jpe?g|png|gif)$/i.test(n)) continue;
+    if (refSet.size && !refSet.has(n) && !refSet.has(baseName(n))) continue;
+    const b64 = await zip.files[n].async("base64");
+    const ext = n.split(".").pop().toLowerCase();
+    const mime = ext === "png" ? "image/png" : ext === "gif" ? "image/gif" : "image/jpeg";
+    images[n] = "data:" + mime + ";base64," + b64;
+    images[baseName(n)] = images[n];
+  }
+  /* 画像ファイル自体の実寸（natural size）を測っておく。青空注記にサイズの
+     記入が無い本でも、表示時に「本文へ収まるか」を実寸で判定できるようにする */
+  const imageDims = {};
+  {
+    const byUrl = new Map();
+    await Promise.all(Object.keys(images).map(async k => {
+      const url = images[k];
+      if (!byUrl.has(url)) {
+        byUrl.set(url, new Promise(res => {
+          const im = new Image();
+          im.onload = () => res(im.naturalWidth ? { w: im.naturalWidth, h: im.naturalHeight } : null);
+          im.onerror = () => res(null);
+          im.src = url;
+        }));
+      }
+      const d = await byUrl.get(url);
+      if (d) imageDims[k] = d;
+    }));
+  }
+  /* txtが1本だけなら従来どおり（青空文庫zip） */
+  if (parts.length === 1 && parts[0].text !== undefined) {
+    return parseTextBook(parts[0].text, parts[0].title + ".txt", images, imageDims);
+  }
+  /* 複数txt：ファイルごとに1話として連結した1冊にする */
+  const episodes = parts.map(p => {
+    if (p.text !== undefined) {
+      return mergeParsedEpisodes(parseTextBook(p.text, p.title + ".txt", images, imageDims), p.title);
+    }
+    const paras = [];
+    p.subTexts.forEach(st => {
+      const merged = mergeParsedEpisodes(parseTextBook(st.text, st.head + ".txt", images, imageDims), st.head);
+      if (st.head) paras.push({ units: textToUnits(st.head), cls: "head" });
+      merged.paragraphs.forEach(x => paras.push(x));
+    });
+    return { title: p.title, paragraphs: paras };
+  }).filter(ep => ep.paragraphs.length);
+  if (!episodes.length) throw new Error("notext");
+  const title = commonPrefixTitle(parts.map(p => p.title))
+    || String(fileName || "").replace(/\.(zip|cbz)$/i, "")
+    || parts[0].title;
+  return { title, episodes };
 }
 
 /* ---- ファイル入力 ---- */
@@ -2313,7 +2632,7 @@ $("#fileInput").addEventListener("change", async e => {
       const key = keyFor(book.title);
       const stored = await saveBookContent(key, book.episodes);
       const resumed = setBook({ title: book.title, note: "EPUB" }, book.episodes, key,
-        { kind: "file", fileName: file.name, stored });
+        { kind: "file", fileName: file.name, stored, thumb: book.thumb || null });
       toast(resumed ? "前回の続きから開きました" : "『" + book.title + "』を開きました（全" + book.episodes.length + "章）");
       notifyNotStored(stored);
     } else if (/\.(zip|cbz)$/i.test(file.name)) {
@@ -2323,7 +2642,7 @@ $("#fileInput").addEventListener("change", async e => {
       let mangaBook = null;
       if (typeof JSZip !== "undefined") {
         try {
-          const zipPeek = await JSZip.loadAsync(buf);
+          const zipPeek = await loadZipBuf(buf);
           const names = zipEntryNames(zipPeek);
           const hasTxt = names.some(n => /\.txt$/i.test(n));
           const hasImg = names.some(n => MANGA_IMG_RE.test(n));
@@ -2334,8 +2653,17 @@ $("#fileInput").addEventListener("change", async e => {
         /* 保存は画像の全展開ではなく、zipアーカイブ自体（File）をIndexedDBへ */
         const key = keyFor(mangaBook.title);
         const stored = await saveBookArchive(key, file);
+        /* サムネイルは先頭ページ画像からこの時点で一度だけ作る */
+        let mThumb = null;
+        try {
+          const e0 = mangaBook.mangaState.entries[0];
+          if (e0) {
+            const ab = await e0.entry.async("arraybuffer");
+            mThumb = await thumbFromBlob(new Blob([ab], { type: mimeForImageName(e0.name) }));
+          }
+        } catch (err) { mThumb = null; }
         const resumed = setBook({ title: mangaBook.title, note: "画像ZIP（漫画）" }, mangaBook.episodes, key,
-          { kind: "manga", fileName: file.name, stored, mangaState: mangaBook.mangaState });
+          { kind: "manga", fileName: file.name, stored, mangaState: mangaBook.mangaState, thumb: mThumb });
         toast(resumed ? "前回の続きから開きました"
           : "『" + mangaBook.title + "』を開きました（全" + mangaBook.episodes[0].paragraphs.length + "ページ）");
         notifyNotStored(stored);
@@ -2343,8 +2671,10 @@ $("#fileInput").addEventListener("change", async e => {
         const book = await parseZipBook(buf, file.name);
         const key = keyFor(book.title);
         const stored = await saveBookContent(key, book.episodes);
+        /* サムネイルは本文で最初に現れる画像からこの時点で一度だけ作る */
+        const zThumb = await thumbFromEpisodes(book.episodes, false);
         const resumed = setBook({ title: book.title, note: "青空文庫ZIP" }, book.episodes, key,
-          { kind: "file", fileName: file.name, stored });
+          { kind: "file", fileName: file.name, stored, thumb: zThumb });
         toast(resumed ? "前回の続きから開きました" : "『" + book.title + "』を開きました");
         notifyNotStored(stored);
       }
@@ -2387,6 +2717,7 @@ const hadSave = persistLoad();
 $("#customBg").value = S.customBg;
 $("#customInk").value = S.customInk;
 syncTurnSeg();
+syncThumbSeg();
 applyTheme();
 applyTypography(false);
 ensureGuideEntry();
