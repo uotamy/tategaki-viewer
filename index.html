@@ -2969,8 +2969,12 @@ function turn(dir){
 /* 下部バーの「1ページ進む／戻る」：見開きでも1枚単位で動く通常のページ移動。
    見開きの半分だけ動くため、表示される組はその位置から組み直され、結果と
    してペアリングが1つずれる。単ページ表示では通常のページ送りと同じ。
-   設定ではないので保存はしない。めくり方式のときも、この移動だけは
-   半見開きの形に合わせてスライドで送る */
+   設定ではないので保存はしない。
+   このボタン操作だけはアニメーションなしで即時に切り替える。見開きの
+   半分（1枚）だけ動く移動は、通常のページ送り用に組まれたスライド／
+   めくりの軌道と合わず不自然に見えるため。タップ・スワイプ・スライダー
+   等の通常のページ送りは、従来どおりページめくり設定（スライド／
+   めくり／なし）に従う */
 function moveOnePage(dir){
   if (animating) return;
   const pages = paginate(S.ep);
@@ -2990,7 +2994,9 @@ function moveOnePage(dir){
     return;
   }
   hideUI();
-  dispatchTurn(dir, tgt, true);
+  /* 即時切替：dispatchTurn のスライド／めくりは使わない（上の注記参照）。
+     「なし」方式や reduceMotion のときの即時切替と同じ書き方で確定させる */
+  S.ep = tgt.ep; S.page = tgt.page; renderWindow();
 }
 function openEpisode(i, pageSpec){
   S.ep = i;
