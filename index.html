@@ -343,6 +343,122 @@
   .bookcard .bdel:active { color: var(--accent); }
   .shelf-hint { font-size: 11.5px; color: var(--sub); margin: 0 2px 12px; line-height: 1.6; }
 
+  /* ---------- なろう画面（タテヨミ内蔵ダウンローダー） ---------- */
+  #narou {
+    position: fixed; inset: 0; z-index: 45; background: var(--outer);
+    overflow-y: auto; overscroll-behavior: contain; display: none;
+  }
+  #narou.show { display: block; animation: shelfIn .25s ease; }
+  .narou-inner {
+    max-width: 720px; margin: 0 auto;
+    padding: calc(env(safe-area-inset-top, 0px) + 18px) 16px calc(env(safe-area-inset-bottom, 0px) + 40px);
+  }
+  .narou-head { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 4px; }
+  .narou-head > div { flex: 1 1 auto; min-width: 0; }
+  .narou-head h2 {
+    font-size: 20px; margin: 0; font-weight: 600;
+    font-family: "IPAex明朝","Noto Serif JP","YuMincho","Yu Mincho",serif;
+  }
+  .narou-head p { font-size: 12px; color: var(--sub); margin: 5px 0 0; line-height: 1.6; }
+  .ntabs { display: flex; gap: 6px; margin: 12px 0; }
+  .ntabs button {
+    flex: 1 1 0; border: 1px solid var(--line); background: var(--sheet); color: var(--ink);
+    font: inherit; font-size: 13.5px; padding: 10px 2px; border-radius: 10px; cursor: pointer;
+  }
+  .ntabs button[aria-selected="true"] { background: var(--accent); border-color: transparent; color: #fff; font-weight: 600; }
+  .npanel { display: none; }
+  .npanel.active { display: block; }
+  .nform {
+    background: var(--sheet); border: 1px solid var(--line); border-radius: 14px;
+    padding: 14px 16px; margin-bottom: 14px;
+  }
+  .nfield { margin-bottom: 11px; }
+  .nfield label { display: block; font-size: 12px; color: var(--sub); margin-bottom: 5px; }
+  .nfield input, .nfield select {
+    width: 100%; font: inherit; font-size: 15px; color: var(--ink);
+    background: var(--bg); border: 1px solid var(--line); border-radius: 9px; padding: 10px 11px;
+  }
+  .nfield-row { display: flex; gap: 10px; }
+  .nfield-row .nfield { flex: 1 1 0; min-width: 0; }
+  .nbtn {
+    display: block; width: 100%; border: 1px solid var(--line); background: var(--sheet); color: var(--ink);
+    font: inherit; font-size: 14px; padding: 12px; border-radius: 11px; cursor: pointer; text-align: center;
+    text-decoration: none;
+  }
+  .nbtn.primary { background: var(--accent); border-color: transparent; color: #fff; font-weight: 600; }
+  .nbtn:disabled { opacity: .45; }
+  .nbtn:active { background: var(--tint); }
+  .nbtn.primary:active { filter: brightness(1.12); }
+  .nchips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .nchip {
+    border: 1px solid var(--line); background: transparent; color: var(--ink);
+    font: inherit; font-size: 12.5px; padding: 7px 12px; border-radius: 999px; cursor: pointer;
+  }
+  .nchip[aria-pressed="true"] { background: var(--accent); border-color: transparent; color: #fff; }
+  .nchip-label { font-size: 12px; color: var(--sub); margin: 0 0 8px; }
+  .nresults-head { display: flex; align-items: baseline; gap: 8px; margin: 4px 2px 10px; }
+  .nresults-head h3 { font-size: 15px; margin: 0; font-family: var(--font); }
+  .nresults-head span { font-size: 12px; color: var(--sub); }
+  .nempty { font-size: 13px; color: var(--sub); padding: 16px 4px; line-height: 1.7; }
+  .ncard {
+    background: var(--sheet); border: 1px solid var(--line); border-radius: 14px;
+    padding: 14px 16px 13px; margin-bottom: 10px;
+  }
+  .ncard .ntop { display: flex; gap: 10px; }
+  .ncard .nrank {
+    flex: none; width: 28px; height: 28px; border-radius: 50%; background: var(--tint);
+    color: var(--sub); font-size: 13px; font-weight: 600;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .ncard .nrank.top { background: var(--accent); color: #fff; }
+  .ncard .ntitle { font-size: 16px; font-weight: 600; line-height: 1.45; margin: 0; font-family: var(--font); }
+  .ncard .ntitle a { color: var(--ink); text-decoration: none; }
+  .ncard .nwriter { font-size: 12.5px; color: var(--sub); margin-top: 2px; }
+  .ncard .nbadges { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 9px; }
+  .ncard .nbadge {
+    font-size: 11px; color: var(--sub); border: 1px solid var(--line);
+    border-radius: 999px; padding: 2px 8px; white-space: nowrap;
+  }
+  .ncard .nbadge.done { color: var(--accent); border-color: var(--accent); }
+  .ncard .nmeta { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12.5px; color: var(--sub); margin-top: 9px; }
+  .ncard .nmeta b { color: var(--ink); font-weight: 600; }
+  .ncard details { margin-top: 8px; }
+  .ncard summary { font-size: 12.5px; color: var(--accent); cursor: pointer; }
+  .ncard .nstory { font-size: 13px; line-height: 1.75; margin: 7px 0 0; }
+  .ncard .nkw { font-size: 11.5px; color: var(--sub); margin: 8px 0 0; line-height: 1.6; }
+  .ncard .nactions { display: flex; gap: 8px; margin-top: 12px; }
+  .ncard .nactions .nbtn { padding: 10px; font-size: 13.5px; }
+  .ncard .naff { margin-top: 9px; font-size: 12.5px; }
+  .ncard .naff a { color: var(--accent); }
+  .nsimilar {
+    background: var(--sheet); border: 1px solid var(--line); border-radius: 14px;
+    padding: 14px 16px; margin: 16px 0; display: none;
+  }
+  .nsimilar.open { display: block; }
+  .nsimilar-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .nsimilar-head h3 { flex: 1 1 auto; min-width: 0; font-size: 14.5px; margin: 0; font-family: var(--font); }
+  .narou-foot { font-size: 11.5px; color: var(--sub); line-height: 1.7; margin-top: 18px; }
+  /* 取得進捗シート（なろう画面の上に重ねる） */
+  #nprog {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 47; margin: 0 auto; max-width: 620px;
+    max-height: 82dvh; overflow-y: auto; overscroll-behavior: contain;
+    background: var(--sheet); color: var(--ink);
+    border-radius: 18px 18px 0 0; box-shadow: 0 -8px 34px rgba(0,0,0,.28);
+    transform: translateY(103%); transition: transform .28s ease;
+    padding: 8px 20px calc(env(safe-area-inset-bottom, 0px) + 20px);
+    display: none;
+  }
+  #nprog.open { display: block; transform: translateY(0); }
+  #nprog .grab { width: 40px; height: 4px; border-radius: 2px; background: var(--line); margin: 4px auto 10px; }
+  #nprog h2 { font-size: 15.5px; margin: 4px 0 2px; font-family: var(--font); line-height: 1.5; }
+  #nprog .nprog-sub { font-size: 12px; color: var(--sub); margin: 0 0 10px; }
+  #nprog .nprog-track { height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; }
+  #nprog .nprog-track i { display: block; height: 100%; width: 0%; background: var(--accent); border-radius: 4px; transition: width .3s ease; }
+  #nprog .nprog-text { font-size: 13px; margin: 10px 0 12px; line-height: 1.7; font-variant-numeric: tabular-nums; }
+  #nprog .nprog-actions { display: flex; flex-direction: column; gap: 8px; }
+  #nprog .nprog-done-note { font-size: 13px; line-height: 1.7; margin: 0 0 10px; }
+  [data-nadmax] { margin-top: 12px; }
+
   /* ---------- トースト / 読込中 ---------- */
   #toast {
     position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom, 0px) + 84px); z-index: 50;
@@ -516,10 +632,141 @@
         <button class="bbtn" id="btnShelfClose">読書に戻る</button>
       </div>
       <button class="shelf-open" id="btnShelfOpen">ファイルを開く（.txt / .md / .epub / .zip）</button>
-      <a class="shelf-open shelf-dl" href="https://uotamy.github.io/narou-dl/" target="_blank" rel="noopener">なろうDLで小説を探してダウンロード</a>
-      <p class="shelf-hint">なろうDLでダウンロードした本は、このビューワーを開いたときや、前面に戻ったときに自動で本棚へ追加されます。表示されないときは「リロード」ボタンで再読み込みできます。</p>
+      <button class="shelf-open shelf-dl" id="btnShelfNarou">なろうから追加（検索・ランキング・おすすめ・URL指定）</button>
+      <p class="shelf-hint">「なろうから追加」では、「小説家になろう」の作品を探して全話を取得し、そのままこの本棚へ登録できます。別ページのダウンローダーで登録した本も、従来どおり前面に戻ったときに自動で本棚へ追加されます。</p>
       <p class="shelf-hint">各カードの「削除」ボタンで履歴から削除できます。削除すると、その本の読書位置・しおり・端末に保存した本文も一緒に消えます（元のファイル自体は消えません）。</p>
       <div id="shelfList"></div>
+    </div>
+  </div>
+
+  <div id="narou" aria-label="なろうから追加">
+    <div class="narou-inner">
+      <div class="narou-head">
+        <button class="bbtn" id="btnNarouBack">← 本棚</button>
+        <div>
+          <h2>なろうから追加</h2>
+          <p>「小説家になろう」の作品を探して全話を取得し、そのまま本棚へ登録します。ファイル保存や別ページへの受け渡しは要りません。</p>
+        </div>
+      </div>
+
+      <nav class="ntabs" aria-label="なろう機能切り替え">
+        <button data-ntab="search" aria-selected="true">検索</button>
+        <button data-ntab="ranking" aria-selected="false">ランキング</button>
+        <button data-ntab="recommend" aria-selected="false">おすすめ</button>
+        <button data-ntab="url" aria-selected="false">URL指定</button>
+      </nav>
+
+      <section class="npanel active" id="npanel-search">
+        <form class="nform" id="nsearchForm">
+          <div class="nfield">
+            <label for="nsWord">キーワード</label>
+            <input type="search" id="nsWord" placeholder="例）探偵　※空欄でも検索できます" autocomplete="off" />
+          </div>
+          <div class="nfield-row">
+            <div class="nfield">
+              <label for="nsGenre">ジャンル</label>
+              <select id="nsGenre"></select>
+            </div>
+            <div class="nfield">
+              <label for="nsType">状態</label>
+              <select id="nsType">
+                <option value="">すべて</option>
+                <option value="er">完結</option>
+                <option value="r">連載中</option>
+                <option value="t">短編</option>
+              </select>
+            </div>
+          </div>
+          <div class="nfield">
+            <label for="nsOrder">並び順</label>
+            <select id="nsOrder">
+              <option value="hyoka">総合評価</option>
+              <option value="favnovelcnt">お気に入り数</option>
+              <option value="impressioncnt">感想数</option>
+              <option value="reviewcnt">レビュー数</option>
+              <option value="new">新着</option>
+            </select>
+          </div>
+          <button type="submit" class="nbtn primary" id="nsearchSubmit">検索する</button>
+        </form>
+        <div id="nsearchResults"></div>
+        <div data-nadmax hidden></div>
+      </section>
+
+      <section class="npanel" id="npanel-ranking">
+        <div class="nform">
+          <p class="nchip-label">期間</p>
+          <div class="nchips" id="nrankPeriods">
+            <button type="button" class="nchip" data-period="dailypoint" aria-pressed="false">日間</button>
+            <button type="button" class="nchip" data-period="weeklypoint" aria-pressed="true">週間</button>
+            <button type="button" class="nchip" data-period="monthlypoint" aria-pressed="false">月間</button>
+            <button type="button" class="nchip" data-period="quaterpoint" aria-pressed="false">四半期</button>
+            <button type="button" class="nchip" data-period="yearlypoint" aria-pressed="false">年間</button>
+            <button type="button" class="nchip" data-period="hyoka" aria-pressed="false">累計</button>
+          </div>
+          <div class="nfield" style="margin-top:12px; margin-bottom:0;">
+            <label for="nrankGenre">ジャンル</label>
+            <select id="nrankGenre"></select>
+          </div>
+        </div>
+        <div id="nrankResults"></div>
+      </section>
+
+      <section class="npanel" id="npanel-recommend">
+        <div class="nform">
+          <p class="nchip-label">プリセット（高評価プール最大100件からランダム10件）</p>
+          <div class="nchips" id="nrecPresets">
+            <button type="button" class="nchip" data-preset="0" aria-pressed="false">完結の高評価・推理</button>
+            <button type="button" class="nchip" data-preset="1" aria-pressed="false">短編の良作</button>
+            <button type="button" class="nchip" data-preset="2" aria-pressed="false">完結の大長編</button>
+            <button type="button" class="nchip" data-preset="3" aria-pressed="false">完結の高評価</button>
+          </div>
+          <button type="button" class="nbtn" id="nrecAgain" style="margin-top:12px;" disabled>もう一度ひく</button>
+        </div>
+        <div id="nrecResults"><div class="nempty">プリセットを選ぶと、おすすめ作品が表示されます。</div></div>
+      </section>
+
+      <section class="npanel" id="npanel-url">
+        <form class="nform" id="nurlForm">
+          <div class="nfield">
+            <label for="nurlInput">作品URL または Nコード</label>
+            <input type="text" id="nurlInput" placeholder="例）n6812my ／ https://ncode.syosetu.com/n6812my/" autocomplete="off" />
+          </div>
+          <button type="submit" class="nbtn primary" id="nurlSubmit">作品を表示</button>
+        </form>
+        <div id="nurlResults"></div>
+      </section>
+
+      <section class="nsimilar" id="nsimilarPanel" aria-live="polite">
+        <div class="nsimilar-head">
+          <h3 id="nsimilarTitle">似た作品</h3>
+          <button type="button" class="bbtn" id="nsimilarClose">閉じる</button>
+        </div>
+        <div id="nsimilarResults"></div>
+      </section>
+
+      <p class="narou-foot">取得は中継サーバー経由で、1話ずつ間隔をあけて行います（応答は中継側で1時間キャッシュされます）。作品の権利は各作者に帰属します。個人で楽しむ範囲でご利用ください。</p>
+    </div>
+  </div>
+
+  <div id="nprog" role="dialog" aria-modal="false" aria-label="取得の進捗">
+    <div class="grab"></div>
+    <h2 id="nprogTitle">取得</h2>
+    <p class="nprog-sub" id="nprogSub"></p>
+    <div class="nprog-track"><i id="nprogFill"></i></div>
+    <p class="nprog-text" id="nprogText">準備中…</p>
+    <div class="nprog-actions" id="nprogMainActions">
+      <button type="button" class="nbtn" id="nprogCancel">中止する</button>
+    </div>
+    <div class="nprog-actions" id="nprogDoneActions" style="display:none;">
+      <p class="nprog-done-note" id="nprogDoneNote"></p>
+      <button type="button" class="nbtn primary" id="nprogRead">今すぐ読む</button>
+      <button type="button" class="nbtn" id="nprogToShelf">本棚へ</button>
+      <a class="nbtn" id="nprogAff" target="_blank" rel="noopener sponsored" style="display:none;">書籍版を探す（Amazon）</a>
+      <div data-nadmax hidden></div>
+    </div>
+    <div class="nprog-actions" id="nprogErrActions" style="display:none;">
+      <button type="button" class="nbtn" id="nprogClose">閉じる</button>
     </div>
   </div>
 
@@ -590,6 +837,8 @@ const GUIDE_EPISODES = [
       "本棚は、端末のフォルダを読み込むものではなく、これまでに開いた本の履歴です。最近開いた順に並び、本を選ぶと読んでいた位置からそのまま開きます。進み具合もパーセントで表示されます。本の最後まで読むと、最終ページの後ろに「読了」のページが現れ、本棚では「読了」と表示されます。",
       "各本の左側にはサムネイルが付きます。EPUBでは表紙画像、テキストやzipでは本文で最初に現れる画像、漫画zipでは先頭ページの画像が使われ、画像のない本はアイコン表示になります。サムネイルは本を取り込むときに小さく作って保存されるので、本棚を開くたびに作り直すことはありません。表示は設定の「本棚のサムネイル」で切り替えられます。",
       "履歴の本は、各カードの「削除」ボタンから履歴を削除できます。削除すると、その本の読書位置・しおり・端末に保存した本文も一緒に消えます（元のファイル自体は消えません）。この「使い方」は組み込みのため、削除ボタンは付きません。",
+      { t: "なろうから追加", cls: "head" },
+      "本棚の「なろうから追加」からは、「小説家になろう」の作品を検索・ランキング・おすすめ・URL指定で探し、全話を取得してそのまま本棚へ登録できます。話数が多い作品は、取得に時間がかかります。",
       { t: "しおり", cls: "head" },
       "メニューの「しおり」から、今開いているページにしおりを挟めます。しおりは本ごとに保存され、一覧からいつでもそのページへ戻れます。",
       { t: "保存のしくみ", cls: "head" },
@@ -1894,7 +2143,7 @@ function setLoading(on){ $("#loading").classList.toggle("show", !!on); }
    内など）では pushState が例外になるので、その場合は表示切替だけで動き、
    存在しないエントリへ向けて history.back() を呼ばないようにする */
 let histView = "shelf";
-const histLive = { reading: false, sheet: false };
+const histLive = { reading: false, sheet: false, narou: false };
 const sheets = ["#tocSheet", "#markSheet", "#setSheet"];
 let lastSheetSel = null;
 function openSheetUI(sel){
@@ -2370,14 +2619,17 @@ function hideShelfUI(){ shelfEl.classList.remove("show"); }
    本棚で端末の戻るボタンを押せば通常どおりアプリが終わる（無限に捕捉しない） */
 function showShelf(){
   closeSheetsUI();
+  hideNarouUI();
   showShelfUI();
-  if (histView === "reading" || histView === "sheet") {
+  if (histView === "reading" || histView === "sheet" || histView === "narou") {
     let backs = 0;
     if (histView === "sheet" && histLive.sheet) backs++;
+    if (histView === "narou" && histLive.narou) backs++;
     if (histLive.reading) backs++;
     histView = "shelf";
     histLive.sheet = false;
     histLive.reading = false;
+    histLive.narou = false;
     try { for (let i = 0; i < backs; i++) history.back(); } catch (e) { /* noop */ }
   } else histView = "shelf";
 }
@@ -2385,6 +2637,7 @@ function showShelf(){
    押したとき本棚へ戻れるようにする */
 function hideShelf(){
   closeSheetsUI();
+  hideNarouUI();
   hideShelfUI();
   if (histView === "shelf") {
     histView = "reading";
@@ -2404,12 +2657,14 @@ function hideShelf(){
 window.addEventListener("popstate", e => {
   const v = (e.state && e.state.v) || "shelf";
   histView = v;
-  histLive.reading = v !== "shelf";
+  histLive.reading = v !== "shelf" && v !== "narou";
   histLive.sheet = v === "sheet";
+  histLive.narou = v === "narou";
   persistNow();
-  if (v === "shelf") { closeSheetsUI(); showShelfUI(); }
-  else if (v === "sheet") { hideShelfUI(); if (lastSheetSel) openSheetUI(lastSheetSel); else closeSheetsUI(); }
-  else { hideShelfUI(); closeSheetsUI(); }
+  if (v === "shelf") { closeSheetsUI(); hideNarouUI(); showShelfUI(); }
+  else if (v === "narou") { hideShelfUI(); closeSheetsUI(); showNarouUI(); }
+  else if (v === "sheet") { hideShelfUI(); hideNarouUI(); if (lastSheetSel) openSheetUI(lastSheetSel); else closeSheetsUI(); }
+  else { hideShelfUI(); hideNarouUI(); closeSheetsUI(); }
 });
 async function openFromShelf(entry){
   if (entry.key === S.work.key && S.episodes.length) { hideShelf(); return; }
@@ -3570,6 +3825,666 @@ document.addEventListener("visibilitychange", () => { if (!document.hidden) chec
 window.addEventListener("focus", () => checkDownloaderInbox());
 window.addEventListener("pageshow", () => checkDownloaderInbox());
 
+/* ---------------- なろうダウンローダー（タテヨミ内蔵モジュール） ----------------
+   独立ページ版ダウンローダーと同等の機能を、タテヨミ本体の中で自己完結させる。
+   - データ取得はすべて中継（Cloudflare Workers）経由。syosetu.com への直接
+     fetch は CORS で塞がれるため、公式API・目次・各話ページのすべてを中継する
+   - 取得した本はファイル保存や inbox を介さず、既存の取り込み処理と同じ
+     本データ（parseTextBook で作る episodes）として本棚へ直接登録する
+   - 進捗表示と中止は独立ページ版と同等の基本形（n/総話数＋バー＋中止ボタン）
+   - 広告の受け皿：NAROU_ADMAX_TAG / NAROU_AFF_TEMPLATE が空の間は、
+     広告枠・書籍リンクとも余白ごと非表示（独立ページ版と同設計）
+   - 公開形は単一URLのみ。なろう画面が初期表示になるのは、URLパラメータ
+     （?view=narou または #narou）がある場合だけ（初期化側で判定） */
+const NAROU_RELAY = "https://narou-relay.gogo-nakachan.workers.dev/?url=";
+const NAROU_API = "https://api.syosetu.com/novelapi/api/";
+const NAROU_ADMAX_TAG = "";
+const NAROU_AFF_TEMPLATE = "";
+const NAROU_GENRES = {
+  "101": "異世界恋愛", "102": "現実恋愛",
+  "201": "ハイファンタジー", "202": "ローファンタジー",
+  "301": "純文学", "302": "ヒューマンドラマ", "303": "歴史", "304": "推理",
+  "305": "ホラー", "306": "アクション", "307": "コメディー",
+  "401": "VRゲーム", "402": "宇宙", "403": "空想科学", "404": "パニック",
+  "9801": "ノンジャンル",
+  "9901": "童話", "9902": "詩", "9903": "エッセイ", "9904": "リプレイ", "9999": "その他"
+};
+const NAROU_PERIOD_FIELD = {
+  dailypoint: ["daily_point", "日間pt"], weeklypoint: ["weekly_point", "週間pt"],
+  monthlypoint: ["monthly_point", "月間pt"], quaterpoint: ["quarter_point", "四半期pt"],
+  yearlypoint: ["yearly_point", "年間pt"]
+};
+const narouEl = $("#narou");
+const nNovelStore = {}; /* ncode(大文字) -> APIの作品オブジェクト */
+const ndl = {
+  downloading: false, cancelled: false, novel: null,
+  total: 0, done: 0, startDone: 0, startedAt: 0,
+  lastBook: null
+};
+function nSleep(ms){ return new Promise(r => setTimeout(r, ms)); }
+function nFmtNum(n){ return Number(n || 0).toLocaleString("ja-JP"); }
+function nRelayURL(target){ return NAROU_RELAY + encodeURIComponent(target); }
+function nFetchText(target, tries){
+  tries = tries || 3;
+  let attempt = 0;
+  const go = () => {
+    attempt++;
+    return fetch(nRelayURL(target)).then(res => {
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      return res.text();
+    }).catch(err => {
+      if (attempt < tries) return nSleep(1200 * attempt).then(go);
+      throw err;
+    });
+  };
+  return go();
+}
+function nApiFetch(params){
+  const qs = new URLSearchParams();
+  qs.set("out", "json");
+  Object.keys(params).forEach(k => {
+    if (params[k] !== "" && params[k] != null) qs.set(k, params[k]);
+  });
+  return nFetchText(NAROU_API + "?" + qs.toString(), 2).then(text => {
+    const data = JSON.parse(text);
+    const allcount = data.length && data[0] && data[0].allcount != null ? data[0].allcount : 0;
+    return { allcount, novels: data.slice(1) };
+  });
+}
+function nGenreName(code){ return NAROU_GENRES[String(code)] || ("ジャンル" + code); }
+function nStatusLabel(n){ return n.novel_type === 2 ? "短編" : (n.end === 0 ? "完結" : "連載中"); }
+function nNovelURL(ncode){ return "https://ncode.syosetu.com/" + String(ncode).toLowerCase() + "/"; }
+function nAffURL(title){
+  if (!NAROU_AFF_TEMPLATE || !String(NAROU_AFF_TEMPLATE).trim()) return "";
+  const encoded = encodeURIComponent("https://www.amazon.co.jp/s?k=" + encodeURIComponent(title || ""));
+  if (NAROU_AFF_TEMPLATE.indexOf("{url}") >= 0) return NAROU_AFF_TEMPLATE.split("{url}").join(encoded);
+  return NAROU_AFF_TEMPLATE;
+}
+function nInitAdSlots(){
+  if (!NAROU_ADMAX_TAG || !String(NAROU_ADMAX_TAG).trim()) return;
+  document.querySelectorAll("[data-nadmax]").forEach(el => {
+    el.innerHTML = NAROU_ADMAX_TAG;
+    el.hidden = false;
+  });
+}
+
+/* ---------- なろう画面の開閉（履歴連携） ---------- */
+function showNarouUI(){ narouEl.classList.add("show"); }
+function hideNarouUI(){ narouEl.classList.remove("show"); }
+function showNarou(){
+  closeSheetsUI();
+  hideShelfUI();
+  showNarouUI();
+  if (histView !== "narou") {
+    histView = "narou";
+    try { history.pushState({ v: "narou" }, ""); histLive.narou = true; }
+    catch (e) { histLive.narou = false; }
+  }
+}
+function backToShelfFromNarou(){
+  if (ndl.downloading) {
+    toast("取得中です。中止ボタンで止めてから戻ってください", 3000);
+    return;
+  }
+  closeNProgress();
+  hideNarouUI();
+  showShelfUI();
+  buildShelf();
+  if (histView === "narou") {
+    histView = "shelf";
+    if (histLive.narou) {
+      histLive.narou = false;
+      try { history.back(); } catch (e) { /* noop */ }
+    }
+  }
+}
+$("#btnShelfNarou").addEventListener("click", () => showNarou());
+$("#btnNarouBack").addEventListener("click", () => backToShelfFromNarou());
+
+/* ---------- 作品カード ---------- */
+function nCardHTML(n, rank, periodOrder){
+  nNovelStore[String(n.ncode).toUpperCase()] = n;
+  const status = nStatusLabel(n);
+  const eps = n.novel_type === 2 ? "短編" : ("全" + nFmtNum(n.general_all_no) + "話");
+  let pointHTML = "";
+  if (periodOrder && NAROU_PERIOD_FIELD[periodOrder]) {
+    const f = NAROU_PERIOD_FIELD[periodOrder];
+    pointHTML = "<span>" + f[1] + " <b>" + nFmtNum(n[f[0]]) + "</b></span>";
+  }
+  const kw = (n.keyword || "").trim();
+  const aff = nAffURL(n.title);
+  return '<article class="ncard">' +
+    '<div class="ntop">' +
+      (rank ? '<div class="nrank' + (rank <= 3 ? " top" : "") + '">' + rank + "</div>" : "") +
+      '<div style="flex:1;min-width:0;">' +
+        '<h3 class="ntitle"><a href="' + nNovelURL(n.ncode) + '" target="_blank" rel="noopener">' + esc(n.title) + "</a></h3>" +
+        '<div class="nwriter">' + esc(n.writer) + "</div>" +
+      "</div>" +
+    "</div>" +
+    '<div class="nbadges">' +
+      '<span class="nbadge">' + esc(nGenreName(n.genre)) + "</span>" +
+      '<span class="nbadge' + (status === "完結" ? " done" : "") + '">' + status + "</span>" +
+      '<span class="nbadge">' + esc(String(n.ncode).toUpperCase()) + "</span>" +
+    "</div>" +
+    '<div class="nmeta">' +
+      "<span>" + eps + "</span>" +
+      "<span><b>" + nFmtNum(n.length) + "</b>字</span>" +
+      "<span>総合pt <b>" + nFmtNum(n.global_point) + "</b></span>" +
+      "<span>お気に入り <b>" + nFmtNum(n.fav_novel_cnt) + "</b></span>" +
+      pointHTML +
+    "</div>" +
+    (n.story ? "<details><summary>あらすじ</summary><p class=\"nstory\">" + esc(n.story) + "</p></details>" : "") +
+    (kw ? '<p class="nkw">キーワード：' + esc(kw) + "</p>" : "") +
+    '<div class="nactions">' +
+      '<button type="button" class="nbtn primary" data-ndl="' + esc(String(n.ncode).toUpperCase()) + '">全話取得して本棚へ</button>' +
+      '<button type="button" class="nbtn" data-nsimilar="' + esc(String(n.ncode).toUpperCase()) + '">似た作品</button>' +
+    "</div>" +
+    (aff ? '<div class="naff"><a href="' + esc(aff) + '" target="_blank" rel="noopener sponsored">書籍版を探す（Amazon）</a></div>' : "") +
+  "</article>";
+}
+function nRenderList(container, novels, opts){
+  opts = opts || {};
+  if (!novels.length) {
+    container.innerHTML = '<div class="nempty">' + esc(opts.emptyText || "作品が見つかりませんでした。") + "</div>";
+    return;
+  }
+  let html = "";
+  if (opts.heading) {
+    html += '<div class="nresults-head"><h3>' + esc(opts.heading) + "</h3>" +
+      (opts.countText ? "<span>" + esc(opts.countText) + "</span>" : "") + "</div>";
+  }
+  novels.forEach((n, i) => {
+    html += nCardHTML(n, opts.ranked ? (opts.rankOffset || 0) + i + 1 : null, opts.periodOrder);
+  });
+  container.innerHTML = html;
+}
+
+/* ---------- タブ ---------- */
+let nRankingLoaded = false;
+document.querySelectorAll("[data-ntab]").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll("[data-ntab]").forEach(b => b.setAttribute("aria-selected", "false"));
+    btn.setAttribute("aria-selected", "true");
+    document.querySelectorAll(".npanel").forEach(p => p.classList.remove("active"));
+    $("#npanel-" + btn.dataset.ntab).classList.add("active");
+    if (btn.dataset.ntab === "ranking" && !nRankingLoaded) nLoadRanking(true);
+  });
+});
+function nFillGenreSelect(sel){
+  let html = '<option value="">すべてのジャンル</option>';
+  Object.keys(NAROU_GENRES).forEach(code => {
+    html += '<option value="' + code + '">' + NAROU_GENRES[code] + "</option>";
+  });
+  sel.innerHTML = html;
+}
+nFillGenreSelect($("#nsGenre"));
+nFillGenreSelect($("#nrankGenre"));
+
+/* ---------- 検索 ---------- */
+const nSearchState = { params: null, loaded: 0, allcount: 0 };
+$("#nsearchForm").addEventListener("submit", ev => {
+  ev.preventDefault();
+  nSearchState.params = {
+    word: $("#nsWord").value.trim(),
+    genre: $("#nsGenre").value,
+    type: $("#nsType").value,
+    order: $("#nsOrder").value,
+    lim: 30, st: 1
+  };
+  nSearchState.loaded = 0;
+  nRunSearch(true);
+});
+function nRunSearch(reset){
+  const btn = $("#nsearchSubmit"), box = $("#nsearchResults");
+  btn.disabled = true; btn.textContent = "検索中…";
+  if (reset) box.innerHTML = '<div class="nempty">検索しています…</div>';
+  nApiFetch(nSearchState.params).then(res => {
+    nSearchState.allcount = res.allcount;
+    nSearchState.loaded += res.novels.length;
+    if (reset) {
+      nRenderList(box, res.novels, {
+        heading: "検索結果", countText: "全" + nFmtNum(res.allcount) + "件",
+        emptyText: "条件に合う作品がありませんでした。"
+      });
+    } else {
+      const more = box.querySelector(".nmore-wrap");
+      if (more) more.remove();
+      const tmp = document.createElement("div");
+      tmp.innerHTML = res.novels.map(n => nCardHTML(n)).join("");
+      while (tmp.firstChild) box.appendChild(tmp.firstChild);
+    }
+    if (nSearchState.loaded < nSearchState.allcount && res.novels.length) {
+      const wrap = document.createElement("div");
+      wrap.className = "nmore-wrap";
+      wrap.innerHTML = '<button type="button" class="nbtn">もっと見る（残り ' + nFmtNum(nSearchState.allcount - nSearchState.loaded) + '件）</button>';
+      wrap.querySelector("button").addEventListener("click", () => {
+        nSearchState.params.st = nSearchState.loaded + 1;
+        nRunSearch(false);
+      });
+      box.appendChild(wrap);
+    }
+  }).catch(() => {
+    if (reset) box.innerHTML = '<div class="nempty">検索に失敗しました。時間をおいて再試行してください。</div>';
+    toast("検索に失敗しました");
+  }).finally(() => {
+    btn.disabled = false; btn.textContent = "検索する";
+  });
+}
+
+/* ---------- ランキング ---------- */
+const nRankState = { period: "weeklypoint", loaded: 0, allcount: 0 };
+$("#nrankPeriods").addEventListener("click", ev => {
+  const btn = ev.target.closest("[data-period]");
+  if (!btn) return;
+  document.querySelectorAll("#nrankPeriods .nchip").forEach(c => c.setAttribute("aria-pressed", "false"));
+  btn.setAttribute("aria-pressed", "true");
+  nRankState.period = btn.dataset.period;
+  nLoadRanking(true);
+});
+$("#nrankGenre").addEventListener("change", () => nLoadRanking(true));
+function nLoadRanking(reset){
+  const box = $("#nrankResults");
+  if (reset) { nRankState.loaded = 0; box.innerHTML = '<div class="nempty">読み込んでいます…</div>'; }
+  nRankingLoaded = true;
+  const params = { order: nRankState.period, genre: $("#nrankGenre").value, lim: 30, st: nRankState.loaded + 1 };
+  nApiFetch(params).then(res => {
+    nRankState.allcount = res.allcount;
+    const offset = nRankState.loaded;
+    nRankState.loaded += res.novels.length;
+    const periodLabel = { dailypoint: "日間", weeklypoint: "週間", monthlypoint: "月間", quaterpoint: "四半期", yearlypoint: "年間", hyoka: "累計" }[nRankState.period];
+    if (reset) {
+      nRenderList(box, res.novels, {
+        heading: periodLabel + "ランキング", countText: "全" + nFmtNum(res.allcount) + "件",
+        ranked: true, periodOrder: nRankState.period, emptyText: "ランキングが取得できませんでした。"
+      });
+    } else {
+      const more = box.querySelector(".nmore-wrap");
+      if (more) more.remove();
+      const tmp = document.createElement("div");
+      tmp.innerHTML = res.novels.map((n, i) => nCardHTML(n, offset + i + 1, nRankState.period)).join("");
+      while (tmp.firstChild) box.appendChild(tmp.firstChild);
+    }
+    if (nRankState.loaded < nRankState.allcount && res.novels.length) {
+      const wrap = document.createElement("div");
+      wrap.className = "nmore-wrap";
+      wrap.innerHTML = '<button type="button" class="nbtn">もっと見る</button>';
+      wrap.querySelector("button").addEventListener("click", () => nLoadRanking(false));
+      box.appendChild(wrap);
+    }
+  }).catch(() => {
+    box.innerHTML = '<div class="nempty">ランキングの取得に失敗しました。時間をおいてタブを開き直してください。</div>';
+  });
+}
+
+/* ---------- おすすめ ---------- */
+const NAROU_PRESETS = [
+  { label: "完結の高評価・推理", params: { genre: 304, type: "er", order: "hyoka" } },
+  { label: "短編の良作", params: { type: "ter", maxlen: 60000, order: "hyoka" } },
+  { label: "完結の大長編", params: { type: "er", minlen: 500000, order: "hyoka" } },
+  { label: "完結の高評価", params: { type: "er", order: "hyoka" } }
+];
+const nRecState = { idx: -1, pool: [] };
+function nShufflePick(arr, num){
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const t = a[i]; a[i] = a[j]; a[j] = t;
+  }
+  return a.slice(0, num);
+}
+function nDrawRecommend(){
+  nRenderList($("#nrecResults"), nShufflePick(nRecState.pool, 10), {
+    heading: NAROU_PRESETS[nRecState.idx].label,
+    countText: "プール" + nFmtNum(nRecState.pool.length) + "件からランダム10件",
+    emptyText: "候補がありませんでした。"
+  });
+}
+$("#nrecPresets").addEventListener("click", ev => {
+  const btn = ev.target.closest("[data-preset]");
+  if (!btn) return;
+  document.querySelectorAll("#nrecPresets .nchip").forEach(c => c.setAttribute("aria-pressed", "false"));
+  btn.setAttribute("aria-pressed", "true");
+  nRecState.idx = Number(btn.dataset.preset);
+  nRecState.pool = [];
+  $("#nrecAgain").disabled = true;
+  $("#nrecResults").innerHTML = '<div class="nempty">候補を集めています…</div>';
+  const params = Object.assign({}, NAROU_PRESETS[nRecState.idx].params, { lim: 100 });
+  nApiFetch(params).then(res => {
+    nRecState.pool = res.novels;
+    if (!nRecState.pool.length) {
+      $("#nrecResults").innerHTML = '<div class="nempty">候補が見つかりませんでした。</div>';
+      return;
+    }
+    $("#nrecAgain").disabled = false;
+    nDrawRecommend();
+  }).catch(() => {
+    $("#nrecResults").innerHTML = '<div class="nempty">取得に失敗しました。時間をおいて再試行してください。</div>';
+  });
+});
+$("#nrecAgain").addEventListener("click", () => { if (nRecState.pool.length) nDrawRecommend(); });
+
+/* ---------- URL指定 ---------- */
+$("#nurlForm").addEventListener("submit", ev => {
+  ev.preventDefault();
+  const raw = $("#nurlInput").value.trim();
+  const m = raw.match(/n\d{3,}[a-z]+/i);
+  if (!m) { toast("Nコードが見つかりませんでした"); return; }
+  const ncode = m[0].toUpperCase();
+  const btn = $("#nurlSubmit"), box = $("#nurlResults");
+  btn.disabled = true; btn.textContent = "取得中…";
+  box.innerHTML = '<div class="nempty">作品情報を取得しています…</div>';
+  nApiFetch({ ncode, lim: 1 }).then(res => {
+    if (!res.novels.length) {
+      box.innerHTML = '<div class="nempty">作品が見つかりませんでした（' + esc(ncode) + "）。</div>";
+      return;
+    }
+    nRenderList(box, res.novels, { heading: "作品情報" });
+  }).catch(() => {
+    box.innerHTML = '<div class="nempty">取得に失敗しました。時間をおいて再試行してください。</div>';
+  }).finally(() => {
+    btn.disabled = false; btn.textContent = "作品を表示";
+  });
+});
+
+/* ---------- 似た作品 ---------- */
+function nSimilarKeywords(n){
+  const words = (n.keyword || "").split(/\s+/).filter(Boolean)
+    .filter(w => !/ai/i.test(w));
+  const priority = words.filter(w => /探偵|ミステリ/.test(w));
+  const rest = words.filter(w => !/探偵|ミステリ/.test(w));
+  return priority.concat(rest).slice(0, 2);
+}
+function nLoadSimilar(n){
+  const panel = $("#nsimilarPanel"), box = $("#nsimilarResults");
+  panel.classList.add("open");
+  $("#nsimilarTitle").textContent = "『" + n.title + "』に似た作品";
+  box.innerHTML = '<div class="nempty">探しています…</div>';
+  panel.scrollIntoView({ behavior: "smooth", block: "start" });
+  nApiFetch({
+    word: nSimilarKeywords(n).join(" "), genre: n.genre, order: "hyoka",
+    lim: 20, notncode: n.ncode
+  }).then(res => {
+    nRenderList(box, res.novels, { emptyText: "似た作品が見つかりませんでした。" });
+  }).catch(() => {
+    box.innerHTML = '<div class="nempty">取得に失敗しました。</div>';
+  });
+}
+$("#nsimilarClose").addEventListener("click", () => $("#nsimilarPanel").classList.remove("open"));
+
+/* カード内ボタンの委譲 */
+narouEl.addEventListener("click", ev => {
+  const dl = ev.target.closest("[data-ndl]");
+  if (dl) {
+    const n = nNovelStore[String(dl.dataset.ndl).toUpperCase()];
+    if (n) nStartDownload(n);
+    return;
+  }
+  const sim = ev.target.closest("[data-nsimilar]");
+  if (sim) {
+    const n = nNovelStore[String(sim.dataset.nsimilar).toUpperCase()];
+    if (n) nLoadSimilar(n);
+  }
+});
+
+/* ---------- 本文取得と青空文庫形式変換（独立ページ版と同一ロジック） ---------- */
+function nParseToc(html, initialChapter){
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  const episodes = [];
+  let chapter = initialChapter || "";
+  const root = doc.querySelector(".p-eplist");
+  if (root) {
+    root.querySelectorAll(".p-eplist__chapter-title, a.p-eplist__subtitle").forEach(el => {
+      if (el.classList.contains("p-eplist__chapter-title")) {
+        chapter = el.textContent.trim();
+      } else {
+        const href = el.getAttribute("href") || "";
+        const m = href.match(/\/(\d+)\/?(?:\?.*)?$/);
+        episodes.push({
+          no: m ? parseInt(m[1], 10) : episodes.length + 1,
+          title: el.textContent.trim(),
+          chapter
+        });
+      }
+    });
+  }
+  return { episodes, lastChapter: chapter, hasText: !!doc.querySelector(".js-novel-text") };
+}
+function nNodeToAozora(node){
+  let out = "";
+  node.childNodes.forEach(ch => {
+    if (ch.nodeType === 3) { out += ch.nodeValue; return; }
+    if (ch.nodeType !== 1) return;
+    const tag = ch.tagName.toLowerCase();
+    if (tag === "ruby") {
+      let base = "", rt = "";
+      ch.childNodes.forEach(g => {
+        if (g.nodeType === 1 && g.tagName.toLowerCase() === "rt") rt += g.textContent;
+        else if (g.nodeType === 1 && g.tagName.toLowerCase() === "rp") { /* 括弧は落とす */ }
+        else if (g.nodeType === 3) base += g.nodeValue;
+        else if (g.nodeType === 1) base += nNodeToAozora(g);
+      });
+      out += "｜" + base + "《" + rt + "》";
+    } else if (tag === "rt" || tag === "rp" || tag === "br") {
+      /* そのまま落とす */
+    } else if (tag === "img") {
+      const alt = ch.getAttribute("alt");
+      if (alt) out += alt;
+    } else {
+      out += nNodeToAozora(ch);
+    }
+  });
+  return out;
+}
+function nTrimBlankLines(lines){
+  const a = lines.slice();
+  while (a.length && a[0] === "") a.shift();
+  while (a.length && a[a.length - 1] === "") a.pop();
+  return a;
+}
+/* 1話分のHTMLから、前書き・本文・後書きを含む青空文庫形式テキストを作る。
+   先頭行は見出し（章題＋話題）。この形式は ZIP 取り込み時とまったく同じで、
+   parseTextBook に通すことで既存の取り込みと同じ本データになる */
+function nEpisodeText(html, heading){
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  const sections = doc.querySelectorAll(".p-novel__text");
+  if (!sections.length) return null;
+  let pre = [], body = [], post = [];
+  sections.forEach(sec => {
+    const lines = [];
+    sec.querySelectorAll("p").forEach(p => lines.push(nNodeToAozora(p)));
+    if (sec.classList.contains("p-novel__text--preface")) pre = lines;
+    else if (sec.classList.contains("p-novel__text--afterword")) post = lines;
+    else body = body.concat(lines);
+  });
+  let parts = [heading, ""];
+  pre = nTrimBlankLines(pre); body = nTrimBlankLines(body); post = nTrimBlankLines(post);
+  if (pre.length) { parts = parts.concat(pre); parts.push(""); }
+  parts = parts.concat(body);
+  if (post.length) { parts.push(""); parts = parts.concat(post); }
+  return parts.join("\n") + "\n";
+}
+/* 目次を全ページたどって話一覧を集める（ページング対応） */
+async function nCollectEpisodes(novel, base){
+  const firstHTML = await nFetchText(base, 3);
+  const first = nParseToc(firstHTML, "");
+  if (!first.episodes.length) {
+    if (first.hasText) return { episodes: [{ no: 1, title: novel.title, chapter: "", html: firstHTML }] };
+    throw new Error("目次が取得できませんでした。");
+  }
+  const episodes = first.episodes.slice();
+  const seen = {};
+  episodes.forEach(e => { seen[e.no] = true; });
+  const expected = novel.general_all_no || episodes.length;
+  let lastChapter = first.lastChapter;
+  let page = 2;
+  while (!ndl.cancelled && episodes.length < expected && page <= 100) {
+    const html = await nFetchText(base + "?p=" + page, 3);
+    const parsed = nParseToc(html, lastChapter);
+    lastChapter = parsed.lastChapter;
+    let added = 0;
+    parsed.episodes.forEach(e => {
+      if (!seen[e.no]) { seen[e.no] = true; episodes.push(e); added++; }
+    });
+    page++;
+    if (!added) break;
+    await nSleep(500);
+  }
+  episodes.sort((a, b) => a.no - b.no);
+  return { episodes };
+}
+
+/* ---------- 取得進捗UI ---------- */
+const nprogEl = $("#nprog");
+function openNProgress(novel){
+  $("#nprogTitle").textContent = novel.title;
+  $("#nprogSub").textContent = (novel.writer || "") + "／" + nStatusLabel(novel) + "／全" + nFmtNum(novel.general_all_no) + "話";
+  $("#nprogFill").style.width = "0%";
+  $("#nprogText").textContent = "目次を取得しています…";
+  $("#nprogMainActions").style.display = "";
+  $("#nprogDoneActions").style.display = "none";
+  $("#nprogErrActions").style.display = "none";
+  const cancel = $("#nprogCancel");
+  cancel.textContent = "中止する";
+  cancel.disabled = false;
+  nprogEl.classList.add("open");
+}
+function closeNProgress(){ nprogEl.classList.remove("open"); }
+function nFmtRemain(ms){
+  if (!isFinite(ms) || ms <= 0) return "";
+  const sec = Math.round(ms / 1000);
+  if (sec >= 90) return "残り約" + Math.ceil(sec / 60) + "分";
+  if (sec >= 20) return "残り約" + Math.ceil(sec / 10) * 10 + "秒";
+  return "残りわずか";
+}
+function nProgressUpdate(curTitle){
+  if (!ndl.total) return;
+  $("#nprogFill").style.width = Math.round((ndl.done / ndl.total) * 100) + "%";
+  let remain = "";
+  const got = ndl.done - ndl.startDone;
+  if (got > 0) {
+    const per = (Date.now() - ndl.startedAt) / got;
+    remain = nFmtRemain(per * (ndl.total - ndl.done));
+  }
+  $("#nprogText").textContent =
+    ndl.done + " / " + ndl.total + "話を取得済み" +
+    (remain ? "（" + remain + "）" : "") +
+    (curTitle ? "\n取得中：" + curTitle : "");
+}
+function nProgressDone(novel, key, stored){
+  $("#nprogFill").style.width = "100%";
+  $("#nprogText").textContent = ndl.total + " / " + ndl.total + "話の取得が完了しました。";
+  $("#nprogMainActions").style.display = "none";
+  $("#nprogErrActions").style.display = "none";
+  $("#nprogDoneActions").style.display = "";
+  $("#nprogDoneNote").textContent = stored
+    ? "『" + novel.title + "』を本棚に登録しました。"
+    : "『" + novel.title + "』を開きましたが、この端末に保存できませんでした（容量不足など）。次回は開けません。";
+  const aff = nAffURL(novel.title);
+  const affEl = $("#nprogAff");
+  if (aff) { affEl.href = aff; affEl.style.display = ""; }
+  else { affEl.style.display = "none"; affEl.removeAttribute("href"); }
+  nInitAdSlots();
+}
+function nProgressCancelled(){
+  $("#nprogText").textContent = "中止しました。";
+  $("#nprogMainActions").style.display = "none";
+  $("#nprogDoneActions").style.display = "none";
+  $("#nprogErrActions").style.display = "";
+}
+function nProgressError(msg){
+  $("#nprogText").textContent = msg;
+  $("#nprogMainActions").style.display = "none";
+  $("#nprogDoneActions").style.display = "none";
+  $("#nprogErrActions").style.display = "";
+}
+$("#nprogCancel").addEventListener("click", () => {
+  if (ndl.downloading) {
+    ndl.cancelled = true;
+    $("#nprogText").textContent = "中止しています…";
+    $("#nprogCancel").disabled = true;
+  } else closeNProgress();
+});
+$("#nprogClose").addEventListener("click", () => closeNProgress());
+$("#nprogToShelf").addEventListener("click", () => { closeNProgress(); backToShelfFromNarou(); });
+$("#nprogRead").addEventListener("click", async () => {
+  const lb = ndl.lastBook;
+  closeNProgress();
+  if (!lb) { backToShelfFromNarou(); return; }
+  hideNarouUI();
+  /* 履歴を [本棚, 読書] の形に整えてから開く（戻るボタンで本棚へ帰れるように） */
+  histView = "shelf";
+  histLive.narou = false;
+  try { history.replaceState({ v: "shelf" }, ""); } catch (e) { /* noop */ }
+  showShelfUI();
+  if (lb.stored) {
+    const entry = S.library.find(x => x.key === lb.key);
+    if (entry) { await openFromShelf(entry); return; }
+  }
+  const resumed = setBook({ title: lb.title, note: lb.note }, lb.episodes, lb.key,
+    { kind: "file", fileName: "", stored: lb.stored });
+  hideShelf();
+  toast(resumed ? "前回の続きから開きました" : "『" + lb.title + "』を開きました");
+});
+
+/* ---------- 全話取得 → 本棚へ直接登録 ---------- */
+async function nStartDownload(novel){
+  if (ndl.downloading) { toast("別の作品を取得中です"); return; }
+  const ncodeU = String(novel.ncode).toUpperCase();
+  const base = "https://ncode.syosetu.com/" + ncodeU.toLowerCase() + "/";
+  ndl.downloading = true;
+  ndl.cancelled = false;
+  ndl.novel = novel;
+  ndl.total = 0; ndl.done = 0; ndl.startDone = 0;
+  ndl.startedAt = Date.now();
+  openNProgress(novel);
+  try {
+    const collected = await nCollectEpisodes(novel, base);
+    if (ndl.cancelled) { nProgressCancelled(); return; }
+    const toc = collected.episodes;
+    ndl.total = toc.length;
+    ndl.done = 0;
+    ndl.startedAt = Date.now();
+    nProgressUpdate();
+    const texts = new Map();
+    for (let i = 0; i < toc.length; i++) {
+      if (ndl.cancelled) break;
+      const ep = toc[i];
+      const html = ep.html != null ? ep.html : await nFetchText(base + ep.no + "/", 3);
+      if (ndl.cancelled) break;
+      const heading = ep.chapter ? ep.chapter + "　" + ep.title : ep.title;
+      const content = nEpisodeText(html, heading);
+      if (content == null) throw new Error("第" + ep.no + "話の本文が見つかりませんでした。");
+      texts.set(ep.no, content);
+      ndl.done = texts.size;
+      nProgressUpdate(ep.title);
+      if (i < toc.length - 1) await nSleep(700); /* 各話の間隔は礼儀正しく空ける */
+    }
+    if (ndl.cancelled) { nProgressCancelled(); return; }
+    /* 全話そろった：ZIP取り込みと同じ経路（parseTextBook）で本データ化し、
+       ファイルや inbox を介さず本棚へ直接登録する */
+    $("#nprogText").textContent = "本棚へ登録しています…";
+    const episodes = toc.map(ep => {
+      const heading = ep.chapter ? ep.chapter + "　" + ep.title : ep.title;
+      return mergeParsedEpisodes(parseTextBook(texts.get(ep.no), heading + ".txt"), heading);
+    }).filter(ep => ep.paragraphs.length);
+    if (!episodes.length) throw new Error("本文を取り込めませんでした。");
+    const key = "narou:" + ncodeU;
+    const stored = await saveBookContent(key, episodes);
+    const note = (novel.writer ? novel.writer + "／" : "") + "小説家になろう";
+    registerBook(key, novel.title, note, "file", "", episodes, stored);
+    ndl.lastBook = { key, title: novel.title, note, episodes, stored };
+    buildShelf();
+    nProgressDone(novel, key, stored);
+    toast("『" + novel.title + "』を本棚に追加しました", 3000);
+  } catch (err) {
+    if (ndl.cancelled) nProgressCancelled();
+    else nProgressError(err && err.message ? err.message : "取得に失敗しました。時間をおいて再試行してください。");
+  } finally {
+    ndl.downloading = false;
+  }
+}
+nInitAdSlots();
+
 /* ---------------- 初期化 ---------------- */
 const hadSave = persistLoad();
 $("#customBg").value = S.customBg;
@@ -3590,9 +4505,26 @@ ensureGuideEntry();
   if (lastEntry && lastEntry.kind !== "guide") pendingRestore = lastEntry;
   setBook(GUIDE_WORK, makeEpisodesFromGuide(), "guide");
   /* 起動直後の履歴エントリを本棚として確定させる（読書エントリは本を開くたびに積む） */
-  histView = "shelf";
-  try { history.replaceState({ v: "shelf" }, ""); } catch (e) { /* noop */ }
-  showShelf();
+  /* 入口パラメータ（?view=narou または #narou）がある場合はなろう画面を
+     初期表示にし、無い場合は従来どおり本棚を初期表示にする。
+     パスによる分岐はなく、機能・画面は単一のまま */
+  const startNarou = (() => {
+    try {
+      if (new URLSearchParams(location.search).get("view") === "narou") return true;
+      return /(^#|\/)narou\/?$/.test(location.hash || "");
+    } catch (e) { return false; }
+  })();
+  if (startNarou) {
+    histView = "narou";
+    histLive.narou = false;
+    try { history.replaceState({ v: "narou" }, ""); } catch (e) { /* noop */ }
+    hideShelfUI();
+    showNarouUI();
+  } else {
+    histView = "shelf";
+    try { history.replaceState({ v: "shelf" }, ""); } catch (e) { /* noop */ }
+    showShelf();
+  }
   /* なろうダウンローダーからの受け渡しは、起動時に確認し、その後も
      アプリが前面に戻るたびに再確認する（上のリスナー側） */
   checkDownloaderInbox();
@@ -3614,7 +4546,7 @@ if (S.ipaDl) loadIpaFont(false);
 "use strict";
 /* ---------------- PWA（Service Worker登録） ----------------
    アプリ本体をキャッシュしてオフラインでも開けるようにし、Space側の更新が
-   次回起動時に届くようにする（更新方針は data:application/javascript;base64,InVzZSBzdHJpY3QiOwovKiA9PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT0KICAg57im5pu444GN5bCP6Kqs44OT44Ol44O844Ov44O8IFNlcnZpY2UgV29ya2VyCiAgIC0g44Ki44OX44Oq5pys5L2T77yI44OJ44Kt44Ol44Oh44Oz44OI77yL44Ki44K744OD44OI77yJ44KS44Kt44Oj44OD44K344Ol44GX44CB44Kq44OV44Op44Kk44Oz44Gn44KC6ZaL44GR44KL44KI44GG44Gr44GZ44KLCiAgIC0g5pu05paw5pa56Yed77yaU3BhY2XlgbTjgpLmm7TmlrDjgZfjgZ/jgonjgIHmrKHlm57otbfli5XmmYLjgavoh6rli5XjgafmlrDjgZfjgYTniYjjgavjgarjgovjgZPjgagKICAgICAgICog44OJ44Kt44Ol44Oh44Oz44OI77yI55S76Z2i6YG356e777yJ44Gv44ON44OD44OI44Ov44O844Kv5YSq5YWI44CB5aSx5pWX44GX44Gf44KJ44Kt44Oj44OD44K344OlCiAgICAgICAqIOmdmeeahOOCouOCu+ODg+ODiOOBryBzdGFsZS13aGlsZS1yZXZhbGlkYXRl77yI6KGo56S644Gv44Kt44Oj44OD44K344Ol44CB6KOP44Gn5pu05paw77yJCiAgICAgICAqIHNraXBXYWl0aW5nICsgY2xpZW50cy5jbGFpbSDjgafmlrDjgZfjgYTniYjjgpLpgJ/jgoTjgYvjgavmnInlirnljJbjgZnjgosKICAgLSDjgZPjga7jg5XjgqHjgqTjg6vjga8gYXNzZXRzLyDphY3kuIvjgavnva7jgYvjgozjgovjgZ/jgoHjgIHliLblvqHnr4Tlm7LvvIhzY29wZe+8ieOBryBhc3NldHMvIOOBq+OBquOCi+OAggogICAgIOODm+OCueODhuOCo+ODs+OCsOWBtOOBrumDveWQiOOBp+ODmuODvOOCuOacrOS9k+OCkuWItuW+oeOBp+OBjeOBquOBhOeSsOWig+OBp+OBr+OAgeOBk+OBrlNX44Gv5a6f6LOq5b6F5qmf54q25oWL44Go44Gq44KK44CBCiAgICAg44Oa44O844K444Gv6YCa5bi444GuV2Vi44Oa44O844K444Go44GX44Gm44Gd44Gu44G+44G+5YuV44GP77yI44OV44Kp44O844Or44OQ44OD44Kv77yJ44CCCiAgID09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PSAqLwoKdmFyIFZFUlNJT04gPSAidjIiOwp2YXIgU0hFTExfQ0FDSEUgPSAidGF0ZWdha2ktc2hlbGwtIiArIFZFUlNJT047CnZhciBSVU5USU1FX0NBQ0hFID0gInRhdGVnYWtpLXJ1bnRpbWUtIiArIFZFUlNJT047CgovKiBTV+iHqui6q+OBrlVSTO+8iC4uLi9hc3NldHMvc3cuanPvvInjgYvjgonopovjgZ/jgqLjg5fjg6rjga7jg6vjg7zjg4jjgajjgIHjgqLjg5fjg6rmnKzkvZPjga5VUkznvqQgKi8KdmFyIEFQUF9ST09UID0gbmV3IFVSTCgiLi4vIiwgc2VsZi5yZWdpc3RyYXRpb24uc2NvcGUpLmhyZWY7Ci8qIElQQeaYjuacneODleOCqeODs+ODiO+8iGlwYWV4bS53b2ZmMuODu+e0hDMuN01C77yJ44Gv6LW35YuV55So44Kt44Oj44OD44K344Ol44Gr5YWl44KM44Gq44GE44CCCiAgIOioreWumuOBi+OCieS7u+aEj+OBp+ODgOOCpuODs+ODreODvOODieOBleOCjOOBn+OBqOOBjeOBq+Wun+ihjOaZguOCreODo+ODg+OCt+ODpe+8iFNXUu+8ieOBuOWFpeOCiuOAgQogICDku6Xlvozjga/jgZ3jgZPjgYvjgonov5TjgosgKi8KdmFyIFNIRUxMX1VSTFMgPSBbCiAgQVBQX1JPT1QsCiAgQVBQX1JPT1QgKyAiaW5kZXguaHRtbCIsCiAgc2VsZi5yZWdpc3RyYXRpb24uc2NvcGUgKyAibWFuaWZlc3Qud2VibWFuaWZlc3QiLAogIHNlbGYucmVnaXN0cmF0aW9uLnNjb3BlICsgImljb24tMTkyLnBuZyIsCiAgc2VsZi5yZWdpc3RyYXRpb24uc2NvcGUgKyAiaWNvbi01MTIucG5nIiwKICBzZWxmLnJlZ2lzdHJhdGlvbi5zY29wZSArICJpY29uLW1hc2thYmxlLTUxMi5wbmciCl07CgpzZWxmLmFkZEV2ZW50TGlzdGVuZXIoImluc3RhbGwiLCBmdW5jdGlvbiAoZXZlbnQpIHsKICBldmVudC53YWl0VW50aWwoCiAgICBjYWNoZXMub3BlbihTSEVMTF9DQUNIRSkudGhlbihmdW5jdGlvbiAoY2FjaGUpIHsKICAgICAgLyogMeOBpOWkseaVl+OBl+OBpuOCguOCpOODs+OCueODiOODvOODq+WFqOS9k+OCkuiQveOBqOOBleOBquOBhOOCiOOBhuOAgeWAi+WIpeOBq+i/veWKoOOBmeOCiyAqLwogICAgICByZXR1cm4gUHJvbWlzZS5hbGwoU0hFTExfVVJMUy5tYXAoZnVuY3Rpb24gKHVybCkgewogICAgICAgIHJldHVybiBjYWNoZS5hZGQodXJsKS5jYXRjaChmdW5jdGlvbiAoKSB7IC8qIOWPluOCjOOBquOBhOOCguOBruOBr+Wun+ihjOaZguOCreODo+ODg+OCt+ODpeOBq+S7u+OBm+OCiyAqLyB9KTsKICAgICAgfSkpOwogICAgfSkudGhlbihmdW5jdGlvbiAoKSB7CiAgICAgIC8qIOaWsOOBl+OBhOeJiOOBjOeUqOaEj+OBp+OBjeOBn+OCieOAgeW+heOBn+OBmuOBq+acieWKueWMluOBuOmAsuOCgCAqLwogICAgICByZXR1cm4gc2VsZi5za2lwV2FpdGluZygpOwogICAgfSkKICApOwp9KTsKCnNlbGYuYWRkRXZlbnRMaXN0ZW5lcigiYWN0aXZhdGUiLCBmdW5jdGlvbiAoZXZlbnQpIHsKICBldmVudC53YWl0VW50aWwoCiAgICBjYWNoZXMua2V5cygpLnRoZW4oZnVuY3Rpb24gKGtleXMpIHsKICAgICAgcmV0dXJuIFByb21pc2UuYWxsKGtleXMubWFwKGZ1bmN0aW9uIChrZXkpIHsKICAgICAgICBpZiAoa2V5ICE9PSBTSEVMTF9DQUNIRSAmJiBrZXkgIT09IFJVTlRJTUVfQ0FDSEUpIHJldHVybiBjYWNoZXMuZGVsZXRlKGtleSk7CiAgICAgICAgcmV0dXJuIG51bGw7CiAgICAgIH0pKTsKICAgIH0pLnRoZW4oZnVuY3Rpb24gKCkgewogICAgICAvKiDplovjgYTjgabjgYTjgovjg5rjg7zjgrjjgpLjgZ/jgaDjgaHjgavmlrDjgZfjgYRTV+OBruWItuW+oeS4i+OBq+e9ruOBjyAqLwogICAgICByZXR1cm4gc2VsZi5jbGllbnRzLmNsYWltKCk7CiAgICB9KQogICk7Cn0pOwoKc2VsZi5hZGRFdmVudExpc3RlbmVyKCJmZXRjaCIsIGZ1bmN0aW9uIChldmVudCkgewogIHZhciByZXEgPSBldmVudC5yZXF1ZXN0OwogIGlmIChyZXEubWV0aG9kICE9PSAiR0VUIikgcmV0dXJuOwoKICAvKiDjg4njgq3jg6Xjg6Hjg7Pjg4jvvJrjg43jg4Pjg4jjg6/jg7zjgq/lhKrlhYjvvIjmm7TmlrDjgYzntKDnm7TjgavlsYrjgY/vvInjgIHlpLHmlZfjgZfjgZ/jgonjgq3jg6Pjg4Pjgrfjg6UgKi8KICBpZiAocmVxLm1vZGUgPT09ICJuYXZpZ2F0ZSIgfHwgcmVxLmRlc3RpbmF0aW9uID09PSAiZG9jdW1lbnQiKSB7CiAgICBldmVudC5yZXNwb25kV2l0aCgKICAgICAgZmV0Y2gocmVxKS50aGVuKGZ1bmN0aW9uIChyZXMpIHsKICAgICAgICB2YXIgY29weSA9IHJlcy5jbG9uZSgpOwogICAgICAgIGNhY2hlcy5vcGVuKFNIRUxMX0NBQ0hFKS50aGVuKGZ1bmN0aW9uIChjYWNoZSkgeyBjYWNoZS5wdXQocmVxLCBjb3B5KTsgfSk7CiAgICAgICAgcmV0dXJuIHJlczsKICAgICAgfSkuY2F0Y2goZnVuY3Rpb24gKCkgewogICAgICAgIHJldHVybiBjYWNoZXMubWF0Y2gocmVxLCB7IGlnbm9yZVNlYXJjaDogdHJ1ZSB9KS50aGVuKGZ1bmN0aW9uIChoaXQpIHsKICAgICAgICAgIHJldHVybiBoaXQgfHwgY2FjaGVzLm1hdGNoKEFQUF9ST09UICsgImluZGV4Lmh0bWwiLCB7IGlnbm9yZVNlYXJjaDogdHJ1ZSB9KSB8fAogICAgICAgICAgICAgICAgIGNhY2hlcy5tYXRjaChBUFBfUk9PVCwgeyBpZ25vcmVTZWFyY2g6IHRydWUgfSk7CiAgICAgICAgfSk7CiAgICAgIH0pCiAgICApOwogICAgcmV0dXJuOwogIH0KCiAgLyog6Z2Z55qE44Ki44K744OD44OI77yI44OV44Kp44Oz44OI44O744Ki44Kk44Kz44Oz44O7Q1NT44O7SlPjgarjganvvInvvJpzdGFsZS13aGlsZS1yZXZhbGlkYXRlICovCiAgZXZlbnQucmVzcG9uZFdpdGgoCiAgICBjYWNoZXMubWF0Y2gocmVxLCB7IGlnbm9yZVNlYXJjaDogdHJ1ZSB9KS50aGVuKGZ1bmN0aW9uIChoaXQpIHsKICAgICAgdmFyIG5ldHdvcmsgPSBmZXRjaChyZXEpLnRoZW4oZnVuY3Rpb24gKHJlcykgewogICAgICAgIGlmIChyZXMgJiYgKHJlcy5zdGF0dXMgPT09IDIwMCB8fCByZXMudHlwZSA9PT0gIm9wYXF1ZSIpKSB7CiAgICAgICAgICB2YXIgY29weSA9IHJlcy5jbG9uZSgpOwogICAgICAgICAgY2FjaGVzLm9wZW4oUlVOVElNRV9DQUNIRSkudGhlbihmdW5jdGlvbiAoY2FjaGUpIHsgY2FjaGUucHV0KHJlcSwgY29weSk7IH0pOwogICAgICAgIH0KICAgICAgICByZXR1cm4gcmVzOwogICAgICB9KS5jYXRjaChmdW5jdGlvbiAoKSB7IHJldHVybiBoaXQ7IH0pOwogICAgICByZXR1cm4gaGl0IHx8IG5ldHdvcms7CiAgICB9KQogICk7Cn0pOwo= 側）。
+   次回起動時に届くようにする（更新方針は data:application/javascript;base64,InVzZSBzdHJpY3QiOwovKiA9PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT0KICAg57im5pu444GN5bCP6Kqs44OT44Ol44O844Ov44O8IFNlcnZpY2UgV29ya2VyCiAgIC0g44Ki44OX44Oq5pys5L2T77yI44OJ44Kt44Ol44Oh44Oz44OI77yL44Ki44K744OD44OI77yJ44KS44Kt44Oj44OD44K344Ol44GX44CB44Kq44OV44Op44Kk44Oz44Gn44KC6ZaL44GR44KL44KI44GG44Gr44GZ44KLCiAgIC0g5pu05paw5pa56Yed77yaU3BhY2XlgbTjgpLmm7TmlrDjgZfjgZ/jgonjgIHmrKHlm57otbfli5XmmYLjgavoh6rli5XjgafmlrDjgZfjgYTniYjjgavjgarjgovjgZPjgagKICAgICAgICog44OJ44Kt44Ol44Oh44Oz44OI77yI55S76Z2i6YG356e777yJ44Gv44ON44OD44OI44Ov44O844Kv5YSq5YWI44CB5aSx5pWX44GX44Gf44KJ44Kt44Oj44OD44K344OlCiAgICAgICAqIOmdmeeahOOCouOCu+ODg+ODiOOBryBzdGFsZS13aGlsZS1yZXZhbGlkYXRl77yI6KGo56S644Gv44Kt44Oj44OD44K344Ol44CB6KOP44Gn5pu05paw77yJCiAgICAgICAqIHNraXBXYWl0aW5nICsgY2xpZW50cy5jbGFpbSDjgafmlrDjgZfjgYTniYjjgpLpgJ/jgoTjgYvjgavmnInlirnljJbjgZnjgosKICAgLSDjgZPjga7jg5XjgqHjgqTjg6vjga8gYXNzZXRzLyDphY3kuIvjgavnva7jgYvjgozjgovjgZ/jgoHjgIHliLblvqHnr4Tlm7LvvIhzY29wZe+8ieOBryBhc3NldHMvIOOBq+OBquOCi+OAggogICAgIOODm+OCueODhuOCo+ODs+OCsOWBtOOBrumDveWQiOOBp+ODmuODvOOCuOacrOS9k+OCkuWItuW+oeOBp+OBjeOBquOBhOeSsOWig+OBp+OBr+OAgeOBk+OBrlNX44Gv5a6f6LOq5b6F5qmf54q25oWL44Go44Gq44KK44CBCiAgICAg44Oa44O844K444Gv6YCa5bi444GuV2Vi44Oa44O844K444Go44GX44Gm44Gd44Gu44G+44G+5YuV44GP77yI44OV44Kp44O844Or44OQ44OD44Kv77yJ44CCCiAgID09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PSAqLwoKdmFyIFZFUlNJT04gPSAidjMiOwp2YXIgU0hFTExfQ0FDSEUgPSAidGF0ZWdha2ktc2hlbGwtIiArIFZFUlNJT047CnZhciBSVU5USU1FX0NBQ0hFID0gInRhdGVnYWtpLXJ1bnRpbWUtIiArIFZFUlNJT047CgovKiBTV+iHqui6q+OBrlVSTO+8iC4uLi9hc3NldHMvc3cuanPvvInjgYvjgonopovjgZ/jgqLjg5fjg6rjga7jg6vjg7zjg4jjgajjgIHjgqLjg5fjg6rmnKzkvZPjga5VUkznvqQgKi8KdmFyIEFQUF9ST09UID0gbmV3IFVSTCgiLi4vIiwgc2VsZi5yZWdpc3RyYXRpb24uc2NvcGUpLmhyZWY7Ci8qIElQQeaYjuacneODleOCqeODs+ODiO+8iGlwYWV4bS53b2ZmMuODu+e0hDMuN01C77yJ44Gv6LW35YuV55So44Kt44Oj44OD44K344Ol44Gr5YWl44KM44Gq44GE44CCCiAgIOioreWumuOBi+OCieS7u+aEj+OBp+ODgOOCpuODs+ODreODvOODieOBleOCjOOBn+OBqOOBjeOBq+Wun+ihjOaZguOCreODo+ODg+OCt+ODpe+8iFNXUu+8ieOBuOWFpeOCiuOAgQogICDku6Xlvozjga/jgZ3jgZPjgYvjgonov5TjgosgKi8KdmFyIFNIRUxMX1VSTFMgPSBbCiAgQVBQX1JPT1QsCiAgQVBQX1JPT1QgKyAiaW5kZXguaHRtbCIsCiAgc2VsZi5yZWdpc3RyYXRpb24uc2NvcGUgKyAibWFuaWZlc3Qud2VibWFuaWZlc3QiLAogIHNlbGYucmVnaXN0cmF0aW9uLnNjb3BlICsgImljb24tMTkyLnBuZyIsCiAgc2VsZi5yZWdpc3RyYXRpb24uc2NvcGUgKyAiaWNvbi01MTIucG5nIiwKICBzZWxmLnJlZ2lzdHJhdGlvbi5zY29wZSArICJpY29uLW1hc2thYmxlLTUxMi5wbmciCl07CgpzZWxmLmFkZEV2ZW50TGlzdGVuZXIoImluc3RhbGwiLCBmdW5jdGlvbiAoZXZlbnQpIHsKICBldmVudC53YWl0VW50aWwoCiAgICBjYWNoZXMub3BlbihTSEVMTF9DQUNIRSkudGhlbihmdW5jdGlvbiAoY2FjaGUpIHsKICAgICAgLyogMeOBpOWkseaVl+OBl+OBpuOCguOCpOODs+OCueODiOODvOODq+WFqOS9k+OCkuiQveOBqOOBleOBquOBhOOCiOOBhuOAgeWAi+WIpeOBq+i/veWKoOOBmeOCiyAqLwogICAgICByZXR1cm4gUHJvbWlzZS5hbGwoU0hFTExfVVJMUy5tYXAoZnVuY3Rpb24gKHVybCkgewogICAgICAgIHJldHVybiBjYWNoZS5hZGQodXJsKS5jYXRjaChmdW5jdGlvbiAoKSB7IC8qIOWPluOCjOOBquOBhOOCguOBruOBr+Wun+ihjOaZguOCreODo+ODg+OCt+ODpeOBq+S7u+OBm+OCiyAqLyB9KTsKICAgICAgfSkpOwogICAgfSkudGhlbihmdW5jdGlvbiAoKSB7CiAgICAgIC8qIOaWsOOBl+OBhOeJiOOBjOeUqOaEj+OBp+OBjeOBn+OCieOAgeW+heOBn+OBmuOBq+acieWKueWMluOBuOmAsuOCgCAqLwogICAgICByZXR1cm4gc2VsZi5za2lwV2FpdGluZygpOwogICAgfSkKICApOwp9KTsKCnNlbGYuYWRkRXZlbnRMaXN0ZW5lcigiYWN0aXZhdGUiLCBmdW5jdGlvbiAoZXZlbnQpIHsKICBldmVudC53YWl0VW50aWwoCiAgICBjYWNoZXMua2V5cygpLnRoZW4oZnVuY3Rpb24gKGtleXMpIHsKICAgICAgcmV0dXJuIFByb21pc2UuYWxsKGtleXMubWFwKGZ1bmN0aW9uIChrZXkpIHsKICAgICAgICBpZiAoa2V5ICE9PSBTSEVMTF9DQUNIRSAmJiBrZXkgIT09IFJVTlRJTUVfQ0FDSEUpIHJldHVybiBjYWNoZXMuZGVsZXRlKGtleSk7CiAgICAgICAgcmV0dXJuIG51bGw7CiAgICAgIH0pKTsKICAgIH0pLnRoZW4oZnVuY3Rpb24gKCkgewogICAgICAvKiDplovjgYTjgabjgYTjgovjg5rjg7zjgrjjgpLjgZ/jgaDjgaHjgavmlrDjgZfjgYRTV+OBruWItuW+oeS4i+OBq+e9ruOBjyAqLwogICAgICByZXR1cm4gc2VsZi5jbGllbnRzLmNsYWltKCk7CiAgICB9KQogICk7Cn0pOwoKc2VsZi5hZGRFdmVudExpc3RlbmVyKCJmZXRjaCIsIGZ1bmN0aW9uIChldmVudCkgewogIHZhciByZXEgPSBldmVudC5yZXF1ZXN0OwogIGlmIChyZXEubWV0aG9kICE9PSAiR0VUIikgcmV0dXJuOwoKICAvKiDjg4njgq3jg6Xjg6Hjg7Pjg4jvvJrjg43jg4Pjg4jjg6/jg7zjgq/lhKrlhYjvvIjmm7TmlrDjgYzntKDnm7TjgavlsYrjgY/vvInjgIHlpLHmlZfjgZfjgZ/jgonjgq3jg6Pjg4Pjgrfjg6UgKi8KICBpZiAocmVxLm1vZGUgPT09ICJuYXZpZ2F0ZSIgfHwgcmVxLmRlc3RpbmF0aW9uID09PSAiZG9jdW1lbnQiKSB7CiAgICBldmVudC5yZXNwb25kV2l0aCgKICAgICAgZmV0Y2gocmVxKS50aGVuKGZ1bmN0aW9uIChyZXMpIHsKICAgICAgICB2YXIgY29weSA9IHJlcy5jbG9uZSgpOwogICAgICAgIGNhY2hlcy5vcGVuKFNIRUxMX0NBQ0hFKS50aGVuKGZ1bmN0aW9uIChjYWNoZSkgeyBjYWNoZS5wdXQocmVxLCBjb3B5KTsgfSk7CiAgICAgICAgcmV0dXJuIHJlczsKICAgICAgfSkuY2F0Y2goZnVuY3Rpb24gKCkgewogICAgICAgIHJldHVybiBjYWNoZXMubWF0Y2gocmVxLCB7IGlnbm9yZVNlYXJjaDogdHJ1ZSB9KS50aGVuKGZ1bmN0aW9uIChoaXQpIHsKICAgICAgICAgIHJldHVybiBoaXQgfHwgY2FjaGVzLm1hdGNoKEFQUF9ST09UICsgImluZGV4Lmh0bWwiLCB7IGlnbm9yZVNlYXJjaDogdHJ1ZSB9KSB8fAogICAgICAgICAgICAgICAgIGNhY2hlcy5tYXRjaChBUFBfUk9PVCwgeyBpZ25vcmVTZWFyY2g6IHRydWUgfSk7CiAgICAgICAgfSk7CiAgICAgIH0pCiAgICApOwogICAgcmV0dXJuOwogIH0KCiAgLyog6Z2Z55qE44Ki44K744OD44OI77yI44OV44Kp44Oz44OI44O744Ki44Kk44Kz44Oz44O7Q1NT44O7SlPjgarjganvvInvvJpzdGFsZS13aGlsZS1yZXZhbGlkYXRlICovCiAgZXZlbnQucmVzcG9uZFdpdGgoCiAgICBjYWNoZXMubWF0Y2gocmVxLCB7IGlnbm9yZVNlYXJjaDogdHJ1ZSB9KS50aGVuKGZ1bmN0aW9uIChoaXQpIHsKICAgICAgdmFyIG5ldHdvcmsgPSBmZXRjaChyZXEpLnRoZW4oZnVuY3Rpb24gKHJlcykgewogICAgICAgIGlmIChyZXMgJiYgKHJlcy5zdGF0dXMgPT09IDIwMCB8fCByZXMudHlwZSA9PT0gIm9wYXF1ZSIpKSB7CiAgICAgICAgICB2YXIgY29weSA9IHJlcy5jbG9uZSgpOwogICAgICAgICAgY2FjaGVzLm9wZW4oUlVOVElNRV9DQUNIRSkudGhlbihmdW5jdGlvbiAoY2FjaGUpIHsgY2FjaGUucHV0KHJlcSwgY29weSk7IH0pOwogICAgICAgIH0KICAgICAgICByZXR1cm4gcmVzOwogICAgICB9KS5jYXRjaChmdW5jdGlvbiAoKSB7IHJldHVybiBoaXQ7IH0pOwogICAgICByZXR1cm4gaGl0IHx8IG5ldHdvcms7CiAgICB9KQogICk7Cn0pOwo= 側）。
    ホスティング環境の制約で登録できない・制御範囲に入らない場合でも、
    通常のWebページとして全機能が動くよう、失敗はすべて握りつぶす。 */
 if ("serviceWorker" in navigator) {
