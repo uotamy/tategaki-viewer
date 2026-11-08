@@ -2461,9 +2461,12 @@ function slideGroupTo(dir, tgt){
    仕掛けは表裏2面を持つ「葉（リーフ）」1枚：
    - 表の面には今表示しているページの複製、裏の面には遷移先ページの複製を
      180度回して貼る
-   - 背後のトラックはアニメーション開始時に遷移先のページ群へ差し替えて
-     おく。葉が倒れ始めた左側（右側）からは遷移先が覗き、倒れ切ると裏面の
-     ページが背後の遷移先ページとぴたり重なるので、そのまま葉を外す
+   - 背後のトラックは遷移先の見開きへ丸ごと差し替えない（丸ごと差し替える
+     と、葉に覆われていない側のページがアニメーション開始直後に遷移先へ
+     変わって見えてしまう）。背後は次のように合成する：葉が離れていく側は
+     遷移先のページ（倒れるにつれて覗いてくる中身）、葉が倒れ込む側は今の
+     ページのまま（葉の裏が倒れ切って初めて遷移先に確定する）。
+     遷移先への確定（ページ位置の更新・保存）も葉が倒れ切った時点で行う
    見開き（ppv=2）では綴じ目＝見開きの中央が軸になる：
    - 次へ：左ページ（最後に読んだページ）が右ページ側へ倒れ込む
    - 前へ：右ページが左ページ側へ倒れ戻る（逆動作）
@@ -2536,10 +2539,45 @@ function overlayGroup(dir, tgt, flip){
   leaf.appendChild(faceB);
   wrap.appendChild(leaf);
   pageHost.appendChild(wrap);
-  /* 背後のトラックを遷移先へ差し替える。葉の表が今のページと重なって
-     いるので、この時点では見た目は変わらない */
-  S.ep = tgt.ep; S.page = tgt.page;
-  renderWindow();
+  /* 背後のトラックを合成して置き直す（上の説明参照）。
+     - 次へ（見開き・通常）：左＝遷移先の左ページ、右＝現在の右ページのまま。
+       葉の裏（遷移先の右ページ）が右へ倒れ切った時点で初めて右も遷移先になる
+     - 戻る（見開き）：左右を反転し、右＝遷移先の右ページ、左＝現在の左ページのまま
+     - 葉が右ページ側から倒れる場合（現在の組が右ページ単独のとき）：
+       右＝遷移先の右ページ（葉が離れるにつれて覗く）、左＝現在の左（無ければ空）
+     - 1ページ表示：葉が全面を覆うので背後は遷移先のページでよい
+     遷移先側の背後ページは、組の画像中央寄せが最終形になるよう
+     遷移先の組における位置（gpos／spreadpair）を付けて新しく作る。
+     現在のまま残す側は表示中の要素の複製を使う（位置・中央寄せとも
+     画面に出ているものと同一になる） */
+  const tgtPair = ppv === 2 && tgtEls.length === 2 &&
+    tgtEls.every(el => el.dataset.imgpage === "1");
+  const freshTgtEl = gi => {
+    const el = buildPageEl(tgtPages[tgt.page + gi]);
+    el.dataset.gpos = String(gi);
+    el.dataset.spreadpair = tgtPair ? "1" : "0";
+    applyImgCenter(el);
+    return el;
+  };
+  let bgRight = null, bgLeft = null;
+  if (ppv === 1) {
+    bgRight = freshTgtEl(0);
+  } else if (dir === "next" && curLeftEl) {
+    bgRight = curRightEl ? curRightEl.cloneNode(true) : null;
+    bgLeft = tgtEls.length > 1 ? freshTgtEl(1) : null;
+  } else if (dir === "next") {
+    bgRight = freshTgtEl(0);
+    bgLeft = null;
+  } else {
+    bgRight = freshTgtEl(0);
+    bgLeft = curLeftEl ? curLeftEl.cloneNode(true) : null;
+  }
+  track.innerHTML = "";
+  track.style.transition = "none";
+  track.style.transform = "translateX(0px)";
+  /* row-reverse なので先に置いた要素が右ページ側に来る */
+  if (bgRight) track.appendChild(bgRight);
+  if (bgLeft) track.appendChild(bgLeft);
   /* スライド方式と同じく、初期位置をレイアウトとして確定させてから
      トランジションを掛ける（確定させずに書き換えると実機で短縮・
      中断されて最終位置へ飛んで見えることがあるため） */
@@ -2548,6 +2586,12 @@ function overlayGroup(dir, tgt, flip){
   const finish = () => {
     if (fin) return; fin = true;
     leaf.removeEventListener("transitionend", onEnd);
+    /* 葉が倒れ切ったこの時点で初めて遷移先へ確定させる（ページ位置の
+       保存も renderWindow 経由で従来どおりここで行われる）。倒れ切った
+       葉の裏は背後の確定表示とぴたり重なるので、葉を外しても見た目は
+       変わらない */
+    S.ep = tgt.ep; S.page = tgt.page;
+    renderWindow();
     wrap.remove(); animating = false;
   };
   /* 終了判定は葉自身の transform の transitionend だけに絞る */
