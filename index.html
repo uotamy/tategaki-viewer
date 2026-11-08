@@ -618,7 +618,7 @@
     <div class="setgroup">
       <div class="lab">保存について</div>
       <p class="worknote" style="margin:0;">読書位置・しおり・表示設定はこの端末の保存領域（localStorage）に、開いた本の本文は端末内データベース（IndexedDB）に保存されます。サーバーには送信されません。</p>
-      <p class="worknote" style="margin:8px 0 0;">PWA対応：ブラウザのメニューに「アプリをインストール」や「ホーム画面に追加」が出る環境では、ホーム画面のアイコンからアプリのように起動でき、Space側を更新すると次回起動時に新しい版になります（ホスティング環境により、追加ができない場合があります）。</p>
+      <p class="worknote" style="margin:8px 0 0;">PWA対応：ブラウザのメニューに「アプリをインストール」や「ホーム画面に追加」が出る環境では、ホーム画面のアイコンからアプリのように起動できます。オンライン時は起動や本棚のリロードのたびに新しい版を確認し、あればその場で切り替わります。オフラインでも、保存済みの版で本棚からそのまま読めます（ホスティング環境により、追加ができない場合があります）。</p>
     </div>
   </section>
 
@@ -2705,7 +2705,19 @@ async function openFromShelf(entry){
 $("#btnShelf").addEventListener("click", () => { closeSheets(); showShelf(); pokeUI(); });
 /* PWAではブラウザ側のリロードが使えないため、本棚に明示のリロードボタンを置く。
    読書画面では引っ張って更新がページめくりと競合するので、ジェスチャには頼らない */
-$("#btnReload").addEventListener("click", () => { try { location.reload(); } catch (e) { /* noop */ } });
+$("#btnReload").addEventListener("click", () => {
+  /* まずService Workerの更新を確認する。待機中の新版がいれば有効化され、
+     ページ側の controllerchange で自動リロードされる（下部のPWA登録コード）。
+     新版が無い場合も、ドキュメントはネットワーク優先で取得し直されるため、
+     このリロードで最新版が表示される。自動リロードが来ない場合の保険として
+     少し待ってから通常リロードする */
+  let reloaded = false;
+  const go = () => { if (!reloaded) { reloaded = true; try { location.reload(); } catch (e) { /* noop */ } } };
+  if (typeof window.tateyomiCheckUpdate === "function") {
+    try { window.tateyomiCheckUpdate(); } catch (e) { /* noop */ }
+    setTimeout(go, 1000);
+  } else go();
+});
 $("#btnShelfClose").addEventListener("click", () => {
   /* 起動直後は前回の本がまだ読み込まれていない（遅延復元）。その場合は
      ここで初めて本文を読み込んで開く。失敗したら openFromShelf が
@@ -3834,7 +3846,7 @@ window.addEventListener("pageshow", () => checkDownloaderInbox());
      広告枠・書籍リンクとも余白ごと非表示（独立ページ版と同設計）
    - 公開形は単一URLのみ。なろう画面が初期表示になるのは、URLパラメータ
      （?view=narou または #narou）がある場合だけ（初期化側で判定） */
-const NAROU_RELAY = "https://narou-relay.gogo-nakachan.workers.dev/?url=";
+const NAROU_RELAY = "https://narou-relay.gogo-nakachan.workers.dev/";
 const NAROU_API = "https://api.syosetu.com/novelapi/api/";
 const NAROU_ADMAX_TAG = "";
 const NAROU_AFF_TEMPLATE = "";
@@ -3861,7 +3873,19 @@ const ndl = {
 };
 function nSleep(ms){ return new Promise(r => setTimeout(r, ms)); }
 function nFmtNum(n){ return Number(n || 0).toLocaleString("ja-JP"); }
-function nRelayURL(target){ return NAROU_RELAY + encodeURIComponent(target); }
+function nRelayURL(target){
+  /* 中継URLは対象ごとにパスを分ける。中継リクエストは対象URLがクエリ
+     （?url=）に入る形で、パスは全リクエスト共通だった。そのため、クエリを
+     無視してキャッシュ照合する古いService Workerの環境では、前に中継で
+     取得した別対象の応答（検索APIのJSONなど）が目次リクエストに返って
+     しまい、「目次が取得できませんでした」で取得が失敗していた。パスに
+     対象のハッシュを含めれば、照合がクエリを無視しても別対象と衝突しない
+     （中継側はパスを見ず、?url= の対象だけで判定する） */
+  const s = String(target);
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0;
+  return NAROU_RELAY + "q/" + h.toString(36) + "?url=" + encodeURIComponent(s);
+}
 function nFetchText(target, tries){
   tries = tries || 3;
   let attempt = 0;
@@ -4245,7 +4269,15 @@ function nParseToc(html, initialChapter){
       }
     });
   }
-  return { episodes, lastChapter: chapter, hasText: !!doc.querySelector(".js-novel-text") };
+  /* 本文の有無は複数セレクタで判定する。短編のトップページでは本文要素が
+     そのまま載るが、表記ゆれ（js-novel-text / p-novel__text）や旧レイアウト
+     （#novel_honbun）でも取りこぼさないようにする */
+  const hasText = !!(
+    doc.querySelector(".js-novel-text") ||
+    doc.querySelector(".p-novel__text") ||
+    doc.querySelector("#novel_honbun")
+  );
+  return { episodes, lastChapter: chapter, hasText };
 }
 function nNodeToAozora(node){
   let out = "";
@@ -4284,8 +4316,14 @@ function nTrimBlankLines(lines){
    parseTextBook に通すことで既存の取り込みと同じ本データになる */
 function nEpisodeText(html, heading){
   const doc = new DOMParser().parseFromString(html, "text/html");
-  const sections = doc.querySelectorAll(".p-novel__text");
-  if (!sections.length) return null;
+  let sections = doc.querySelectorAll(".p-novel__text");
+  if (!sections.length) sections = doc.querySelectorAll(".js-novel-text");
+  if (!sections.length) {
+    /* 旧レイアウト（本文が #novel_honbun 直下にある形式）のフォールバック */
+    const honbun = doc.querySelector("#novel_honbun");
+    if (!honbun) return null;
+    sections = [honbun];
+  }
   let pre = [], body = [], post = [];
   sections.forEach(sec => {
     const lines = [];
@@ -4306,7 +4344,13 @@ async function nCollectEpisodes(novel, base){
   const firstHTML = await nFetchText(base, 3);
   const first = nParseToc(firstHTML, "");
   if (!first.episodes.length) {
-    if (first.hasText) return { episodes: [{ no: 1, title: novel.title, chapter: "", html: firstHTML }] };
+    /* 短編は目次（話リンク一覧）が無く、本文が作品トップページ自体に
+       載っている形式。その場合はトップページの本文をそのまま1話として
+       取り込む。判定は「話リンクが無い」ことに加え、トップページから
+       実際に本文が抽出できること（抽出関数そのもので確認する）で行う */
+    if (first.hasText || nEpisodeText(firstHTML, novel.title) != null) {
+      return { episodes: [{ no: 1, title: novel.title, chapter: "", html: firstHTML }] };
+    }
     throw new Error("目次が取得できませんでした。");
   }
   const episodes = first.episodes.slice();
@@ -4542,17 +4586,71 @@ if (S.ipaDl) loadIpaFont(false);
 </script>
 <script>
 "use strict";
-/* ---------------- PWA（Service Worker登録） ----------------
-   アプリ本体をキャッシュしてオフラインでも開けるようにし、Space側の更新が
-   次回起動時に届くようにする（更新方針は data:application/javascript;base64,InVzZSBzdHJpY3QiOwovKiA9PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT0KICAg57im5pu444GN5bCP6Kqs44OT44Ol44O844Ov44O8IFNlcnZpY2UgV29ya2VyCiAgIC0g44Ki44OX44Oq5pys5L2T77yI44OJ44Kt44Ol44Oh44Oz44OI77yL44Ki44K744OD44OI77yJ44KS44Kt44Oj44OD44K344Ol44GX44CB44Kq44OV44Op44Kk44Oz44Gn44KC6ZaL44GR44KL44KI44GG44Gr44GZ44KLCiAgIC0g5pu05paw5pa56Yed77yaU3BhY2XlgbTjgpLmm7TmlrDjgZfjgZ/jgonjgIHmrKHlm57otbfli5XmmYLjgavoh6rli5XjgafmlrDjgZfjgYTniYjjgavjgarjgovjgZPjgagKICAgICAgICog44OJ44Kt44Ol44Oh44Oz44OI77yI55S76Z2i6YG356e777yJ44Gv44ON44OD44OI44Ov44O844Kv5YSq5YWI44CB5aSx5pWX44GX44Gf44KJ44Kt44Oj44OD44K344OlCiAgICAgICAqIOmdmeeahOOCouOCu+ODg+ODiOOBryBzdGFsZS13aGlsZS1yZXZhbGlkYXRl77yI6KGo56S644Gv44Kt44Oj44OD44K344Ol44CB6KOP44Gn5pu05paw77yJCiAgICAgICAqIHNraXBXYWl0aW5nICsgY2xpZW50cy5jbGFpbSDjgafmlrDjgZfjgYTniYjjgpLpgJ/jgoTjgYvjgavmnInlirnljJbjgZnjgosKICAgLSDjgZPjga7jg5XjgqHjgqTjg6vjga8gYXNzZXRzLyDphY3kuIvjgavnva7jgYvjgozjgovjgZ/jgoHjgIHliLblvqHnr4Tlm7LvvIhzY29wZe+8ieOBryBhc3NldHMvIOOBq+OBquOCi+OAggogICAgIOODm+OCueODhuOCo+ODs+OCsOWBtOOBrumDveWQiOOBp+ODmuODvOOCuOacrOS9k+OCkuWItuW+oeOBp+OBjeOBquOBhOeSsOWig+OBp+OBr+OAgeOBk+OBrlNX44Gv5a6f6LOq5b6F5qmf54q25oWL44Go44Gq44KK44CBCiAgICAg44Oa44O844K444Gv6YCa5bi444GuV2Vi44Oa44O844K444Go44GX44Gm44Gd44Gu44G+44G+5YuV44GP77yI44OV44Kp44O844Or44OQ44OD44Kv77yJ44CCCiAgID09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PSAqLwoKdmFyIFZFUlNJT04gPSAidjMiOwp2YXIgU0hFTExfQ0FDSEUgPSAidGF0ZWdha2ktc2hlbGwtIiArIFZFUlNJT047CnZhciBSVU5USU1FX0NBQ0hFID0gInRhdGVnYWtpLXJ1bnRpbWUtIiArIFZFUlNJT047CgovKiBTV+iHqui6q+OBrlVSTO+8iC4uLi9hc3NldHMvc3cuanPvvInjgYvjgonopovjgZ/jgqLjg5fjg6rjga7jg6vjg7zjg4jjgajjgIHjgqLjg5fjg6rmnKzkvZPjga5VUkznvqQgKi8KdmFyIEFQUF9ST09UID0gbmV3IFVSTCgiLi4vIiwgc2VsZi5yZWdpc3RyYXRpb24uc2NvcGUpLmhyZWY7Ci8qIElQQeaYjuacneODleOCqeODs+ODiO+8iGlwYWV4bS53b2ZmMuODu+e0hDMuN01C77yJ44Gv6LW35YuV55So44Kt44Oj44OD44K344Ol44Gr5YWl44KM44Gq44GE44CCCiAgIOioreWumuOBi+OCieS7u+aEj+OBp+ODgOOCpuODs+ODreODvOODieOBleOCjOOBn+OBqOOBjeOBq+Wun+ihjOaZguOCreODo+ODg+OCt+ODpe+8iFNXUu+8ieOBuOWFpeOCiuOAgQogICDku6Xlvozjga/jgZ3jgZPjgYvjgonov5TjgosgKi8KdmFyIFNIRUxMX1VSTFMgPSBbCiAgQVBQX1JPT1QsCiAgQVBQX1JPT1QgKyAiaW5kZXguaHRtbCIsCiAgc2VsZi5yZWdpc3RyYXRpb24uc2NvcGUgKyAibWFuaWZlc3Qud2VibWFuaWZlc3QiLAogIHNlbGYucmVnaXN0cmF0aW9uLnNjb3BlICsgImljb24tMTkyLnBuZyIsCiAgc2VsZi5yZWdpc3RyYXRpb24uc2NvcGUgKyAiaWNvbi01MTIucG5nIiwKICBzZWxmLnJlZ2lzdHJhdGlvbi5zY29wZSArICJpY29uLW1hc2thYmxlLTUxMi5wbmciCl07CgpzZWxmLmFkZEV2ZW50TGlzdGVuZXIoImluc3RhbGwiLCBmdW5jdGlvbiAoZXZlbnQpIHsKICBldmVudC53YWl0VW50aWwoCiAgICBjYWNoZXMub3BlbihTSEVMTF9DQUNIRSkudGhlbihmdW5jdGlvbiAoY2FjaGUpIHsKICAgICAgLyogMeOBpOWkseaVl+OBl+OBpuOCguOCpOODs+OCueODiOODvOODq+WFqOS9k+OCkuiQveOBqOOBleOBquOBhOOCiOOBhuOAgeWAi+WIpeOBq+i/veWKoOOBmeOCiyAqLwogICAgICByZXR1cm4gUHJvbWlzZS5hbGwoU0hFTExfVVJMUy5tYXAoZnVuY3Rpb24gKHVybCkgewogICAgICAgIHJldHVybiBjYWNoZS5hZGQodXJsKS5jYXRjaChmdW5jdGlvbiAoKSB7IC8qIOWPluOCjOOBquOBhOOCguOBruOBr+Wun+ihjOaZguOCreODo+ODg+OCt+ODpeOBq+S7u+OBm+OCiyAqLyB9KTsKICAgICAgfSkpOwogICAgfSkudGhlbihmdW5jdGlvbiAoKSB7CiAgICAgIC8qIOaWsOOBl+OBhOeJiOOBjOeUqOaEj+OBp+OBjeOBn+OCieOAgeW+heOBn+OBmuOBq+acieWKueWMluOBuOmAsuOCgCAqLwogICAgICByZXR1cm4gc2VsZi5za2lwV2FpdGluZygpOwogICAgfSkKICApOwp9KTsKCnNlbGYuYWRkRXZlbnRMaXN0ZW5lcigiYWN0aXZhdGUiLCBmdW5jdGlvbiAoZXZlbnQpIHsKICBldmVudC53YWl0VW50aWwoCiAgICBjYWNoZXMua2V5cygpLnRoZW4oZnVuY3Rpb24gKGtleXMpIHsKICAgICAgcmV0dXJuIFByb21pc2UuYWxsKGtleXMubWFwKGZ1bmN0aW9uIChrZXkpIHsKICAgICAgICBpZiAoa2V5ICE9PSBTSEVMTF9DQUNIRSAmJiBrZXkgIT09IFJVTlRJTUVfQ0FDSEUpIHJldHVybiBjYWNoZXMuZGVsZXRlKGtleSk7CiAgICAgICAgcmV0dXJuIG51bGw7CiAgICAgIH0pKTsKICAgIH0pLnRoZW4oZnVuY3Rpb24gKCkgewogICAgICAvKiDplovjgYTjgabjgYTjgovjg5rjg7zjgrjjgpLjgZ/jgaDjgaHjgavmlrDjgZfjgYRTV+OBruWItuW+oeS4i+OBq+e9ruOBjyAqLwogICAgICByZXR1cm4gc2VsZi5jbGllbnRzLmNsYWltKCk7CiAgICB9KQogICk7Cn0pOwoKc2VsZi5hZGRFdmVudExpc3RlbmVyKCJmZXRjaCIsIGZ1bmN0aW9uIChldmVudCkgewogIHZhciByZXEgPSBldmVudC5yZXF1ZXN0OwogIGlmIChyZXEubWV0aG9kICE9PSAiR0VUIikgcmV0dXJuOwoKICAvKiDjg4njgq3jg6Xjg6Hjg7Pjg4jvvJrjg43jg4Pjg4jjg6/jg7zjgq/lhKrlhYjvvIjmm7TmlrDjgYzntKDnm7TjgavlsYrjgY/vvInjgIHlpLHmlZfjgZfjgZ/jgonjgq3jg6Pjg4Pjgrfjg6UgKi8KICBpZiAocmVxLm1vZGUgPT09ICJuYXZpZ2F0ZSIgfHwgcmVxLmRlc3RpbmF0aW9uID09PSAiZG9jdW1lbnQiKSB7CiAgICBldmVudC5yZXNwb25kV2l0aCgKICAgICAgZmV0Y2gocmVxKS50aGVuKGZ1bmN0aW9uIChyZXMpIHsKICAgICAgICB2YXIgY29weSA9IHJlcy5jbG9uZSgpOwogICAgICAgIGNhY2hlcy5vcGVuKFNIRUxMX0NBQ0hFKS50aGVuKGZ1bmN0aW9uIChjYWNoZSkgeyBjYWNoZS5wdXQocmVxLCBjb3B5KTsgfSk7CiAgICAgICAgcmV0dXJuIHJlczsKICAgICAgfSkuY2F0Y2goZnVuY3Rpb24gKCkgewogICAgICAgIHJldHVybiBjYWNoZXMubWF0Y2gocmVxLCB7IGlnbm9yZVNlYXJjaDogdHJ1ZSB9KS50aGVuKGZ1bmN0aW9uIChoaXQpIHsKICAgICAgICAgIHJldHVybiBoaXQgfHwgY2FjaGVzLm1hdGNoKEFQUF9ST09UICsgImluZGV4Lmh0bWwiLCB7IGlnbm9yZVNlYXJjaDogdHJ1ZSB9KSB8fAogICAgICAgICAgICAgICAgIGNhY2hlcy5tYXRjaChBUFBfUk9PVCwgeyBpZ25vcmVTZWFyY2g6IHRydWUgfSk7CiAgICAgICAgfSk7CiAgICAgIH0pCiAgICApOwogICAgcmV0dXJuOwogIH0KCiAgLyog6Z2Z55qE44Ki44K744OD44OI77yI44OV44Kp44Oz44OI44O744Ki44Kk44Kz44Oz44O7Q1NT44O7SlPjgarjganvvInvvJpzdGFsZS13aGlsZS1yZXZhbGlkYXRlICovCiAgZXZlbnQucmVzcG9uZFdpdGgoCiAgICBjYWNoZXMubWF0Y2gocmVxLCB7IGlnbm9yZVNlYXJjaDogdHJ1ZSB9KS50aGVuKGZ1bmN0aW9uIChoaXQpIHsKICAgICAgdmFyIG5ldHdvcmsgPSBmZXRjaChyZXEpLnRoZW4oZnVuY3Rpb24gKHJlcykgewogICAgICAgIGlmIChyZXMgJiYgKHJlcy5zdGF0dXMgPT09IDIwMCB8fCByZXMudHlwZSA9PT0gIm9wYXF1ZSIpKSB7CiAgICAgICAgICB2YXIgY29weSA9IHJlcy5jbG9uZSgpOwogICAgICAgICAgY2FjaGVzLm9wZW4oUlVOVElNRV9DQUNIRSkudGhlbihmdW5jdGlvbiAoY2FjaGUpIHsgY2FjaGUucHV0KHJlcSwgY29weSk7IH0pOwogICAgICAgIH0KICAgICAgICByZXR1cm4gcmVzOwogICAgICB9KS5jYXRjaChmdW5jdGlvbiAoKSB7IHJldHVybiBoaXQ7IH0pOwogICAgICByZXR1cm4gaGl0IHx8IG5ldHdvcms7CiAgICB9KQogICk7Cn0pOwo= 側）。
+/* ---------------- PWA（Service Worker登録と即時更新） ----------------
+   アプリ本体をキャッシュしてオフラインでも開けるようにする（取得方針は
+   data:application/javascript;base64,InVzZSBzdHJpY3QiOwovKiA9PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT0KICAg57im5pu444GN5bCP6Kqs44OT44Ol44O844Ov44O8IFNlcnZpY2UgV29ya2VyCiAgIC0g44Ki44OX44Oq5pys5L2T77yI44OJ44Kt44Ol44Oh44Oz44OI77yL44Ki44K744OD44OI77yJ44KS44Kt44Oj44OD44K344Ol44GX44CB44Kq44OV44Op44Kk44Oz44Gn44KC6ZaL44GR44KL44KI44GG44Gr44GZ44KLCiAgIC0g5pu05paw5pa56Yed77ya5paw44GX44GE54mI44Gv44CB44Gd44Gu44K744OD44K344On44Oz5YaF44Gn5Yq544GP44GT44GoCiAgICAgICAqIOODieOCreODpeODoeODs+ODiO+8iOeUu+mdoumBt+enu++8ieOBr+ODjeODg+ODiOODr+ODvOOCr+WEquWFiO+8iEhUVFDjgq3jg6Pjg4Pjgrfjg6XjgoLlho3mpJzoqLzjgZnjgovvvInjgIIKICAgICAgICAg44Kq44Oz44Op44Kk44Oz44Gq44KJ5bi444Gr5pyA5paw54mI44GM6L+U44KK44CB5aSx5pWX44GX44Gf44Go44GN44Gg44GR44Kt44Oj44OD44K344Ol44Gr44OV44Kp44O844Or44OQ44OD44KvCiAgICAgICAgIOOBmeOCi+OBruOBp+OAgeOCquODleODqeOCpOODs+i1t+WLleOBp+acrOajmuOBjOmWi+OBkeOCi+OBk+OBqOOCgue2reaMgeOBleOCjOOCiwogICAgICAgKiDlkIzkuIDjgqrjg6rjgrjjg7Pjga7pnZnnmoTjgqLjgrvjg4Pjg4jjga8gc3RhbGUtd2hpbGUtcmV2YWxpZGF0Ze+8iOihqOekuuOBr+OCreODo+ODg+OCt+ODpeOAgQogICAgICAgICDoo4/jgafmm7TmlrDvvInjgILnhaflkIjjga/jg5Xjg6tVUkzjgafooYzjgYTjgIHjgq/jgqjjg6rpgZXjgYTjgpLlj5bjgorpgZXjgYjjgarjgYQKICAgICAgICogc2tpcFdhaXRpbmcgKyBjbGllbnRzLmNsYWltIOOBp+aWsOOBl+OBhOeJiOOCkumAn+OChOOBi+OBq+acieWKueWMluOBl+OAgeODmuODvOOCuOWBtOOBrwogICAgICAgICBjb250cm9sbGVyY2hhbmdlIOOBpzHlm57jgaDjgZHoh6rli5Xjg6rjg63jg7zjg4njgZfjgabmlrDniYjjgpLjgZ3jga7loLTjgafooajnpLrjgZnjgosKICAgLSDku5bjgqrjg6rjgrjjg7Pjgbjjga7jg6rjgq/jgqjjgrnjg4jjgavjga/kuIDliIfku4vlhaXjgZfjgarjgYTjgILjgarjgo3jgYbkuK3ntpnjga7jgojjgYbjgavlr77osaHjgYwKICAgICDjgq/jgqjjg6rvvIg/dXJsPe+8ieOBp+axuuOBvuOCi+mAmuS/oeOCkiBTV1Ig44Kt44Oj44OD44K344Ol77yL44Kv44Ko44Oq54Sh6KaW54Wn5ZCI44Gn5qiq5Y+W44KK44GZ44KL44Go44CBCiAgICAg5Yil5a++6LGh44Gu5b+c562U77yI5qSc57SiQVBJ44GuSlNPTuOBquOBqe+8ieOBjOebruasoeOChOacrOaWh+OBruODquOCr+OCqOOCueODiOOBq+i/lOOBo+OBpuOBl+OBvuOBhOOAgQogICAgIOWPluW+l+OBjOOAjOebruasoeOBjOWPluW+l+OBp+OBjeOBvuOBm+OCk+OBp+OBl+OBn+OAjeOBp+WkseaVl+OBmeOCi+S6i+aVheOBjOi1t+OBjeOBn+OBn+OCgQogICAtIOOBk+OBruODleOCoeOCpOODq+OBryBhc3NldHMvIOmFjeS4i+OBq+e9ruOBi+OCjOOCi+OBn+OCgeOAgeWItuW+oeevhOWbsu+8iHNjb3Bl77yJ44GvIGFzc2V0cy8g44Gr44Gq44KL44CCCiAgICAg44Ob44K544OG44Kj44Oz44Kw5YG044Gu6YO95ZCI44Gn44Oa44O844K45pys5L2T44KS5Yi25b6h44Gn44GN44Gq44GE55Kw5aKD44Gn44Gv44CB44GT44GuU1fjga/lrp/os6rlvoXmqZ/nirbmhYvjgajjgarjgorjgIEKICAgICDjg5rjg7zjgrjjga/pgJrluLjjga5XZWLjg5rjg7zjgrjjgajjgZfjgabjgZ3jga7jgb7jgb7li5XjgY/vvIjjg5Xjgqnjg7zjg6vjg5Djg4Pjgq/vvInjgIIKICAgICDjg6vjg7zjg4jnm7TkuIvjgavnva7jgZHjgbDjgZ3jga7jgb7jgb7jg6vjg7zjg4jjgrnjgrPjg7zjg5fniYjjgajjgZfjgabjgoLli5XjgY/vvIjjg5Hjgrnjga8gc2NvcGUg44GL44KJ566X5Ye644GZ44KL77yJ44CCCiAgID09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PSAqLwoKdmFyIFZFUlNJT04gPSAidjQiOwp2YXIgU0hFTExfQ0FDSEUgPSAidGF0ZWdha2ktc2hlbGwtIiArIFZFUlNJT047CnZhciBSVU5USU1FX0NBQ0hFID0gInRhdGVnYWtpLXJ1bnRpbWUtIiArIFZFUlNJT047CgovKiBTV+iHqui6q+OBrlVSTO+8iC4uLi9hc3NldHMvc3cuanPvvInjgYvjgonopovjgZ/jgqLjg5fjg6rjga7jg6vjg7zjg4jjgajjgIHjgqLjg5fjg6rmnKzkvZPjga5VUkznvqQgKi8KdmFyIEFQUF9ST09UID0gbmV3IFVSTCgiLi4vIiwgc2VsZi5yZWdpc3RyYXRpb24uc2NvcGUpLmhyZWY7CnZhciBJTkRFWF9VUkwgPSBBUFBfUk9PVCArICJpbmRleC5odG1sIjsKLyogSVBB5piO5pyd44OV44Kp44Oz44OI77yIaXBhZXhtLndvZmYy44O757SEMy43TULvvInjga/otbfli5XnlKjjgq3jg6Pjg4Pjgrfjg6XjgavlhaXjgozjgarjgYTjgIIKICAg6Kit5a6a44GL44KJ5Lu75oSP44Gn44OA44Km44Oz44Ot44O844OJ44GV44KM44Gf44Go44GN44Gr5a6f6KGM5pmC44Kt44Oj44OD44K344Ol77yIU1dS77yJ44G45YWl44KK44CBCiAgIOS7peW+jOOBr+OBneOBk+OBi+OCiei/lOOCiyAqLwp2YXIgU0hFTExfVVJMUyA9IFsKICBBUFBfUk9PVCwKICBJTkRFWF9VUkwsCiAgc2VsZi5yZWdpc3RyYXRpb24uc2NvcGUgKyAibWFuaWZlc3Qud2VibWFuaWZlc3QiLAogIHNlbGYucmVnaXN0cmF0aW9uLnNjb3BlICsgImljb24tMTkyLnBuZyIsCiAgc2VsZi5yZWdpc3RyYXRpb24uc2NvcGUgKyAiaWNvbi01MTIucG5nIiwKICBzZWxmLnJlZ2lzdHJhdGlvbi5zY29wZSArICJpY29uLW1hc2thYmxlLTUxMi5wbmciCl07CgpzZWxmLmFkZEV2ZW50TGlzdGVuZXIoImluc3RhbGwiLCBmdW5jdGlvbiAoZXZlbnQpIHsKICBldmVudC53YWl0VW50aWwoCiAgICBjYWNoZXMub3BlbihTSEVMTF9DQUNIRSkudGhlbihmdW5jdGlvbiAoY2FjaGUpIHsKICAgICAgLyogMeOBpOWkseaVl+OBl+OBpuOCguOCpOODs+OCueODiOODvOODq+WFqOS9k+OCkuiQveOBqOOBleOBquOBhOOCiOOBhuOAgeWAi+WIpeOBq+i/veWKoOOBmeOCiyAqLwogICAgICByZXR1cm4gUHJvbWlzZS5hbGwoU0hFTExfVVJMUy5tYXAoZnVuY3Rpb24gKHVybCkgewogICAgICAgIHJldHVybiBjYWNoZS5hZGQodXJsKS5jYXRjaChmdW5jdGlvbiAoKSB7IC8qIOWPluOCjOOBquOBhOOCguOBruOBr+Wun+ihjOaZguOCreODo+ODg+OCt+ODpeOBq+S7u+OBm+OCiyAqLyB9KTsKICAgICAgfSkpOwogICAgfSkudGhlbihmdW5jdGlvbiAoKSB7CiAgICAgIC8qIOaWsOOBl+OBhOeJiOOBjOeUqOaEj+OBp+OBjeOBn+OCieOAgeW+heOBn+OBmuOBq+acieWKueWMluOBuOmAsuOCgCAqLwogICAgICByZXR1cm4gc2VsZi5za2lwV2FpdGluZygpOwogICAgfSkKICApOwp9KTsKCnNlbGYuYWRkRXZlbnRMaXN0ZW5lcigiYWN0aXZhdGUiLCBmdW5jdGlvbiAoZXZlbnQpIHsKICBldmVudC53YWl0VW50aWwoCiAgICBjYWNoZXMua2V5cygpLnRoZW4oZnVuY3Rpb24gKGtleXMpIHsKICAgICAgcmV0dXJuIFByb21pc2UuYWxsKGtleXMubWFwKGZ1bmN0aW9uIChrZXkpIHsKICAgICAgICAvKiDml6fjg5Djg7zjgrjjg6fjg7Pjga7jgq3jg6Pjg4Pjgrfjg6Xjga/jgZnjgbnjgabmtojjgZnjgILml6fniYjjgavjga/jgq/jgqjjg6rnhKHoppbnhaflkIjjgacKICAgICAgICAgICDkuK3ntpnlv5znrZTjgpLlj5bjgorpgZXjgYjjgovjgq3jg6Pjg4Pjgrfjg6XjgYzmrovjgaPjgabjgYTjgovjgZPjgajjgYzjgYLjgorjgIHmrovjgZnjgagKICAgICAgICAgICDmlrDniYjjgafjgoLlkIzjgZjkuovmlYXjgpLlvJXjgY3jgZrjgosgKi8KICAgICAgICBpZiAoa2V5ICE9PSBTSEVMTF9DQUNIRSAmJiBrZXkgIT09IFJVTlRJTUVfQ0FDSEUpIHJldHVybiBjYWNoZXMuZGVsZXRlKGtleSk7CiAgICAgICAgcmV0dXJuIG51bGw7CiAgICAgIH0pKTsKICAgIH0pLnRoZW4oZnVuY3Rpb24gKCkgewogICAgICAvKiDplovjgYTjgabjgYTjgovjg5rjg7zjgrjjgpLjgZ/jgaDjgaHjgavmlrDjgZfjgYRTV+OBruWItuW+oeS4i+OBq+e9ruOBjyAqLwogICAgICByZXR1cm4gc2VsZi5jbGllbnRzLmNsYWltKCk7CiAgICB9KQogICk7Cn0pOwoKLyog44Oa44O844K45YG044GL44KJ44Gu44CM5b6F44Gf44Ga44Gr5pyJ5Yq55YyW44CN5L6d6aC877yI5pu05paw56K66KqN44OV44Ot44O877yJICovCnNlbGYuYWRkRXZlbnRMaXN0ZW5lcigibWVzc2FnZSIsIGZ1bmN0aW9uIChldmVudCkgewogIGlmIChldmVudC5kYXRhICYmIGV2ZW50LmRhdGEudHlwZSA9PT0gIlNLSVBfV0FJVElORyIpIHsKICAgIHNlbGYuc2tpcFdhaXRpbmcoKTsKICB9Cn0pOwoKc2VsZi5hZGRFdmVudExpc3RlbmVyKCJmZXRjaCIsIGZ1bmN0aW9uIChldmVudCkgewogIHZhciByZXEgPSBldmVudC5yZXF1ZXN0OwogIGlmIChyZXEubWV0aG9kICE9PSAiR0VUIikgcmV0dXJuOwoKICB2YXIgdXJsOwogIHRyeSB7IHVybCA9IG5ldyBVUkwocmVxLnVybCk7IH0gY2F0Y2ggKGUpIHsgcmV0dXJuOyB9CiAgLyog5LuW44Kq44Oq44K444Oz77yI44Gq44KN44GG5Lit57aZ44O75YWs5byPQVBJ44O744OV44Kp44Oz44OIQ0RO44O7SlNaaXAgQ0RO44Gq44Gp77yJ44Gr44GvCiAgICAg5LuL5YWl44GX44Gq44GE44CC44OW44Op44Km44K244Gu6YCa5bi444Gu6YCa5L+h44Gr5Lu744Gb44KLICovCiAgaWYgKHVybC5vcmlnaW4gIT09IHNlbGYubG9jYXRpb24ub3JpZ2luKSByZXR1cm47CgogIC8qIOODieOCreODpeODoeODs+ODiO+8muODjeODg+ODiOODr+ODvOOCr+WEquWFiO+8iOabtOaWsOOBjOOBneOBruOCu+ODg+OCt+ODp+ODs+OBp+WxiuOBj++8ieOAgQogICAgIOWkseaVl+OBl+OBn+OCieOCreODo+ODg+OCt+ODpeOAgj92aWV3PW5hcm91IOOBruOCiOOBhuOBquOCr+OCqOODqumBleOBhOOBr+WQjOS4gOODieOCreODpeODoeODs+ODiAogICAgIOOBqOOBl+OBpuaJseOBhuOBn+OCgeOAgeODleOCqeODvOODq+ODkOODg+OCr+eFp+WQiOOBqOS/neWtmOWFiOOBr+OCr+OCqOODquOBquOBl+OBruato+imj1VSTOOBq+WvhOOBm+OCiyAqLwogIGlmIChyZXEubW9kZSA9PT0gIm5hdmlnYXRlIiB8fCByZXEuZGVzdGluYXRpb24gPT09ICJkb2N1bWVudCIpIHsKICAgIGV2ZW50LnJlc3BvbmRXaXRoKAogICAgICBmZXRjaChyZXEsIHsgY2FjaGU6ICJuby1jYWNoZSIgfSkudGhlbihmdW5jdGlvbiAocmVzKSB7CiAgICAgICAgaWYgKHJlcyAmJiByZXMuc3RhdHVzID09PSAyMDApIHsKICAgICAgICAgIC8qIGNsb25l44Gv5pys5paH44GM5raI6LK744GV44KM44KL5YmN44Gr5ZCM5pyf44Gn5Y+W44KL77yI6Z2e5ZCM5pyf44Gr5Zue44GZ44Go5L2/55So5riI44G/44Gn5aSx5pWX44GZ44KL77yJICovCiAgICAgICAgICB2YXIgY29weUluZGV4ID0gcmVzLmNsb25lKCk7CiAgICAgICAgICB2YXIgY29weVJvb3QgPSByZXMuY2xvbmUoKTsKICAgICAgICAgIGNhY2hlcy5vcGVuKFNIRUxMX0NBQ0hFKS50aGVuKGZ1bmN0aW9uIChjYWNoZSkgewogICAgICAgICAgICBjYWNoZS5wdXQoSU5ERVhfVVJMLCBjb3B5SW5kZXgpOwogICAgICAgICAgICBjYWNoZS5wdXQoQVBQX1JPT1QsIGNvcHlSb290KTsKICAgICAgICAgIH0pOwogICAgICAgIH0KICAgICAgICByZXR1cm4gcmVzOwogICAgICB9KS5jYXRjaChmdW5jdGlvbiAoKSB7CiAgICAgICAgcmV0dXJuIGNhY2hlcy5tYXRjaChJTkRFWF9VUkwpLnRoZW4oZnVuY3Rpb24gKGhpdCkgewogICAgICAgICAgcmV0dXJuIGhpdCB8fCBjYWNoZXMubWF0Y2goQVBQX1JPT1QpOwogICAgICAgIH0pOwogICAgICB9KQogICAgKTsKICAgIHJldHVybjsKICB9CgogIC8qIOWQjOS4gOOCquODquOCuOODs+OBrumdmeeahOOCouOCu+ODg+ODiO+8iOODleOCqeODs+ODiOODu+OCouOCpOOCs+ODs+OBquOBqe+8ie+8mnN0YWxlLXdoaWxlLXJldmFsaWRhdGXjgIIKICAgICDnhaflkIjjga/jg5Xjg6tVUkzvvIjjgq/jgqjjg6rovrzjgb/vvInjgafooYzjgYYgKi8KICBldmVudC5yZXNwb25kV2l0aCgKICAgIGNhY2hlcy5tYXRjaChyZXEpLnRoZW4oZnVuY3Rpb24gKGhpdCkgewogICAgICB2YXIgbmV0d29yayA9IGZldGNoKHJlcSkudGhlbihmdW5jdGlvbiAocmVzKSB7CiAgICAgICAgaWYgKHJlcyAmJiAocmVzLnN0YXR1cyA9PT0gMjAwIHx8IHJlcy50eXBlID09PSAib3BhcXVlIikpIHsKICAgICAgICAgIHZhciBjb3B5ID0gcmVzLmNsb25lKCk7CiAgICAgICAgICBjYWNoZXMub3BlbihSVU5USU1FX0NBQ0hFKS50aGVuKGZ1bmN0aW9uIChjYWNoZSkgeyBjYWNoZS5wdXQocmVxLCBjb3B5KTsgfSk7CiAgICAgICAgfQogICAgICAgIHJldHVybiByZXM7CiAgICAgIH0pLmNhdGNoKGZ1bmN0aW9uICgpIHsgcmV0dXJuIGhpdDsgfSk7CiAgICAgIHJldHVybiBoaXQgfHwgbmV0d29yazsKICAgIH0pCiAgKTsKfSk7Cg== 側：ドキュメントはネットワーク優先、失敗時のみキャッシュ）。
+   更新を「次回起動まで届かない」状態にしないため、ここでは能動的に更新を
+   確認し、待機中の新版があれば有効化して、そのセッション内で1回だけ
+   自動リロードする（controllerchange）。
    ホスティング環境の制約で登録できない・制御範囲に入らない場合でも、
    通常のWebページとして全機能が動くよう、失敗はすべて握りつぶす。 */
 if ("serviceWorker" in navigator) {
+  var swHadController = !!navigator.serviceWorker.controller;
+  var swReloading = false;
+  navigator.serviceWorker.addEventListener("controllerchange", function () {
+    /* 初回インストール（制御者がいない→付いた）はリロードしない。
+       既存版から新版へ切り替わったときだけ、1回だけリロードして新版を表示する */
+    if (!swHadController || swReloading) return;
+    swReloading = true;
+    try { location.reload(); } catch (e) { /* noop */ }
+  });
+  function swApplyWaiting(reg) {
+    if (reg && reg.waiting) {
+      try { reg.waiting.postMessage({ type: "SKIP_WAITING" }); } catch (e) { /* noop */ }
+      return true;
+    }
+    return false;
+  }
+  function swWatch(reg) {
+    if (!reg) return;
+    swApplyWaiting(reg);
+    reg.addEventListener("updatefound", function () {
+      var nw = reg.installing;
+      if (!nw) return;
+      nw.addEventListener("statechange", function () {
+        if (nw.state === "installed" && navigator.serviceWorker.controller) swApplyWaiting(reg);
+      });
+    });
+  }
+  /* 本棚のリロードボタンなどから呼ばれる更新確認。待機中の新版がいれば
+     有効化を依頼し（実際のリロードは controllerchange 側が行う）、
+     いなければサーバーに更新があるか問い合わせる */
+  window.tateyomiCheckUpdate = function () {
+    if (!navigator.serviceWorker.getRegistration) return;
+    navigator.serviceWorker.getRegistration().then(function (reg) {
+      if (!reg) return;
+      if (swApplyWaiting(reg)) return;
+      if (reg.update) {
+        reg.update().then(function () { swApplyWaiting(reg); }).catch(function () { /* noop */ });
+      }
+    }).catch(function () { /* noop */ });
+  };
   window.addEventListener("load", function () {
+    var regPromise;
     try {
-      var reg = navigator.serviceWorker.register("sw.js");
-      if (reg && typeof reg.catch === "function") reg.catch(function () { /* PWA化できない環境では通常ページとして使う */ });
-    } catch (e) { /* 登録できない環境では通常ページとして使う */ }
+      regPromise = navigator.serviceWorker.register("sw.js");
+    } catch (e) { return; /* 登録できない環境では通常ページとして使う */ }
+    if (!regPromise || typeof regPromise.then !== "function") return;
+    regPromise.then(function (reg) {
+      swWatch(reg);
+      if (reg.update) reg.update().catch(function () { /* noop */ });
+    }).catch(function () { /* PWA化できない環境では通常ページとして使う */ });
+  });
+  /* 前面に戻ったときにも更新を確認する（PWAを開きっぱなしでも新版が届く） */
+  document.addEventListener("visibilitychange", function () {
+    if (!document.hidden && typeof window.tateyomiCheckUpdate === "function") {
+      try { window.tateyomiCheckUpdate(); } catch (e) { /* noop */ }
+    }
   });
 }
 </script>
