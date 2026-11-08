@@ -548,10 +548,6 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 8h9M17 8h3M4 16h3M11 16h9"/><circle cx="15" cy="8" r="2.1"/><circle cx="9" cy="16" r="2.1"/></svg>
       <span>設定</span>
     </button>
-    <button class="tbtn" id="btnOpen" aria-label="ファイルを開く">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
-      <span>開く</span>
-    </button>
   </header>
 
   <footer class="bar" id="bottombar">
@@ -903,7 +899,7 @@ const GUIDE_EPISODES = [
     title: "本を開く・ページをめくる",
     paras: [
       { t: "本を開く", cls: "head" },
-      "画面の中央をタップするとメニューが出ます（本文の長押しでも開けます）。メニューの「開く」からファイルを選ぶと、その本が開いて本棚（履歴）に残ります。本棚の「ファイルを開く」ボタンからも開けます。",
+      "新しい本は、本棚の「本を追加」から取り込みます。「ファイルを開く」を選んでファイルを指定すると、その本が開いて本棚（履歴）に残ります。読書中の画面にファイルを開くボタンはありません。",
       { t: "ページ送り", cls: "head" },
       "画面の左側をタップすると次のページ、右側をタップすると前のページへ進みます。左右へのスワイプでも送れます。中央をタップするとメニューの表示・非表示が切り替わります。",
       "メニューはしばらくすると自動で隠れ、本文だけの全画面に戻ります。本文を長押ししてもメニューが開きます。",
@@ -2445,7 +2441,6 @@ $("#scrim").addEventListener("click", () => closeSheets());
 $("#btnToc").addEventListener("click", () => { buildToc(); openSheet("#tocSheet"); pokeUI(); });
 $("#btnMark").addEventListener("click", () => { buildMarks(); openSheet("#markSheet"); pokeUI(); });
 $("#btnSet").addEventListener("click", () => { openSheet("#setSheet"); pokeUI(); });
-$("#btnOpen").addEventListener("click", () => { $("#fileInput").click(); pokeUI(); });
 $("#btnPrevEp").addEventListener("click", () => { if (S.ep > 0) openEpisode(S.ep - 1, 0); });
 $("#btnNextEp").addEventListener("click", () => { if (S.ep < S.episodes.length - 1) openEpisode(S.ep + 1, 0); });
 $("#pageSlider").addEventListener("input", e => {
@@ -3015,6 +3010,7 @@ function deleteBookFromShelf(entry){
   delete S.positions[entry.key];
   if (S.finished) delete S.finished[entry.key]; /* 履歴削除のときだけ読了ラッチも一緒に消す */
   S.bookmarks = S.bookmarks.filter(m => m.bookKey !== entry.key);
+  if (pendingRestore && pendingRestore.key === entry.key) pendingRestore = null;
   if (S.lastKey === entry.key) S.lastKey = S.library.length ? S.library[0].key : null;
   dropBookContent(entry.key);
   /* なろう作品の場合は台帳側の本棚リンクも外す（台帳自体は残る） */
@@ -3045,11 +3041,14 @@ function buildShelf(){
   if (shelfRepaired) persist();
   /* 履歴なので、最後に開いた順に並べ替える（フォルダ内を走査はしない） */
   S.library.sort((a, b) => (b.lastRead || 0) - (a.lastRead || 0));
-  /* 読書中の本は常に先頭に固定する。対象は「いま開いている本」、起動直後で
-     まだ本文を読み込んでいない間は「再開対象の本（pendingRestore）」。
+  /* 読書中の本は常に先頭に固定し、そのカードにだけ赤枠（.current）を付ける。
+     先頭固定と赤枠は必ず同じ1冊を指すこと。対象は「いま開いている本」、
+     起動直後でまだ本文を読み込んでいない間は「再開対象の本（pendingRestore）」。
+     起動時は裏で「使い方」を仮表示しているため、S.work.key（＝guide）を
+     そのまま赤枠の判定に使うと、先頭の本と赤枠の本が食い違ってしまう。
      そのカードを開く操作が、そのまま従来の「読書に戻る」＝遅延復元になる */
   const pinKey = pendingRestore ? pendingRestore.key
-    : (S.work && S.work.key && S.work.key !== "guide" ? S.work.key : null);
+    : (S.work && S.work.key ? S.work.key : null);
   if (pinKey) {
     const pi = S.library.findIndex(x => x.key === pinKey);
     if (pi > 0) {
@@ -3065,7 +3064,7 @@ function buildShelf(){
   }
   S.library.forEach(entry => {
     const card = document.createElement("div");
-    card.className = "bookcard" + (entry.key === S.work.key ? " current" : "");
+    card.className = "bookcard" + (entry.key === pinKey ? " current" : "");
     const pos = S.positions[entry.key];
     /* ％は現在位置ベースのまま。読了ラベルとフルバーだけはラッチで判定する：
        読了後に先頭へ戻っても、バーは満ちたまま「読了」表示が残る */
@@ -3197,6 +3196,10 @@ window.addEventListener("popstate", e => {
   else { hideShelfUI(); hideNarouUI(); hideAddUI(); hideAozoraUI(); closeSheetsUI(); }
 });
 async function openFromShelf(entry){
+  /* 「使い方」を明示的に選んだ場合は、それが読書中の本になる。起動時の
+     再開対象（pendingRestore）が残ったままだと、本棚で先頭固定と赤枠が
+     別の本を指してしまうため、ここで再開対象を解除する */
+  if (entry.kind === "guide") pendingRestore = null;
   if (entry.key === S.work.key && S.episodes.length) { hideShelf(); return; }
   if (entry.kind === "guide") {
     const resumed = setBook(GUIDE_WORK, makeEpisodesFromGuide(), "guide");
