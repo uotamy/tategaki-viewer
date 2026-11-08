@@ -1712,10 +1712,48 @@ function advOf(u){
   const rAdv = M.ctx.measureText(read).width * 0.5 + M.ls * Math.max(1, [...read].length);
   return Math.max(bAdv, rAdv);
 }
+/* 列末の追い込みで半分に圧縮できる約物（実ブラウザで実測して確認した
+   Chrome の組版挙動）。句読点と終わり括弧類だけが対象で、小書き仮名や
+   長音は圧縮されない（実測：溢れた位置の「っ」は追い出しになり、
+   「。」」の並びは両方とも半分に詰まって列へ収まった） */
+const OIKOMI_PUNCT = "、。，．）〕］｝〉》」』】｣";
+/* 追い込みが発動するのは、溢れた単位そのものが終わり括弧類のときだけ
+   （実測：「…だろう。」」では 」 が詰めて収まったが、「…ます）。」では
+   。 は詰まらず、並びごと追い出されて次列に送られた） */
+const OIKOMI_HEAD = "）〕］｝〉》」』】｣";
+/* ルビのはみ出し吸収（実ブラウザで実測）：読みが親文字より長いルビは、
+   単独では読みの幅まで進むが、隣が仮名・約物のときは読みがその単位へ
+   はみ出して収まるため、境界の送りが片側あたり最大で約4px（fs 17.5時、
+   fs/3−1.84に比例）縮む。隣が漢字のときは吸収されず、ルビ同士でも
+   読みがぶつかるため縮まない。従来はルビのたびに読み幅の全額を数えて
+   いたため、ルビの多い段落ほど実描画より長く見積もってチャンクを早く
+   切り、段の最終列が数文字分短く終わっていた。書体差で吸収量が小さい
+   環境でもはみ出さないよう、実測値の0.85倍で見積もる */
+const RUBY_ABSORB = /[ぁ-ゖァ-ヶー・：；！？、。，．）〕］｝〉》」』】｣（〔［｛〈《「『【｢゛゜ヽヾゝゞ…‥]/;
+function rubyReach(u){
+  /* その単位の読みが親文字の片側へはみ出す量。ルビ単位でなければ0 */
+  if (u.c !== undefined) return 0;
+  const base = u.r || "", read = u.t || "";
+  let baseW = 0;
+  for (const ch of base) baseW += (ch >= "0" && ch <= "9") ? M.fs : M.ctx.measureText(ch).width;
+  return Math.max(0, M.ctx.measureText(read).width * 0.5 - baseW) / 2;
+}
 function paraPrefix(para){
   if (para._pk === M.key && para._prefix) return para._prefix;
-  const n = para.units.length, pre = new Float32Array(n + 1);
-  for (let i = 0; i < n; i++) pre[i + 1] = pre[i] + advOf(para.units[i]);
+  const units = para.units, n = units.length, pre = new Float32Array(n + 1);
+  const shedCap = Math.max(0, M.fs / 3 - 1.84) * 0.85;
+  let prevReach = 0, prevAbsorb = false;
+  for (let i = 0; i < n; i++) {
+    const u = units[i], reach = rubyReach(u);
+    const absorb = u.c !== undefined && RUBY_ABSORB.test(u.c);
+    let adv = advOf(u);
+    if (i > 0 && shedCap > 0) {
+      if (prevReach > 0 && absorb) adv -= Math.min(prevReach, shedCap);
+      else if (reach > 0 && prevAbsorb) adv -= Math.min(reach, shedCap);
+    }
+    pre[i + 1] = pre[i] + adv;
+    prevReach = reach; prevAbsorb = absorb;
+  }
   para._prefix = pre; para._pk = M.key;
   return pre;
 }
@@ -1765,15 +1803,50 @@ function simulateSplit(para, off, colsAvail, ind){
   const scale = (para.cls && para.cls.includes("head")) ? 1.06 : 1;
   let colStart = off, cols = 1, lastBreak = -1;
   let capNow = capFull - (ind ? M.fs : 0);
+  /* 追い込みで圧縮済みの単位と、それで浮いた長さ（今の列の中だけ有効）。
+     ブラウザは列末で禁則の並びが容量を跨ぐとき、並びの中の約物を半分に
+     詰めて列へ収める（追い込み）。モデルが並びごと次列へ追い出すだけだと、
+     列の区切りごとに実描画より早く切れて不足が段の中で累積し、段の最終列が
+     数文字分短く終わる（実測：句読点の多い段落で1列あたり最大3文字の差）。
+     圧縮で収まりきらない場合は従来どおり直前の切断可能位置へ追い出す */
+  let compSet = new Set(), saved = 0;
   let i = off;
   while (i < total) {
-    if ((pre[i + 1] - pre[colStart]) * scale > capNow) {
-      const brk = (lastBreak > colStart) ? lastBreak : i;
-      if (cols >= colsAvail) return { n: brk - off, cols };
-      cols++;
-      colStart = brk; lastBreak = -1; capNow = capFull;
-      i = brk;
-      continue;
+    if ((pre[i + 1] - pre[colStart]) * scale - saved > capNow) {
+      /* 追い込み：溢れた単位が終わり括弧類で、その行頭禁則の並びの先頭が
+         通常の送りのまま今の列に収まっている（並びが列を跨いでいる）と
+         きに限り、並びの中の約物を半分に詰めて収まるか試す。並び全体が
+         列の外から始まる場合や、溢れたのが句読点そのものの場合は、
+         ブラウザは圧縮せず追い出しにする（実測：英単語の直後の「。」や
+         「）。」の「。」は、詰めれば収まる位置でも追い出された）。ここで
+         引き込んでしまうと列数を少なく数え、段の最終列がはみ出して欠ける */
+      let oikomi = false;
+      if (OIKOMI_HEAD.includes(unitStartChar(para.units[i]))) {
+        let s = i;
+        while (s - 1 >= colStart && NO_START.includes(unitStartChar(para.units[s - 1]))) s--;
+        if ((pre[s + 1] - pre[colStart]) * scale - saved <= capNow) {
+          const cand = new Set(compSet);
+          for (let j = s; j <= i; j++) cand.add(j);
+          let sv = 0;
+          cand.forEach(j => {
+            const uj = para.units[j];
+            if (uj.c !== undefined && OIKOMI_PUNCT.includes(uj.c))
+              sv += (pre[j + 1] - pre[j]) * 0.5 * scale;
+          });
+          if ((pre[i + 1] - pre[colStart]) * scale - sv <= capNow) {
+            compSet = cand; saved = sv; oikomi = true;
+          }
+        }
+      }
+      if (!oikomi) {
+        const brk = (lastBreak > colStart) ? lastBreak : i;
+        if (cols >= colsAvail) return { n: brk - off, cols };
+        cols++;
+        colStart = brk; lastBreak = -1; capNow = capFull;
+        compSet = new Set(); saved = 0;
+        i = brk;
+        continue;
+      }
     }
     if (i + 1 < total) {
       const nu = para.units[i + 1], lu = para.units[i];
