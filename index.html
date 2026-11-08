@@ -310,7 +310,9 @@
   }
   .shelf-open:active { background: var(--tint); }
   a.shelf-open { display: block; text-align: center; text-decoration: none; }
-  .shelf-dl { color: var(--accent); font-weight: 600; margin-top: -6px; }
+  .shelf-dl { color: var(--accent); margin-top: -6px; line-height: 1.35; }
+  .shelf-dl .dl-title { display: block; font-size: 16px; font-weight: 600; }
+  .shelf-dl .dl-sub { display: block; font-size: 11.5px; font-weight: 400; color: var(--sub); margin-top: 2px; }
   .bookcard {
     background: var(--sheet); border: 1px solid var(--line); border-radius: 14px;
     padding: 14px 16px 12px; margin-bottom: 10px; cursor: pointer;
@@ -341,7 +343,6 @@
   .bookcard { user-select: none; -webkit-user-select: none; }
   .bookcard:active { background: var(--tint); }
   .bookcard .bdel:active { color: var(--accent); }
-  .shelf-hint { font-size: 11.5px; color: var(--sub); margin: 0 2px 12px; line-height: 1.6; }
 
   /* ---------- なろう画面（タテヨミ内蔵ダウンローダー） ---------- */
   #narou {
@@ -626,25 +627,22 @@
       <div class="shelf-head">
         <div>
           <h2>本棚（履歴）</h2>
-          <p>フォルダを読み込むのではなく、これまでに開いた本の履歴です。最近開いた順に並びます。本を選ぶと、読んでいた位置からそのまま開きます。</p>
         </div>
         <button class="bbtn" id="btnReload">リロード</button>
         <button class="bbtn" id="btnShelfClose">読書に戻る</button>
       </div>
       <button class="shelf-open" id="btnShelfOpen">ファイルを開く（.txt / .md / .epub / .zip）</button>
-      <button class="shelf-open shelf-dl" id="btnShelfNarou">なろうから追加（検索・ランキング・おすすめ・URL指定）</button>
-      <p class="shelf-hint">「なろうから追加」では、「小説家になろう」の作品を探して全話を取得し、そのままこの本棚へ登録できます。別ページのダウンローダーで登録した本も、従来どおり前面に戻ったときに自動で本棚へ追加されます。</p>
-      <p class="shelf-hint">各カードの「削除」ボタンで履歴から削除できます。削除すると、その本の読書位置・しおり・端末に保存した本文も一緒に消えます（元のファイル自体は消えません）。</p>
+      <button class="shelf-open shelf-dl" id="btnShelfNarou"><span class="dl-title">なろうダウンローダー</span><span class="dl-sub">検索・ランキング・おすすめ・URL指定</span></button>
       <div id="shelfList"></div>
     </div>
   </div>
 
-  <div id="narou" aria-label="なろうから追加">
+  <div id="narou" aria-label="なろうダウンローダー">
     <div class="narou-inner">
       <div class="narou-head">
         <button class="bbtn" id="btnNarouBack">← 本棚</button>
         <div>
-          <h2>なろうから追加</h2>
+          <h2>なろうダウンローダー</h2>
           <p>「小説家になろう」の作品を探して全話を取得し、そのまま本棚へ登録します。ファイル保存や別ページへの受け渡しは要りません。</p>
         </div>
       </div>
@@ -837,8 +835,8 @@ const GUIDE_EPISODES = [
       "本棚は、端末のフォルダを読み込むものではなく、これまでに開いた本の履歴です。最近開いた順に並び、本を選ぶと読んでいた位置からそのまま開きます。進み具合もパーセントで表示されます。本の最後まで読むと、最終ページの後ろに「読了」のページが現れ、本棚では「読了」と表示されます。",
       "各本の左側にはサムネイルが付きます。EPUBでは表紙画像、テキストやzipでは本文で最初に現れる画像、漫画zipでは先頭ページの画像が使われ、画像のない本はアイコン表示になります。サムネイルは本を取り込むときに小さく作って保存されるので、本棚を開くたびに作り直すことはありません。表示は設定の「本棚のサムネイル」で切り替えられます。",
       "履歴の本は、各カードの「削除」ボタンから履歴を削除できます。削除すると、その本の読書位置・しおり・端末に保存した本文も一緒に消えます（元のファイル自体は消えません）。この「使い方」は組み込みのため、削除ボタンは付きません。",
-      { t: "なろうから追加", cls: "head" },
-      "本棚の「なろうから追加」からは、「小説家になろう」の作品を検索・ランキング・おすすめ・URL指定で探し、全話を取得してそのまま本棚へ登録できます。話数が多い作品は、取得に時間がかかります。",
+      { t: "なろうダウンローダー", cls: "head" },
+      "本棚の「なろうダウンローダー」からは、「小説家になろう」の作品を検索・ランキング・おすすめ・URL指定で探し、全話を取得してそのまま本棚へ登録できます。話数が多い作品は、取得に時間がかかります。別ページのダウンローダーで登録した本も、従来どおり前面に戻ったときに自動で本棚へ追加されます。",
       { t: "しおり", cls: "head" },
       "メニューの「しおり」から、今開いているページにしおりを挟めます。しおりは本ごとに保存され、一覧からいつでもそのページへ戻れます。",
       { t: "保存のしくみ", cls: "head" },
