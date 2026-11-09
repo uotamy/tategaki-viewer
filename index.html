@@ -617,7 +617,16 @@
   #nprog .nprog-text { font-size: 13px; margin: 10px 0 12px; line-height: 1.7; font-variant-numeric: tabular-nums; }
   #nprog .nprog-actions { display: flex; flex-direction: column; gap: 8px; }
   #nprog .nprog-done-note { font-size: 13px; line-height: 1.7; margin: 0 0 10px; }
-  [data-nadmax] { margin-top: 12px; }
+  /* 広告枠（忍者AdMax・320x50想定）：本棚と「本を追加」系の画面の下部だけに
+     置く。本文（読書）画面とシート類には置かない。高さは確保せず、中身
+     （広告）が実際に描かれたときだけ .filled で余白ごと広がる。読み込め
+     ない・配信されないときは高さ0のまま畳まれ、レイアウトを押し広げない */
+  .adslot {
+    display: flex; justify-content: center; align-items: flex-start;
+    width: 100%; max-width: 340px; margin: 0 auto; overflow: hidden;
+  }
+  .adslot.filled { margin-top: 16px; }
+  .adslot iframe, .adslot img, .adslot ins { max-width: 100%; border: 0; }
 
   /* ---------- トースト / 読込中 ---------- */
   #toast {
@@ -827,8 +836,9 @@
       </div>
       <p class="shelf-filter-count" id="shelfFilterCount" hidden></p>
       <div id="shelfList"></div>
+      <div class="adslot" data-adslot hidden></div>
     </div>
-    <div id="buildId" aria-hidden="true">build 2026-11-09 21:38</div>
+    <div id="buildId" aria-hidden="true">build 2026-11-09 22:22</div>
   </div>
 
   <div id="narou" aria-label="なろうダウンローダー">
@@ -882,7 +892,6 @@
           <button type="submit" class="nbtn primary" id="nsearchSubmit">検索する</button>
         </form>
         <div id="nsearchResults"></div>
-        <div data-nadmax hidden></div>
       </section>
 
       <section class="npanel" id="npanel-ranking">
@@ -943,6 +952,7 @@
       </section>
 
       <p class="narou-foot">取得は中継サーバー経由で、1話ずつ間隔をあけて行います（応答は中継側で1時間キャッシュされます）。作品の権利は各作者に帰属します。個人で楽しむ範囲でご利用ください。</p>
+      <div class="adslot" data-adslot hidden></div>
     </div>
   </div>
 
@@ -960,6 +970,7 @@
         <button class="additem" id="btnAddNarou"><span class="dl-title">なろうダウンローダー</span><span class="dl-sub">検索・ランキング・おすすめ・URL指定</span></button>
         <button class="additem" id="btnAddAozora"><span class="dl-title">青空文庫ダウンローダー</span><span class="dl-sub">作品名・著者名で検索して取り込む</span></button>
       </div>
+      <div class="adslot" data-adslot hidden></div>
     </div>
   </div>
 
@@ -985,6 +996,7 @@
       </form>
       <div id="aozoraResults"></div>
       <p class="narou-foot">作品リストは青空文庫の公式インデックスを使い、端末内にキャッシュします。取得は中継サーバー経由で、掲載は著作権の消滅した作品のみです。作品の権利は各権利者に帰属します。</p>
+      <div class="adslot" data-adslot hidden></div>
     </div>
   </div>
 
@@ -1002,7 +1014,6 @@
       <button type="button" class="nbtn primary" id="nprogRead">今すぐ読む</button>
       <button type="button" class="nbtn" id="nprogToShelf">本棚へ</button>
       <a class="nbtn" id="nprogAff" target="_blank" rel="noopener sponsored" style="display:none;">書籍版を探す（Amazon）</a>
-      <div data-nadmax hidden></div>
     </div>
     <div class="nprog-actions" id="nprogErrActions" style="display:none;">
       <button type="button" class="nbtn" id="nprogClose">閉じる</button>
@@ -1150,6 +1161,8 @@ const GUIDE_EPISODES = [
       "履歴の本の操作は、各カードの右下にあるメニューボタン（⋯）に集約されています。押すと、その本に使える操作（ダウンロード／削除など）だけが並んだシートが開きます。「削除」を選ぶと、その本の読書位置・しおり・端末に保存した本文も一緒に消えます（元のファイル自体は消えません）。この「使い方」は組み込みのため、メニューボタン自体が付きません。",
       "アーカイブ（zip／cbz／rar／cbr）の原本が端末に保持されている本では、メニューに今と反対の読み方も並びます。漫画として取り込まれた本にテキスト（.txt）が含まれていれば「小説として読む」、小説として取り込まれた本に画像が含まれていれば「漫画として読む」です。選ぶと、保持されている原本を反対の経路で読み直して同じ本棚のまま中身を差し替え、次に開いたときもその読み方のままになります。取り込み時の自動判定は変わりません。切り替えると、その本の読書位置・しおり・読了はリセットされます。なろうから登録した本、単体のテキストやEPUBの本にはこの項目は出ません。",
       "操作シートの「ダウンロード」からは、その本をファイルとして端末へ保存できます。なろうダウンローダーやテキストから取り込んだ本は、話ごとのテキストファイル（Shift_JIS）をまとめた青空文庫形式のzip（ファイル名は書名）になり、このビューワーでそのまま開き直せます。取り込み時の原本ファイルが端末に残っている本（漫画アーカイブなど）は、原本がそのまま保存されます。青空文庫ダウンローダーで登録した本も、青空文庫から取得したzipそのものが原本として残っているので、ダウンロードではその原本が無加工で保存されます。",
+      { t: "広告について", cls: "head" },
+      "本棚と「本を追加」の画面（なろうダウンローダー・青空文庫ダウンローダーを含む）の下部には、広告が表示されることがあります。本文（読書）画面や、目次・設定などのシートには表示されません。広告が配信されないときは、枠自体が表示されず、本棚の並びも押し広げられません。",
       { t: "なろうダウンローダー", cls: "head" },
       "本の追加は、本棚の「本追加」ボタンから開く「本を追加」画面に集約されています。ファイルを開く（端末内のファイルの取り込み）、なろうダウンローダー、青空文庫ダウンローダーの3つが並びます。",
       "「なろうダウンローダー」からは、「小説家になろう」の作品を検索・ランキング・おすすめ・URL指定で探し、作品カードの「本棚へ登録」で本棚へ登録できます。登録のときは本文を取得しないので、話数が多い作品でもすぐ終わります。別ページのダウンローダーで登録した本も、従来どおり前面に戻ったときに自動で本棚へ追加されます。",
@@ -4816,7 +4829,7 @@ function closeCurrentBook(){
   M = null;
   persistNow();
 }
-function showShelfUI(){ buildShelf(); shelfEl.classList.add("show"); }
+function showShelfUI(){ buildShelf(); shelfEl.classList.add("show"); nInitAdSlots(); }
 function hideShelfUI(){ shelfEl.classList.remove("show"); }
 /* 本棚を出す。読書中から来た場合は、履歴に積んだ読書（＋シート）のエントリを
    戻る操作で消費して本棚エントリに戻る。本棚自体は履歴に積み増さないので、
@@ -7117,13 +7130,15 @@ window.addEventListener("pageshow", () => checkDownloaderInbox());
    - 取得した本はファイル保存や inbox を介さず、既存の取り込み処理と同じ
      本データ（parseTextBook で作る episodes）として本棚へ直接登録する
    - 進捗表示と中止は独立ページ版と同等の基本形（n/総話数＋バー＋中止ボタン）
-   - 広告の受け皿：NAROU_ADMAX_TAG / NAROU_AFF_TEMPLATE が空の間は、
-     広告枠・書籍リンクとも余白ごと非表示（独立ページ版と同設計）
+   - 広告の受け皿：NAROU_ADMAX_TAG（忍者AdMax）が空の間は広告枠は
+     余白ごと非表示。設定時は、本棚と「本を追加」系の画面（追加・なろう・
+     青空）の下部の枠にだけタグを読み込む。本文（読書）画面とシート類
+     には広告を出さない。NAROU_AFF_TEMPLATE が空の間は書籍リンク非表示
    - 公開形は単一URLのみ。なろう画面が初期表示になるのは、URLパラメータ
      （?view=narou または #narou）がある場合だけ（初期化側で判定） */
 const NAROU_RELAY = "https://narou-relay.gogo-nakachan.workers.dev/";
 const NAROU_API = "https://api.syosetu.com/novelapi/api/";
-const NAROU_ADMAX_TAG = "";
+const NAROU_ADMAX_TAG = '<script src="https://adm.shinobi.jp/s/15f61b0238a01ce2999b531089637173"><\/script>';
 const NAROU_AFF_TEMPLATE = "";
 const NAROU_GENRES = {
   "101": "異世界恋愛", "102": "現実恋愛",
@@ -7197,16 +7212,52 @@ function nAffURL(title){
   if (NAROU_AFF_TEMPLATE.indexOf("{url}") >= 0) return NAROU_AFF_TEMPLATE.split("{url}").join(encoded);
   return NAROU_AFF_TEMPLATE;
 }
+/* 広告枠の初期化：NAROU_ADMAX_TAG が設定されているときだけ、その画面が
+   表示されている枠（本棚／本を追加／なろう／青空の下部）に実物の script
+   要素としてタグを読み込む（innerHTML では script は実行されないため）。
+   枠は高さを確保しないので、広告が描かれるまでは場所を取らない。一定
+   時間たっても中身が描かれなければ枠ごと畳み、次に画面を開いたときに
+   読み直す。本文画面とシート類には枠自体が無いので広告は出ない */
+function nCollapseAdSlot(el){
+  el.classList.remove("filled");
+  el.innerHTML = "";
+  el.hidden = true;
+  delete el.dataset.adInit;
+}
+function nWatchAdSlot(el){
+  let waited = 0;
+  const timer = setInterval(() => {
+    waited += 500;
+    const filled = Array.prototype.some.call(el.children, c =>
+      c.tagName !== "SCRIPT" && c.offsetHeight > 0) || el.offsetHeight >= 10;
+    if (filled) { el.classList.add("filled"); clearInterval(timer); return; }
+    if (waited >= 12000 || el.hidden) {
+      clearInterval(timer);
+      if (!el.classList.contains("filled")) nCollapseAdSlot(el);
+    }
+  }, 500);
+}
 function nInitAdSlots(){
   if (!NAROU_ADMAX_TAG || !String(NAROU_ADMAX_TAG).trim()) return;
-  document.querySelectorAll("[data-nadmax]").forEach(el => {
-    el.innerHTML = NAROU_ADMAX_TAG;
+  const m = /src\s*=\s*"([^"]+)"/.exec(NAROU_ADMAX_TAG);
+  if (!m) return;
+  document.querySelectorAll("[data-adslot]").forEach(el => {
+    if (el.dataset.adInit) return;
+    const screen = el.closest("#shelf, #narou, #addbook, #aozora");
+    if (screen && !screen.classList.contains("show")) return;
+    el.dataset.adInit = "1";
     el.hidden = false;
+    const s = document.createElement("script");
+    s.src = m[1];
+    s.async = true;
+    s.onerror = () => nCollapseAdSlot(el);
+    el.appendChild(s);
+    nWatchAdSlot(el);
   });
 }
 
 /* ---------- なろう画面の開閉（履歴連携） ---------- */
-function showNarouUI(){ narouEl.classList.add("show"); }
+function showNarouUI(){ narouEl.classList.add("show"); nInitAdSlots(); }
 function hideNarouUI(){ narouEl.classList.remove("show"); }
 function showNarou(){
   closeSheetsUI();
@@ -8749,9 +8800,9 @@ nInitAdSlots();
    本棚トップは本のリストに専念させ、追加の入口はこの画面に集約した。
    履歴上は本棚の上に積む1画面として扱う（なろう・青空も同じ作法） */
 const addEl = $("#addbook"), aozoraEl = $("#aozora");
-function showAddUI(){ addEl.classList.add("show"); }
+function showAddUI(){ addEl.classList.add("show"); nInitAdSlots(); }
 function hideAddUI(){ addEl.classList.remove("show"); }
-function showAozoraUI(){ aozoraEl.classList.add("show"); }
+function showAozoraUI(){ aozoraEl.classList.add("show"); nInitAdSlots(); }
 function hideAozoraUI(){ aozoraEl.classList.remove("show"); }
 function showAddBook(){
   closeSheetsUI();
