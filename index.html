@@ -619,20 +619,20 @@
   #nprog .nprog-done-note { font-size: 13px; line-height: 1.7; margin: 0 0 10px; }
   /* 広告枠（忍者AdMax・枠ID 1238641・320x50）：本棚と「本を追加」系の
      画面の下部だけに置く。本文（読書）画面とシート類には置かない。
-     【審査中・暫定】本棚枠は掲載確認のため発行タグを静的 script として
-     HTML に直接埋め込み、常時表示・最小高さ確保とする。他画面の動的枠は
-     審査中は生成を止め、非表示のまま保持する（再有効化用に残す）。
-     審査完了後に通常の折りたたみ運用へ戻す場合は .adslot--shelf の
-     最小高さと常時表示を見直すこと。発行タグは枠内バナーとは別に
-     画面上部へ固定表示されるオーバーレイ広告も配信するため、本棚枠の
-     タグ直前で抑止している（#shelfAdSlot 内の script と注記を参照） */
+     本棚枠は掲載確認のため発行タグを静的 script として HTML に直接
+     埋め込み、常時表示・最小高さ確保とする（この形は維持する）。他画面の
+     動的枠は審査完了（枠は「配信中」）に伴い再有効化済みで、画面表示時に
+     読み込み、未描画なら畳む。発行タグは枠内バナーとは別に画面上部へ
+     固定表示されるオーバーレイ広告も配信するため、本棚枠はタグ直前で、
+     動的枠は読み込み直前に抑止している（#shelfAdSlot 内の script と
+     nGuardAdmaxOverlay を参照） */
   .adslot {
     display: flex; justify-content: center; align-items: flex-start;
     width: 100%; max-width: 340px; margin: 0 auto; overflow: hidden;
   }
   .adslot.filled { margin-top: 16px; }
   .adslot iframe, .adslot img, .adslot ins { max-width: 100%; border: 0; }
-  /* 本棚の審査用常駐枠：320×50 の実寸を確保し、バナー未配信でも
+  /* 本棚の常駐枠：320×50 の実寸を確保し、バナー未配信でも
      枠自体が観測できるようにする */
   .adslot--shelf {
     min-height: 50px; min-width: min(320px, 100%);
@@ -916,7 +916,7 @@
         })();
       </script><script src="https://adm.shinobi.jp/s/15f61b0238a01ce2999b531089637173"></script></div>
     </div>
-    <div id="buildId" aria-hidden="true">build 2026-11-09 23:44</div>
+    <div id="buildId" aria-hidden="true">build 2026-11-09 23:50</div>
   </div>
 
   <div id="narou" aria-label="なろうダウンローダー">
@@ -7213,13 +7213,13 @@ window.addEventListener("pageshow", () => checkDownloaderInbox());
    - 進捗表示と中止は独立ページ版と同等の基本形（n/総話数＋バー＋中止ボタン）
    - 広告（忍者AdMax・枠ID 1238641）：配置は本棚と「本を追加」系の画面
      （追加・なろう・青空）の下部のみ。本文（読書）画面とシート類には
-     出さない。【審査中・暫定】掲載確認のため、本棚枠は発行タグを静的
-     script として HTML 本文に直接埋め込み常駐させる（JS経由生成はしない）。
-     他画面の動的枠は審査中は生成を止める。NAROU_ADMAX_TAG は将来の
-     再有効化用に保持する。なお発行タグは画面上部固定のオーバーレイ
-     広告も同時配信するため、本棚枠ではタグ直前の script で抑止済み
-     （#shelfAdSlot 参照）。動的枠を再有効化する際は同じ抑止が要る。
-     NAROU_AFF_TEMPLATE が空の間は書籍リンク非表示
+     出さない。本棚枠は掲載確認のため発行タグを静的 script として HTML
+     本文に直接埋め込み常駐させる（JS経由生成はしない）。他画面の動的枠は
+     審査完了（枠は「配信中」）に伴い再有効化済み：表示中の画面の枠だけが
+     NAROU_ADMAX_TAG のタグを読み込み、未描画なら12秒で畳む。なお発行
+     タグは画面上部固定のオーバーレイ広告も同時配信するため、本棚枠では
+     タグ直前の script で、動的枠では nGuardAdmaxOverlay で抑止する
+     （#shelfAdSlot 参照）。NAROU_AFF_TEMPLATE が空の間は書籍リンク非表示
    - 公開形は単一URLのみ。なろう画面が初期表示になるのは、URLパラメータ
      （?view=narou または #narou）がある場合だけ（初期化側で判定） */
 const NAROU_RELAY = "https://narou-relay.gogo-nakachan.workers.dev/";
@@ -7298,14 +7298,16 @@ function nAffURL(title){
   if (NAROU_AFF_TEMPLATE.indexOf("{url}") >= 0) return NAROU_AFF_TEMPLATE.split("{url}").join(encoded);
   return NAROU_AFF_TEMPLATE;
 }
-/* 広告枠について【審査中・暫定運用】
+/* 広告枠について
    - 本棚枠（#shelfAdSlot）：発行タグは HTML 本文に静的 script として
      直接埋め込み済み。JS での生成・監視・撤去は一切行わない（常駐）。
      nCollapseAdSlot / nWatchAdSlot の対象外。
-   - 他画面（なろう／本を追加／青空）の動的枠：審査中は生成を止める。
-     同一タグの多重読み込みで掲載確認を乱さないため。枠要素自体は
-     hidden のまま残し、審査完了後に下の nInitAdSlots 本体を
-     再有効化できるようにする。
+   - 他画面（なろう／本を追加／青空）の動的枠：審査完了に伴い再有効化。
+     nInitAdSlots が、表示中（.show）の画面の枠だけに NAROU_ADMAX_TAG の
+     タグを読み込む（非表示画面の枠は読み込まない）。未配信・読み込み
+     失敗時は nWatchAdSlot が12秒で枠を畳み（nCollapseAdSlot）、画面の
+     レイアウトを押し広げない。タグ読み込み直前には nGuardAdmaxOverlay
+     でオーバーレイ広告を抑止する。
    - 本文画面とシート類には枠自体が無いので広告は出ない */
 function nCollapseAdSlot(el){
   if (!el || el.id === "shelfAdSlot" || el.classList.contains("adslot--shelf")) return;
@@ -7328,12 +7330,69 @@ function nWatchAdSlot(el){
     }
   }, 500);
 }
+/* オーバーレイ広告の抑止（動的枠用）：本棚枠のタグ直前 script と同じ
+   対策を、動的枠のタグ読み込み直前にも効かせる。
+   - ガード：window.admaxoverlay への代入を握りつぶし、続けて読み込まれる
+     配信スクリプトにオーバーレイ設定が無いものとして扱わせる（バナー側の
+     admaxbanner には触れない）。本棚側の script がページ読み込み時に
+     同じガードを設置済みだが、タグ実行の直前にも冪等に設置し直す。
+   - 保険：万一オーバーレイ要素が描かれた場合は検出して取り除き、body
+     直下の子要素をラッパーへ移す再構築が行われていたら元に戻す。監視は
+     本棚側と同じく最長30秒で自動終了し、初期化のたびに張り直す */
+function nGuardAdmaxOverlay(){
+  try {
+    Object.defineProperty(window, "admaxoverlay", {
+      configurable: true,
+      get: function(){ return undefined; },
+      set: function(){ /* オーバーレイ設定の代入を捨てる */ }
+    });
+  } catch (e) {}
+  if (nGuardAdmaxOverlay._active) return;
+  nGuardAdmaxOverlay._active = true;
+  var done = false, tries = 0, mo = null, iv = null;
+  function stop(){
+    if (mo) mo.disconnect();
+    if (iv) clearInterval(iv);
+    nGuardAdmaxOverlay._active = false;
+  }
+  function cleanup(){
+    if (done) return true;
+    var btn = document.querySelector('[class*="admax-official-overlap-close"]');
+    if (!btn) return false;
+    var node = btn;
+    while (node.parentElement && node.parentElement !== document.body &&
+           node.parentElement !== document.documentElement &&
+           !node.parentElement.hasAttribute("data-admax-sticky-wrapper")) {
+      node = node.parentElement;
+    }
+    if (node && node !== document.body) node.remove();
+    var wrap = document.querySelector("[data-admax-sticky-wrapper]");
+    if (wrap) {
+      var main = wrap.firstElementChild;
+      if (main) while (main.firstChild) document.body.appendChild(main.firstChild);
+      wrap.remove();
+    }
+    done = true;
+    stop();
+    return true;
+  }
+  try {
+    mo = new MutationObserver(function(muts){
+      for (var i = 0; i < muts.length; i++) {
+        var t = muts[i].target;
+        /* アプリ内（#app 配下）の通常のDOM更新では走らせない */
+        if (t === document.body || t === document.documentElement ||
+            !(t.closest && t.closest("#app"))) { cleanup(); return; }
+      }
+    });
+    mo.observe(document.documentElement, { childList: true, subtree: true });
+  } catch (e) {}
+  iv = setInterval(function(){
+    tries++;
+    if (cleanup() || tries >= 60) stop();
+  }, 500);
+}
 function nInitAdSlots(){
-  /* 審査中は動的枠を生成しない（本棚の静的タグのみで掲載確認を受ける）。
-     審査完了後に再有効化する場合は、この早期 return を外し、
-     下の生成処理を復活させること */
-  return;
-  /* eslint-disable no-unreachable */
   if (!NAROU_ADMAX_TAG || !String(NAROU_ADMAX_TAG).trim()) return;
   const m = /src\s*=\s*"([^"]+)"/.exec(NAROU_ADMAX_TAG);
   if (!m) return;
@@ -7343,6 +7402,7 @@ function nInitAdSlots(){
     if (screen && !screen.classList.contains("show")) return;
     el.dataset.adInit = "1";
     el.hidden = false;
+    nGuardAdmaxOverlay();
     const s = document.createElement("script");
     s.src = m[1];
     s.async = true;
