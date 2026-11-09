@@ -622,7 +622,9 @@
      本棚枠は掲載確認のため発行タグを静的 script として HTML に直接
      埋め込み、常時表示・最小高さ確保とする（この形は維持する）。他画面の
      動的枠は審査完了（枠は「配信中」）に伴い再有効化済みで、画面表示時に
-     読み込み、未描画なら畳む。発行タグは枠内バナーとは別に画面上部へ
+     タグ応答の動作を再現して描画し（タグ本体は document.write 前提の
+     ため動的読み込みでは描けない）、未描画なら畳む。発行タグは枠内
+     バナーとは別に画面上部へ
      固定表示されるオーバーレイ広告も配信するため、本棚枠はタグ直前で、
      動的枠は読み込み直前に抑止している（#shelfAdSlot 内の script と
      nGuardAdmaxOverlay を参照） */
@@ -916,7 +918,7 @@
         })();
       </script><script src="https://adm.shinobi.jp/s/15f61b0238a01ce2999b531089637173"></script></div>
     </div>
-    <div id="buildId" aria-hidden="true">build 2026-11-09 23:50</div>
+    <div id="buildId" aria-hidden="true">build 2026-11-09 23:57</div>
   </div>
 
   <div id="narou" aria-label="なろうダウンローダー">
@@ -7215,8 +7217,10 @@ window.addEventListener("pageshow", () => checkDownloaderInbox());
      （追加・なろう・青空）の下部のみ。本文（読書）画面とシート類には
      出さない。本棚枠は掲載確認のため発行タグを静的 script として HTML
      本文に直接埋め込み常駐させる（JS経由生成はしない）。他画面の動的枠は
-     審査完了（枠は「配信中」）に伴い再有効化済み：表示中の画面の枠だけが
-     NAROU_ADMAX_TAG のタグを読み込み、未描画なら12秒で畳む。なお発行
+     審査完了（枠は「配信中」）に伴い再有効化済み：表示中の画面の枠だけを
+     初期化し、未描画なら12秒で畳む。タグ本体は document.write 前提で
+     動的読み込みでは描画できないため、動的枠はタグ応答の動作を再現して
+     描く（nInitAdSlots 参照）。なお発行
      タグは画面上部固定のオーバーレイ広告も同時配信するため、本棚枠では
      タグ直前の script で、動的枠では nGuardAdmaxOverlay で抑止する
      （#shelfAdSlot 参照）。NAROU_AFF_TEMPLATE が空の間は書籍リンク非表示
@@ -7303,11 +7307,13 @@ function nAffURL(title){
      直接埋め込み済み。JS での生成・監視・撤去は一切行わない（常駐）。
      nCollapseAdSlot / nWatchAdSlot の対象外。
    - 他画面（なろう／本を追加／青空）の動的枠：審査完了に伴い再有効化。
-     nInitAdSlots が、表示中（.show）の画面の枠だけに NAROU_ADMAX_TAG の
-     タグを読み込む（非表示画面の枠は読み込まない）。未配信・読み込み
-     失敗時は nWatchAdSlot が12秒で枠を畳み（nCollapseAdSlot）、画面の
-     レイアウトを押し広げない。タグ読み込み直前には nGuardAdmaxOverlay
-     でオーバーレイ広告を抑止する。
+     nInitAdSlots が、表示中（.show）の画面の枠だけを初期化する（非表示
+     画面の枠は初期化しない）。タグ本体は document.write 前提で動的
+     読み込みでは描画できないため、タグ応答の動作（プレースホルダ div
+     ＋ window.admaxbanner 設定 ＋ s.js 読み込み）を再現する形で描く。
+     未配信・読み込み失敗時は nWatchAdSlot が12秒で枠を畳み
+     （nCollapseAdSlot）、画面のレイアウトを押し広げない。初期化直前
+     には nGuardAdmaxOverlay でオーバーレイ広告を抑止する。
    - 本文画面とシート類には枠自体が無いので広告は出ない */
 function nCollapseAdSlot(el){
   if (!el || el.id === "shelfAdSlot" || el.classList.contains("adslot--shelf")) return;
@@ -7316,14 +7322,24 @@ function nCollapseAdSlot(el){
   el.hidden = true;
   delete el.dataset.adInit;
 }
+function nAdRendered(el){
+  /* 配信スクリプトがバナーの実体（iframe / img 等）を描いたか。
+     動的枠には最初から 320×50 のプレースホルダ div が入っているため、
+     「子の高さがある」だけでは描画済みとみなせない（旧判定はプレース
+     ホルダ自体に反応して即 filled 扱いになっていた） */
+  const media = el.querySelectorAll("iframe, img, ins");
+  for (let i = 0; i < media.length; i++) {
+    if (media[i].offsetHeight > 0 || media[i].offsetWidth > 0) return true;
+  }
+  return Array.prototype.some.call(el.children, c =>
+    c.tagName !== "SCRIPT" && c.childElementCount > 0 && c.offsetHeight > 0);
+}
 function nWatchAdSlot(el){
   if (!el || el.id === "shelfAdSlot" || el.classList.contains("adslot--shelf")) return;
   let waited = 0;
   const timer = setInterval(() => {
     waited += 500;
-    const filled = Array.prototype.some.call(el.children, c =>
-      c.tagName !== "SCRIPT" && c.offsetHeight > 0) || el.offsetHeight >= 10;
-    if (filled) { el.classList.add("filled"); clearInterval(timer); return; }
+    if (nAdRendered(el)) { el.classList.add("filled"); clearInterval(timer); return; }
     if (waited >= 12000 || el.hidden) {
       clearInterval(timer);
       if (!el.classList.contains("filled")) nCollapseAdSlot(el);
@@ -7392,10 +7408,18 @@ function nGuardAdmaxOverlay(){
     if (cleanup() || tries >= 60) stop();
   }, 500);
 }
+function nAdmaxUuid(){
+  if (window.crypto && typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, c => {
+    const r = (Math.random() * 16) | 0;
+    return (c === "x" ? r : (r & 0x3) | 0x8).toString(16);
+  });
+}
 function nInitAdSlots(){
   if (!NAROU_ADMAX_TAG || !String(NAROU_ADMAX_TAG).trim()) return;
-  const m = /src\s*=\s*"([^"]+)"/.exec(NAROU_ADMAX_TAG);
+  const m = /\/s\/([0-9a-f]+)/.exec(NAROU_ADMAX_TAG);
   if (!m) return;
+  const tagId = m[1];
   document.querySelectorAll("[data-adslot]").forEach(el => {
     if (el.dataset.adInit) return;
     const screen = el.closest("#narou, #addbook, #aozora");
@@ -7403,9 +7427,25 @@ function nInitAdSlots(){
     el.dataset.adInit = "1";
     el.hidden = false;
     nGuardAdmaxOverlay();
+    /* タグ本体（/s/<tag_id> の応答）は document.write でプレースホルダ
+       div と window.admaxbanner 設定と s.js を書き出す前提のスクリプト。
+       解析終了後に script 要素で動的読み込みしても document.write は
+       効かず、何も描かれない（第51版で「本を追加」に出なかった原因。
+       2026-11-09 実物で確認）。そこで応答の動作を document.write 抜き
+       で再現する：プレースホルダ div を置き、設定を window.admaxbanner
+       へ渡し、配信スクリプト s.js を読み込む。s.js は実行時に設定を
+       読み取り（読み取った設定はその場で消す）、id で div を引いて
+       バナーを描く。設定代入と s.js の追加は同一タスクで続けて行い、
+       s.async = false で実行順も保証する */
+    const admaxId = "admax-banner-" + nAdmaxUuid();
+    const ph = document.createElement("div");
+    ph.id = admaxId;
+    ph.style.cssText = "display:inline-block;width:320px;height:50px;";
+    el.appendChild(ph);
+    window.admaxbanner = { admax_id: admaxId, tag_id: tagId, type: "b", width: 320, height: 50 };
     const s = document.createElement("script");
-    s.src = m[1];
-    s.async = true;
+    s.src = "https://adm.shinobi.jp/st/s.js";
+    s.async = false;
     s.onerror = () => nCollapseAdSlot(el);
     el.appendChild(s);
     nWatchAdSlot(el);
