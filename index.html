@@ -838,7 +838,7 @@
       <div id="shelfList"></div>
       <div class="adslot" data-adslot hidden></div>
     </div>
-    <div id="buildId" aria-hidden="true">build 2026-11-09 22:22</div>
+    <div id="buildId" aria-hidden="true">build 2026-11-09 22:30</div>
   </div>
 
   <div id="narou" aria-label="なろうダウンローダー">
@@ -4633,14 +4633,17 @@ function buildShelf(){
     if (ag && bg) return 0;
     return (b.lastRead || 0) - (a.lastRead || 0);
   });
-  /* 読書中の本は常に先頭に固定し、そのカードにだけ赤枠（.current）を付ける。
-     先頭固定と赤枠は必ず同じ1冊を指すこと。対象は「いま開いている本」、
-     起動直後でまだ本文を読み込んでいない間は「再開対象の本（pendingRestore）」。
-     起動時はどの本も読み込んでいない（S.work.key = null）ため、起動直後の
-     先頭固定・赤枠は pendingRestore 側で決まる。そのカードを開く操作が、
-     そのまま従来の「読書に戻る」＝遅延復元になる */
+  /* 最後に読んだ本は常に先頭に固定し、そのカードにだけ赤枠（.current）を
+     付ける。先頭固定と赤枠は必ず同じ1冊を指すこと。対象は「いま開いている
+     本」、起動直後でまだ本文を読み込んでいない間は「再開対象の本
+     （pendingRestore）」、そして本棚表示中（本は閉じられている）は
+     「最後に読んだ本（S.lastKey）」。本棚へ戻ると本は閉じられて
+     S.work.key が null になるため、S.lastKey へ落とさないと先頭固定も
+     赤枠も消えてしまう。起動直後の先頭固定・赤枠は pendingRestore 側で
+     決まる。そのカードを開く操作が、そのまま従来の「読書に戻る」＝
+     遅延復元になる */
   const pinKey = pendingRestore ? pendingRestore.key
-    : (S.work && S.work.key ? S.work.key : null);
+    : (S.work && S.work.key ? S.work.key : (S.lastKey || null));
   if (pinKey) {
     const pi = S.library.findIndex(x => x.key === pinKey);
     if (pi > 0) {
@@ -4681,9 +4684,9 @@ function buildShelf(){
     const started = !!(pos && (pos.ep > 0 || (pos.charInEp || 0) > 0));
     let meta = esc(entry.note || entry.fileName || "");
     if (entry.manga) meta += (meta ? "　・　" : "") + "画像の本・全" + (entry.pageCount || entry.totalChars || 0) + "ページ";
-    /* 先頭固定される読書中の本は、位置と赤枠（.current）が目印になるので
-       「読書中」の文字ラベルは付けない。それ以外の本は読んでいる話を示す */
-    else if (epName) meta += (meta ? "　・　" : "") + (entry.key === pinKey ? "" : "読書中：") + esc(epName);
+    /* 読んでいる話はタイトルだけを示し、「読書中」の文字ラベルは付けない
+       （最後に読んだ本は先頭固定と赤枠（.current）が目印になる） */
+    else if (epName) meta += (meta ? "　・　" : "") + esc(epName);
     else if (entry.epTitles) meta += (meta ? "　・　" : "") + "全" + entry.epTitles.length + (entry.kind === "file" ? "章" : "話");
     /* 左側サムネイル（設定でOFFのときは一切付けない）。画像が無い本は標準アイコン */
     let thumbHtml = "";
