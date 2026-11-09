@@ -393,7 +393,7 @@
     padding: calc(env(safe-area-inset-top, 0px) + 22px) 18px calc(env(safe-area-inset-bottom, 0px) + 30px);
   }
   .shelf-head { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 12px; }
-  /* 本棚の操作行：左に「本追加」、右側に「検索」「リロード」を並べる */
+  /* 本棚の操作行：左に「本追加」、右側に「検索」と一括更新チェックのアイコンボタンを並べる */
   .shelf-tools { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
   .shelf-tools .sp { flex: 1 1 auto; }
   .shelf-tools .bbtn { flex: none; }
@@ -422,9 +422,28 @@
   .shelf-dl .dl-title { display: block; font-size: 16px; font-weight: 600; }
   .shelf-dl .dl-sub { display: block; font-size: 11.5px; font-weight: 400; color: var(--sub); margin-top: 2px; }
   .bookcard {
+    position: relative;
     background: var(--sheet); border: 1px solid var(--line); border-radius: 14px;
     padding: 14px 16px 12px; margin-bottom: 10px; cursor: pointer;
     display: flex; gap: 12px;
+  }
+  /* 更新ドット：前回のチェックで新着があった本に付く小さな丸印。
+     話数などの数字は出さず、点だけをカード右上に出す */
+  .bookcard .bupd-dot {
+    position: absolute; top: 10px; right: 12px; width: 10px; height: 10px;
+    border-radius: 50%; background: var(--accent); pointer-events: none;
+  }
+  /* 本棚ヘッダーの一括更新チェックボタン（検索の隣）：アイコンのみの
+     小さなボタン。実行中はアイコンが回り、ボタンは無効化される */
+  .shelf-tools .shelf-check-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 40px; height: 37px; padding: 0;
+  }
+  .shelf-tools .shelf-check-btn svg { width: 19px; height: 19px; }
+  .shelf-tools .shelf-check-btn:disabled { opacity: .55; }
+  .shelf-tools .shelf-check-btn.spinning svg { animation: sp 0.9s linear infinite; }
+  @media (prefers-reduced-motion: reduce) {
+    .shelf-tools .shelf-check-btn.spinning svg { animation-duration: 2.4s; }
   }
   .bookcard .bmain { flex: 1 1 auto; min-width: 0; }
   /* 本棚サムネイル：取り込み時に小さく作って保存した画像を使い回す */
@@ -799,7 +818,7 @@
         <button class="bbtn bbtn-add" id="btnAddBook">本追加</button>
         <span class="sp"></span>
         <button class="bbtn" id="btnShelfSearch" aria-expanded="false">検索</button>
-        <button class="bbtn" id="btnReload">リロード</button>
+        <button class="bbtn shelf-check-btn" id="btnShelfCheckAll" aria-label="全作品の更新をチェック" title="全作品の更新をチェック"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg></button>
       </div>
       <div class="shelf-filter" id="shelfFilter">
         <input type="search" id="shelfFilterInput" placeholder="タイトル・著者名で絞り込み" autocomplete="off" aria-label="本棚の絞り込み" />
@@ -809,7 +828,7 @@
       <p class="shelf-filter-count" id="shelfFilterCount" hidden></p>
       <div id="shelfList"></div>
     </div>
-    <div id="buildId" aria-hidden="true">build 2026-11-09 21:30</div>
+    <div id="buildId" aria-hidden="true">build 2026-11-09 21:38</div>
   </div>
 
   <div id="narou" aria-label="なろうダウンローダー">
@@ -1136,7 +1155,7 @@ const GUIDE_EPISODES = [
       "「なろうダウンローダー」からは、「小説家になろう」の作品を検索・ランキング・おすすめ・URL指定で探し、作品カードの「本棚へ登録」で本棚へ登録できます。登録のときは本文を取得しないので、話数が多い作品でもすぐ終わります。別ページのダウンローダーで登録した本も、従来どおり前面に戻ったときに自動で本棚へ追加されます。",
       "「青空文庫ダウンローダー」からは、青空文庫の作品を作品名・著者名で検索し、テキストzipを取得してそのまま本棚へ登録できます。作品リスト（インデックス）は青空文庫の公式のものを使い、端末内にキャッシュされます。「インデックスを更新」で最新のリストに取り直せます。掲載は著作権の消滅した作品のみです。",
       "取得は1話ごとに端末へ保存されます。途中で中断しても、取得済みの話だけで本として本棚へ登録されます。その本は本棚で「取得途中 n/総話」と表示され、取得済み範囲の末尾まで読んでも読了にはならず、続きを案内するページが出ます。",
-      "本棚のなろう作品は、カードのメニューボタン（⋯）から「更新を確認」を実行できます。実行すると目次だけを取得して手元の控えと比べ、新しい話や、更新日が変わった（書き換えられた）話があるかどうかを確認します。本文は取得しないので、確認はすぐ終わります。新しい話が見つかった場合はその話数が表示され、本文はその本を開いたときに自動で取得されます。差分がなければ「更新はありません」と表示されます。",
+      "なろう作品に新しい話があるかどうかは、本棚の「検索」の隣にある更新チェックのボタンで、全作品まとめて確認できます。実行すると各作品の目次だけを取得して手元の控えと照合します（本文は取得しないので、確認はすぐ終わります）。新しい話や、更新日が変わった（書き換えられた）話があった本には、本棚のカードに小さな丸印（ドット）が付きます。ドットは「開けば新しい話が読める」合図です。その本を開くとドットは消えます。また、なろうの本を開いたときにも、その本の目次照合が自動で行われ、未取得の話や新しい話があれば、そのまま読書中のダウンロードで取得されます（今読んでいる話の次を優先して、開いている間ずっと続きます）。",
       "取得途中の本を開いている間は、残りの話が裏側で自動的に取得され続けます。取得の順番は「今読んでいる話の次」からで、取得済みの話はそのまま読み進められます。取得中かどうかは、本文メニューの「目次」の上部に小さく表示されます。本を閉じる／本棚に戻ると自動取得は止まり、次に開いたときに続きから再開します。未取得の話が残っている間は、その本が「読了」になることはありません。",
       "なろうの作品カードの「本棚へ登録」を選ぶと、本文は1話も取得せず、作品情報と目次（全話のタイトル一覧）だけを取って本棚へ登録します。登録された本は「取得途中 0/総話数」として並び、開くと、開いた話の本文がその場で取得されて読み始められ、残りの話は読んでいる間に順に取得されます。",
       { t: "しおり", cls: "head" },
@@ -4311,7 +4330,7 @@ function fmtReadDate(ts){
    削除すると、その本の読書位置・しおり・端末に保存した本文も一緒に消える。
    元のファイル自体は消えない。「使い方」（組み込み）は削除対象外。 */
 /* 本棚カードの操作シート：その本に適用できる操作だけを並べる。
-   なろう作品＝更新を確認／ダウンロード／削除、
+   なろう作品＝ダウンロード／削除、
    通常の本＝ダウンロード／削除、アーカイブ原本が
    保持され反対側に中身がある本＝今と反対の読み方（漫画として読む／
    小説として読む）を加える。
@@ -4498,13 +4517,10 @@ function openBookMenu(entry){
     box.appendChild(b);
     return b;
   };
-  if (entry.key.indexOf("narou:") === 0) {
-    /* なろう作品には「更新を確認」を出す。実行はなろうモジュール側
-       （目次だけ取得して台帳と比べ、増えた話・変わった話だけを取り込む）。
-       取得途中の本の続きの取得は、本を開いている間の自動取得が担うため、
-       手動の「続きを取得」は置かない */
-    addAct("更新を確認", () => nCheckUpdate(entry));
-  }
+  /* なろう作品の更新チェックは個別メニューには置かない。チェックは
+     「本を開いたときの自動照合」と「本棚ヘッダーの一括チェック」が担い、
+     新着はドットで知らせる。取得途中の本の続きの取得は、本を開いている
+     間の自動取得が担うため、手動の「続きを取得」も置かない */
   /* 読み方の切り替え：アーカイブ原本が保持されている本だけ、現在の種別の
      反対を1つ出す。判定材料（hasArchive／arcHasTxt／arcHasImg）が揃って
      いれば同期的に出し、無い旧来の本はシートを開いたあとで非同期に
@@ -4663,7 +4679,7 @@ function buildShelf(){
         ? '<img class="bthumb" src="' + entry.thumb + '" alt="" />'
         : '<div class="bthumb bthumb-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M5 4.5A1.5 1.5 0 0 1 6.5 3H19v15H6.5A1.5 1.5 0 0 0 5 19.5z"/><path d="M5 19.5A1.5 1.5 0 0 1 6.5 18H19v3H6.5A1.5 1.5 0 0 1 5 19.5z"/></svg></div>';
     }
-    card.innerHTML = thumbHtml +
+    card.innerHTML = (entry.hasUpdate ? '<span class="bupd-dot" title="更新があります" aria-label="更新があります"></span>' : "") + thumbHtml +
       '<div class="bmain">' +
       '<div class="bt">' + esc(entry.title) + "</div>" +
       (meta ? '<div class="bmeta">' + meta + "</div>" : "") +
@@ -4676,7 +4692,7 @@ function buildShelf(){
       "</div>";
     /* カードのタップで、その本を最後に読んでいたページから開く */
     card.addEventListener("click", () => openFromShelf(entry));
-    /* 操作（更新を確認／ダウンロード／削除）は、カード右下の
+    /* 操作（ダウンロード／削除）は、カード右下の
        メニューボタン1つに集約する。押すと操作シートが開く。
        「使い方」は組み込みでダウンロード・削除・更新の対象にしないため、
        メニュー自体を付けない */
@@ -4911,6 +4927,13 @@ window.addEventListener("popstate", e => {
 let shelfOpenBusy = false;
 async function openFromShelf(entry){
   if (shelfOpenBusy) return;
+  /* 更新ドットは「開けば新しい話が読める」合図。本を開いた時点で消す
+     （開いた後の自動チェックで新たに見つかった分は、読書中の
+     ダウンロードがそのまま取得するので、ドットは付け直さない） */
+  if (entry && typeof entry.key === "string" && entry.key.indexOf("narou:") === 0 && entry.hasUpdate) {
+    delete entry.hasUpdate;
+    persist();
+  }
   /* 「使い方」を明示的に選んだ場合は、それが読書中の本になる。起動時の
      再開対象（pendingRestore）が残ったままだと、本棚で先頭固定と赤枠が
      別の本を指してしまうため、ここで再開対象を解除する */
@@ -4966,8 +4989,12 @@ async function openFromShelfLoad(entry){
       hideShelf();
       toast(resumed ? "前回の続きから開きました" : "『" + entry.title + "』を開きました");
       /* 未取得の話が残っているなろう作品は、開いている間だけ裏側で
-         続きを自動取得する（読書中ダウンロード） */
-      if (entry.key.indexOf("narou:") === 0) nStartReadingSync(entry);
+         続きを自動取得する（読書中ダウンロード）。
+         あわせて、開いたタイミングで目次照合（自動チェック）を行う：
+         未取得分がある本は読書中ダウンロード自体が目次照合込みで
+         新着まで取るのでそちらに任せ、揃っている本は裏で目次だけを
+         照合し、新着・変更があれば読書中ダウンロードへつなぐ */
+      if (entry.key.indexOf("narou:") === 0) { nStartReadingSync(entry); nAutoCheckOnOpen(entry); }
       return;
     }
     /* 本文がまだ1話も無いなろう作品（「本棚へ登録」した本など）は、
@@ -4980,21 +5007,10 @@ async function openFromShelfLoad(entry){
   toast("エラー：『" + entry.title + "』の本文が端末に保存されていないため、開けません", 3600);
 }
 $("#btnShelf").addEventListener("click", () => { closeSheets(); showShelf(); pokeUI(); });
-/* PWAではブラウザ側のリロードが使えないため、本棚に明示のリロードボタンを置く。
-   読書画面では引っ張って更新がページめくりと競合するので、ジェスチャには頼らない */
-$("#btnReload").addEventListener("click", () => {
-  /* まずService Workerの更新を確認する。待機中の新版がいれば有効化され、
-     ページ側の controllerchange で自動リロードされる（下部のPWA登録コード）。
-     新版が無い場合も、ドキュメントはネットワーク優先で取得し直されるため、
-     このリロードで最新版が表示される。自動リロードが来ない場合の保険として
-     少し待ってから通常リロードする */
-  let reloaded = false;
-  const go = () => { if (!reloaded) { reloaded = true; try { location.reload(); } catch (e) { /* noop */ } } };
-  if (typeof window.tateyomiCheckUpdate === "function") {
-    try { window.tateyomiCheckUpdate(); } catch (e) { /* noop */ }
-    setTimeout(go, 1000);
-  } else go();
-});
+/* 一括更新チェック：本棚ヘッダーの「検索」の隣のアイコンボタン。
+   全なろう作品の目次を順に照合するだけで本文は取得せず、結果は
+   各本の更新ドットに反映する。実装はなろうモジュール側（nCheckAllUpdates） */
+$("#btnShelfCheckAll").addEventListener("click", () => { nCheckAllUpdates(); });
 $("#btnAddBook").addEventListener("click", () => showAddBook());
 /* 本棚の絞り込み：「検索」ボタンで入力欄を開き、打つたびにその場で絞り込む。
    「クリア」／「閉じる」で文字列を消して全件表示に戻る（閉じるは欄も閉じる）。
@@ -8137,7 +8153,11 @@ async function nRunSync(novel, opts){
      取得した話をその場で反映しながら進める。台帳・同期ストア・差分判定は
      通常の取得と完全に同じ仕組みを使う */
   const live = !!opts.reading;
-  if (ndl.downloading) { if (!live) toast("別の作品を取得中です"); return; }
+  /* サイレントモード（opts.silent）：進捗シートやトーストを出さず、
+     目次照合の結果だけを戻り値で返す。本を開いたときの自動チェックと
+     本棚の一括チェックが使う（fromCheck と組み合わせて使う前提） */
+  const silent = !!opts.silent;
+  if (ndl.downloading) { if (!live && !silent) toast("別の作品を取得中です"); return silent ? { blocked: true } : undefined; }
   const ncodeU = String(novel.ncode).toUpperCase();
   const base = "https://ncode.syosetu.com/" + ncodeU.toLowerCase() + "/";
   const key = "narou:" + ncodeU;
@@ -8149,8 +8169,8 @@ async function nRunSync(novel, opts){
   ndl.pendingFull = null;
   ndl.total = 0; ndl.done = 0; ndl.startDone = 0;
   ndl.startedAt = Date.now();
-  if (!live) openNProgress(novel);
-  if (fromCheck && !live) $("#nprogText").textContent = "目次を確認しています…";
+  if (!live && !silent) openNProgress(novel);
+  if (fromCheck && !live && !silent) $("#nprogText").textContent = "目次を確認しています…";
   let mRef = null; /* 中断・例外時にも、取得済み分を本棚へ登録するために台帳を控える */
   try {
     const collected = await nCollectEpisodes(novel, base);
@@ -8158,8 +8178,8 @@ async function nRunSync(novel, opts){
       /* 目次取得の段階で中断しても、前回までの取得済み分があれば本棚へ登録する */
       const m0 = await nLoadManifest(ncodeU);
       const cnt = m0 ? await nAssemblePartialBook(novel, m0, key, note) : null;
-      if (!live) nProgressCancelled(cnt, m0 ? m0.episodes.length : 0);
-      return;
+      if (!live && !silent) nProgressCancelled(cnt, m0 ? m0.episodes.length : 0);
+      return silent ? { cancelled: true } : undefined;
     }
     const toc = collected.episodes;
     const tocByNo = {};
@@ -8196,10 +8216,10 @@ async function nRunSync(novel, opts){
         await nSaveManifest(m);
         nSetEntryTotal(key, toc.length);
         ndl.total = toc.length;
-        if (!live) nProgressPlainDone("『" + novel.title + "』の更新はありませんでした（全" + toc.length + "話・最新です）。次回から差分だけを確認できます。");
-        return;
+        if (!live && !silent) nProgressPlainDone("『" + novel.title + "』の更新はありませんでした（全" + toc.length + "話・最新です）。次回から差分だけを確認できます。");
+        return silent ? { hasUpdate: false, newCount: 0, changedCount: 0, total: toc.length } : undefined;
       }
-      if (entry) { if (!live) nProgressDrift(novel); return; }
+      if (entry) { if (!live && !silent) nProgressDrift(novel); return silent ? { drift: true, hasUpdate: true, total: toc.length } : undefined; }
       /* 本棚に無い場合は通常の取得として続行する */
     }
 
@@ -8210,7 +8230,7 @@ async function nRunSync(novel, opts){
     toc.forEach(e => { tocNos[e.no] = true; });
     const removed = (m.episodes || []).filter(e => !tocNos[e.no]);
     /* 本棚の本があるのに話が消えている＝構成が大きく変わった。無理にマージしない */
-    if (m.bookId && removed.length) { if (!live) nProgressDrift(novel); return; }
+    if (m.bookId && removed.length) { if (!live && !silent) nProgressDrift(novel); return silent ? { drift: true, hasUpdate: true, total: toc.length } : undefined; }
     let storedNos = null;
     if ((m.episodes || []).some(e => e.state === "stored")) storedNos = await nsStoredNos(ncodeU);
     const merged = toc.map(te => {
@@ -8233,11 +8253,12 @@ async function nRunSync(novel, opts){
     const needFetch = merged.filter(e => e.state === "none");
     const pendingStored = merged.filter(e => e.state === "stored");
 
-    /* 「更新を確認」は目次だけを確認する：本文の取得も本への取り込みも
-       行わない。新着・変更・未取得の内訳だけを数えて知らせ、本文の取得は
-       本を開いたときの読書中ダウンロードに任せる。台帳は目次と照合済みの
-       状態で保存してあり、総話数も本棚側へ反映するので、開けば未取得分が
-       「取得途中」として自動取得の対象になる */
+    /* 目次チェックは目次だけを確認する：本文の取得も本への取り込みも
+       行わない。新着・変更・未取得の内訳だけを数える。台帳は目次と
+       照合済みの状態で保存してあり、総話数も本棚側へ反映するので、
+       開けば未取得分が「取得途中」として自動取得の対象になる。
+       サイレント時は表示を出さず、内訳を戻り値で返す（ドットの判定と、
+       開いた本で読書中ダウンロードへつなぐかどうかの判定に使う） */
     if (fromCheck) {
       ndl.total = toc.length;
       nSetEntryTotal(key, toc.length);
@@ -8250,6 +8271,9 @@ async function nRunSync(novel, opts){
       });
       /* まだ本に入っていない話＝未取得の残り＋同期ストア止まりの話 */
       const missingCount = needFetch.length - newCount - changedCount + pendingStored.length;
+      if (silent) {
+        return { hasUpdate: !!(newCount || changedCount), newCount, changedCount, missingCount, total: toc.length };
+      }
       if (!live) {
         if (newCount || changedCount) {
           nProgressPlainDone("『" + novel.title + "』に" +
@@ -8490,30 +8514,106 @@ async function nRunSync(novel, opts){
   } catch (err) {
     if (ndl.cancelled) {
       const cnt = mRef ? await nAssemblePartialBook(novel, mRef, key, note) : null;
-      if (!live) nProgressCancelled(cnt, mRef ? mRef.episodes.length : 0);
+      if (!live && !silent) nProgressCancelled(cnt, mRef ? mRef.episodes.length : 0);
     }
-    else if (!live) nProgressError(err && err.message ? err.message : "取得に失敗しました。時間をおいて再試行してください。");
+    else if (!live && !silent) nProgressError(err && err.message ? err.message : "取得に失敗しました。時間をおいて再試行してください。");
+    if (silent) return { error: true };
   } finally {
     ndl.downloading = false;
   }
 }
 /* 進捗シートの「全話再取得する」の入口（同期エンジンを通常モードで回す） */
 function nStartDownload(novel){ nRunSync(novel, {}); }
-/* 本棚カードの操作メニューの「更新を確認」：台帳の作品情報で差分チェックとして同期する */
-async function nCheckUpdate(entry){
-  if (ndl.downloading) { toast("別の作品を取得中です"); return; }
+/* ---------- 更新チェック（目次照合のみ・ドット連動） ----------
+   個別チェック（本ごとの「更新を確認」）は廃止し、入口は2つだけ:
+   - 本を開いたときの自動チェック（nAutoCheckOnOpen）
+   - 本棚ヘッダーの一括チェック（nCheckAllUpdates）
+   どちらも目次だけを取得して台帳と照合し、本文は取得しない。
+   照合結果は本棚エントリの hasUpdate（更新ドット）に反映する。
+   ドットは「前回のチェックで新着があった」印で、本を開くと消える */
+/* チェック対象の作品情報を用意する（台帳が無ければAPIで取り直す） */
+async function nResolveNovelForCheck(entry){
   const ncodeU = entry.key.slice(6).toUpperCase();
   const m = await nLoadManifest(ncodeU);
   let novel = m && m.novel ? m.novel : null;
   if (!novel) {
-    /* 台帳が無い本は、作品情報を取り直してから台帳起こし込みでチェックする */
     try {
       const res = await nApiFetch({ ncode: ncodeU.toLowerCase(), lim: 1 });
       if (res.novels.length) novel = res.novels[0];
     } catch (e) { /* noop */ }
   }
-  if (!novel) { toast("作品情報を取得できませんでした。時間をおいて再試行してください"); return; }
-  nRunSync(novel, { fromCheck: true });
+  return novel;
+}
+function nSetHasUpdate(key, on){
+  const e = S.library.find(x => x.key === key);
+  if (!e) return;
+  if (on) { if (!e.hasUpdate) { e.hasUpdate = true; persist(); } }
+  else if (e.hasUpdate) { delete e.hasUpdate; persist(); }
+}
+/* 1作品のサイレント目次照合。戻り値: 新着・変更があれば true、
+   無ければ false、取得中・失敗などで判定できなければ null。
+   setDot が真のときだけ結果をドットへ反映する（開いた本の自動
+   チェックではドットを付け直さないため、呼び出し側で切り分ける） */
+async function nSilentCheck(entry, setDot){
+  if (ndl.downloading) return null;
+  const novel = await nResolveNovelForCheck(entry);
+  if (!novel) return null;
+  if (ndl.downloading) return null; /* 作品情報の取得中に別の取得が始まったら譲る */
+  const res = await nRunSync(novel, { fromCheck: true, silent: true });
+  if (!res || res.blocked || res.error || res.cancelled) return null;
+  const has = !!res.hasUpdate;
+  if (setDot) nSetHasUpdate(entry.key, has);
+  return has;
+}
+/* 本を開いたときの自動チェック：揃っている本について裏で目次だけを
+   照合する。未取得分が残っている本は、読書中ダウンロード自体が目次
+   照合込みで新着まで取得するのでそちらに任せる（ここでは何もしない）。
+   照合で新着・変更が見つかったら、チェックだけで止めず、そのまま
+   読書中ダウンロードへつないで本文まで取得する（開いている間、
+   現在位置の次を優先して残りを取得し続ける既存の動作） */
+function nAutoCheckOnOpen(entry){
+  if (!entry || typeof entry.key !== "string" || entry.key.indexOf("narou:") !== 0) return;
+  const key = entry.key;
+  const cur = S.library.find(x => x.key === key) || entry;
+  if (isEntryIncomplete(cur)) return;
+  if (nReadSession.active || ndl.downloading) return;
+  nSilentCheck(cur, false).then(has => {
+    if (has == null) return;
+    if (!S.work || S.work.key !== key || !S.episodes.length) return; /* 既に閉じた／切り替わった */
+    if (has) {
+      const e2 = S.library.find(x => x.key === key);
+      /* 新着分は総話数の更新で「取得途中」になるので通常経路で、
+         書き換え分（話数が変わらない差分）は強制指定で取得へつなぐ */
+      if (e2) nStartReadingSync(e2, false, true);
+      nTocSyncRefresh();
+    }
+  }).catch(() => { /* noop */ });
+}
+/* 一括チェック：本棚の全なろう作品を順に目次照合し、結果を各本の
+   ドットへ反映する。本文は取得しない。実行中はボタンを回転＋無効化し、
+   終わったら件数だけを控えめに知らせる */
+let shelfCheckAllBusy = false;
+async function nCheckAllUpdates(){
+  if (shelfCheckAllBusy) return;
+  if (ndl.downloading || nReadSession.active) { toast("別の作品を取得中です"); return; }
+  const targets = S.library.filter(e => e && typeof e.key === "string" && e.key.indexOf("narou:") === 0);
+  if (!targets.length) { toast("なろう作品が本棚にありません"); return; }
+  shelfCheckAllBusy = true;
+  const btn = $("#btnShelfCheckAll");
+  if (btn) { btn.classList.add("spinning"); btn.disabled = true; }
+  let found = 0;
+  try {
+    for (const entry of targets) {
+      if (ndl.downloading) break; /* 途中で別の取得が始まったら残りは次回に回す */
+      const has = await nSilentCheck(entry, true);
+      if (has) found++;
+      buildShelf();
+    }
+  } catch (e) { /* 1件の失敗で全体を止めない（判定不能はドット据え置き） */ }
+  shelfCheckAllBusy = false;
+  if (btn) { btn.classList.remove("spinning"); btn.disabled = false; }
+  buildShelf();
+  toast(found ? "更新のある作品が" + found + "件あります" : "更新はありませんでした");
 }
 
 /* ---------- 読書中の自動取得（本を開いている間だけ裏で続きを取る） ----------
@@ -8538,9 +8638,12 @@ function nTocSyncRefresh(){
     ? "続きを取得中です（" + have + "／" + total + "話まで取得済み）。このまま読み進められます。"
     : "取得途中です（" + have + "／" + total + "話）。開いている間、続きを自動で取得します。";
 }
-function nStartReadingSync(entry, retried){
+function nStartReadingSync(entry, retried, force){
   if (!entry || typeof entry.key !== "string" || entry.key.indexOf("narou:") !== 0) return;
-  if (!isEntryIncomplete(entry)) return;
+  /* force は開いたときの自動チェックで「書き換え分だけの差分」が
+     見つかった場合に使う：総話数が変わらず取得途中判定にならなくても、
+     同期エンジン側の照合で足りない分だけが取得される */
+  if (!force && !isEntryIncomplete(entry)) return;
   const key = entry.key;
   if (nReadSession.active) {
     /* 直前まで開いていた同じ本のセッションが止まり切っていない場合は、
@@ -8548,7 +8651,7 @@ function nStartReadingSync(entry, retried){
     if (!retried && nReadSession.key === key) {
       setTimeout(() => {
         const e2 = S.library.find(x => x.key === key);
-        if (e2 && S.work && S.work.key === key) nStartReadingSync(e2, true);
+        if (e2 && S.work && S.work.key === key) nStartReadingSync(e2, true, force);
       }, 1600);
     }
     return;
@@ -9036,7 +9139,7 @@ if ("serviceWorker" in navigator) {
       });
     });
   }
-  /* 本棚のリロードボタンなどから呼ばれる更新確認。待機中の新版がいれば
+  /* 前面に戻ったときなどに呼ばれるアプリ版の更新確認。待機中の新版がいれば
      有効化を依頼し（実際のリロードは controllerchange 側が行う）、
      いなければサーバーに更新があるか問い合わせる */
   window.tateyomiCheckUpdate = function () {
