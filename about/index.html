@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>タテヨミ｜青空文庫を縦書きで読む、無料の縦書き小説ビューワー</title>
+<meta name="description" content="青空文庫の名作を、紙の本のように縦書き・右送りで読める無料のWebアプリ「タテヨミ」。EPUBやテキストファイルもそのまま開けて、しおりと読書位置を自動保存。インストール不要で、スマホのブラウザからそのまま読めます。">
+<link rel="canonical" href="https://tateyomi.pages.dev/about/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="タテヨミ">
+<meta property="og:title" content="タテヨミ — 青空文庫を縦書きで読む無料ビューワー">
+<meta property="og:description" content="青空文庫の名作を、紙の本のように縦書き・右送りで読める無料のWebアプリ「タテヨミ」。EPUBやテキストファイルもそのまま開けて、しおりと読書位置を自動保存。インストール不要で、スマホのブラウザからそのまま読めます。">
+<meta property="og:url" content="https://tateyomi.pages.dev/about/">
+<meta property="og:image" content="https://tateyomi.pages.dev/icon-512.png">
+<meta name="twitter:card" content="summary">
+<link rel="icon" href="/icon-192.png">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "無料ですか？",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "はい、無料で使えます。画面下部に広告が表示されます。"
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "青空文庫の作品はどうやって読むのですか？",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "アプリ内の「青空文庫」から作品を検索し、本棚へ登録するだけです。著作権の消滅した作品のみ掲載しています。"
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "EPUBや自分で持っているテキストファイルも読めますか？",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "はい。EPUB・txt・Markdownのファイルを取り込んで読めます。zip形式の青空文庫テキストや画像のみのzip（漫画）にも対応しています。"
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "アプリのインストールは必要ですか？",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "いいえ。ブラウザで https://tateyomi.pages.dev/ を開くだけで使えます。ホーム画面に追加すればアプリのように起動できます。"
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "縦書きの向きや文字の大きさは変えられますか？",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "はい。右送り／左送り、段組み、文字サイズ、行間、背景色などを設定できます。"
+      }
+    }
+  ]
+}
+</script>
+<style>
+  :root{
+    --paper:#fbf9f3;
+    --ink:#2b2620;
+    --accent:#a63a2e;
+    --sub:#6f675c;
+    --line:#e3dccd;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:var(--paper);
+    color:var(--ink);
+    font-family:"Hiragino Mincho ProN","Hiragino Mincho Pro","Yu Mincho","YuMincho","Noto Serif JP",serif;
+    line-height:1.9;
+  }
+  .wrap{max-width:720px;margin:0 auto;padding:48px 24px 64px;}
+  .brand{
+    display:flex;align-items:center;gap:12px;
+    font-size:20px;letter-spacing:.35em;font-weight:600;
+  }
+  .brand::after{
+    content:"";flex:1;height:1px;background:var(--line);
+  }
+  .ribbon{
+    width:14px;height:34px;background:var(--accent);
+    clip-path:polygon(0 0,100% 0,100% 100%,50% 78%,0 100%);
+  }
+  h1{
+    font-size:30px;line-height:1.6;font-weight:600;
+    margin:44px 0 20px;letter-spacing:.04em;
+  }
+  .lead{font-size:16px;margin:0 0 36px;}
+  .cta{
+    display:inline-block;
+    background:var(--accent);color:#fff;text-decoration:none;
+    padding:12px 32px;border-radius:4px;
+    font-size:16px;letter-spacing:.1em;
+  }
+  .cta:hover{opacity:.88;}
+  h2{
+    font-size:20px;font-weight:600;letter-spacing:.06em;
+    margin:52px 0 16px;padding-bottom:8px;
+    border-bottom:2px solid var(--accent);
+  }
+  ul.features{list-style:none;margin:0;padding:0;}
+  ul.features li{
+    padding:10px 0 10px 26px;position:relative;
+    border-bottom:1px solid var(--line);
+  }
+  ul.features li::before{
+    content:"";position:absolute;left:2px;top:20px;
+    width:9px;height:9px;background:var(--accent);
+    transform:rotate(45deg);
+  }
+  dl.faq{margin:0;}
+  dl.faq dt{font-weight:600;margin:22px 0 4px;}
+  dl.faq dt::before{content:"Q．";color:var(--accent);}
+  dl.faq dd{margin:0 0 0 0;color:var(--ink);}
+  dl.faq dd::before{content:"A．";color:var(--accent);font-weight:600;}
+  footer{
+    margin-top:64px;padding-top:20px;border-top:1px solid var(--line);
+    color:var(--sub);font-size:13px;text-align:center;
+  }
+  footer a{color:var(--accent);}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="brand"><span class="ribbon"></span>タテヨミ</div>
+
+  <h1>青空文庫を、紙の本のように縦書きで読む。</h1>
+  <p class="lead">タテヨミは、青空文庫の名作を縦書き・右送り・2段組みの明朝体で読める無料のWebアプリです。夏目漱石、宮沢賢治、芥川龍之介——著作権の消滅した名作を、スマホでそのまま開いて読めます。</p>
+  <a class="cta" href="https://tateyomi.pages.dev/">タテヨミを開く</a>
+
+  <h2>特長</h2>
+  <ul class="features">
+    <li>縦書き・右送り・2段組みの明朝体で、紙の本の読み心地</li>
+    <li>青空文庫から検索してそのまま本棚へ登録</li>
+    <li>EPUB・テキスト・Markdownファイルもそのまま開ける</li>
+    <li>しおりと読書位置を自動保存。続きからすぐ読める</li>
+    <li>文字サイズ・行間・背景色を調整可能</li>
+    <li>PWA対応：ホーム画面に追加すればアプリのように使えて、保存済みの本はオフラインでも読める</li>
+  </ul>
+
+  <h2>よくある質問</h2>
+  <dl class="faq">
+    <dt>無料ですか？</dt>
+    <dd>はい、無料で使えます。画面下部に広告が表示されます。</dd>
+    <dt>青空文庫の作品はどうやって読むのですか？</dt>
+    <dd>アプリ内の「青空文庫」から作品を検索し、本棚へ登録するだけです。著作権の消滅した作品のみ掲載しています。</dd>
+    <dt>EPUBや自分で持っているテキストファイルも読めますか？</dt>
+    <dd>はい。EPUB・txt・Markdownのファイルを取り込んで読めます。zip形式の青空文庫テキストや画像のみのzip（漫画）にも対応しています。</dd>
+    <dt>アプリのインストールは必要ですか？</dt>
+    <dd>いいえ。ブラウザで https://tateyomi.pages.dev/ を開くだけで使えます。ホーム画面に追加すればアプリのように起動できます。</dd>
+    <dt>縦書きの向きや文字の大きさは変えられますか？</dt>
+    <dd>はい。右送り／左送り、段組み、文字サイズ、行間、背景色などを設定できます。</dd>
+  </dl>
+
+  <footer>
+    <a href="https://tateyomi.pages.dev/">タテヨミ</a> — 青空文庫を縦書きで読む無料ビューワー
+  </footer>
+
+</div>
+</body>
+</html>
