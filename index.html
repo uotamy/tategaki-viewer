@@ -809,7 +809,7 @@
       <p class="shelf-filter-count" id="shelfFilterCount" hidden></p>
       <div id="shelfList"></div>
     </div>
-    <div id="buildId" aria-hidden="true">build 2026-11-09 19:34</div>
+    <div id="buildId" aria-hidden="true">build 2026-11-09 20:35</div>
   </div>
 
   <div id="narou" aria-label="なろうダウンローダー">
@@ -818,7 +818,7 @@
         <button class="bbtn" id="btnNarouBack">← 本棚</button>
         <div>
           <h2>なろうダウンローダー</h2>
-          <p>「小説家になろう」の作品を探して全話を取得し、そのまま本棚へ登録します。ファイル保存や別ページへの受け渡しは要りません。</p>
+          <p>「小説家になろう」の作品を探して本棚へ登録します。登録は作品情報と目次だけで、本文は開いて読むときに取得されます。ファイル保存や別ページへの受け渡しは要りません。</p>
         </div>
       </div>
 
@@ -1133,12 +1133,12 @@ const GUIDE_EPISODES = [
       "操作シートの「ダウンロード」からは、その本をファイルとして端末へ保存できます。なろうダウンローダーやテキストから取り込んだ本は、話ごとのテキストファイル（Shift_JIS）をまとめた青空文庫形式のzip（ファイル名は書名）になり、このビューワーでそのまま開き直せます。取り込み時の原本ファイルが端末に残っている本（漫画アーカイブなど）は、原本がそのまま保存されます。青空文庫ダウンローダーで登録した本も、青空文庫から取得したzipそのものが原本として残っているので、ダウンロードではその原本が無加工で保存されます。",
       { t: "なろうダウンローダー", cls: "head" },
       "本の追加は、本棚の「本追加」ボタンから開く「本を追加」画面に集約されています。ファイルを開く（端末内のファイルの取り込み）、なろうダウンローダー、青空文庫ダウンローダーの3つが並びます。",
-      "「なろうダウンローダー」からは、「小説家になろう」の作品を検索・ランキング・おすすめ・URL指定で探し、全話を取得してそのまま本棚へ登録できます。話数が多い作品は、取得に時間がかかります。別ページのダウンローダーで登録した本も、従来どおり前面に戻ったときに自動で本棚へ追加されます。",
+      "「なろうダウンローダー」からは、「小説家になろう」の作品を検索・ランキング・おすすめ・URL指定で探し、作品カードの「本棚へ登録」で本棚へ登録できます。登録のときは本文を取得しないので、話数が多い作品でもすぐ終わります。別ページのダウンローダーで登録した本も、従来どおり前面に戻ったときに自動で本棚へ追加されます。",
       "「青空文庫ダウンローダー」からは、青空文庫の作品を作品名・著者名で検索し、テキストzipを取得してそのまま本棚へ登録できます。作品リスト（インデックス）は青空文庫の公式のものを使い、端末内にキャッシュされます。「インデックスを更新」で最新のリストに取り直せます。掲載は著作権の消滅した作品のみです。",
       "取得は1話ごとに端末へ保存されます。途中で中断しても、取得済みの話だけで本として本棚へ登録されます。その本は本棚で「取得途中 n/総話」と表示され、取得済み範囲の末尾まで読んでも読了にはならず、続きを案内するページが出ます。",
       "本棚のなろう作品は、カードのメニューボタン（⋯）から「更新を確認」を実行できます（取得途中の本では「続きを取得」になります）。実行すると目次だけを取得して手元の控えと比べ、増えた話と、更新日が変わった（書き換えられた）話だけを取得して本へ取り込みます。新しい話は末尾へ追加され、読書位置やしおりはそのまま残ります。差分がなければ「更新はありません」と表示されます。",
       "取得途中の本を開いている間は、残りの話が裏側で自動的に取得され続けます。取得の順番は「今読んでいる話の次」からで、取得済みの話はそのまま読み進められます。取得中かどうかは、本文メニューの「目次」の上部に小さく表示されます。本を閉じる／本棚に戻ると自動取得は止まり、次に開いたときに続きから再開します。未取得の話が残っている間は、その本が「読了」になることはありません。",
-      "なろうの作品カードには「ダウンロードせず登録」もあります。これを選ぶと、本文は1話も取得せず、作品情報と目次（全話のタイトル一覧）だけを取って本棚へ登録します。登録された本は「取得途中 0/総話数」として並び、開くと、開いた話の本文がその場で取得されて読み始められ、残りの話は読んでいる間に順に取得されます。もちろん、従来どおり「全話取得して本棚へ」で全話を先に取得してから登録することもできます。",
+      "なろうの作品カードの「本棚へ登録」を選ぶと、本文は1話も取得せず、作品情報と目次（全話のタイトル一覧）だけを取って本棚へ登録します。登録された本は「取得途中 0/総話数」として並び、開くと、開いた話の本文がその場で取得されて読み始められ、残りの話は読んでいる間に順に取得されます。",
       { t: "しおり", cls: "head" },
       "メニューの「しおり」から、今開いているページにしおりを挟めます。しおりは本ごとに保存され、一覧からいつでもそのページへ戻れます。",
       { t: "保存のしくみ", cls: "head" },
@@ -4971,7 +4971,7 @@ async function openFromShelfLoad(entry){
       if (entry.key.indexOf("narou:") === 0) nStartReadingSync(entry);
       return;
     }
-    /* 本文がまだ1話も無いなろう作品（ダウンロードせず登録した本など）は、
+    /* 本文がまだ1話も無いなろう作品（「本棚へ登録」した本など）は、
        開いた話の本文をその場で取得してから開く。続きは読書中の
        自動取得が引き継ぐ */
     if (entry.key.indexOf("narou:") === 0 && await nBootstrapOpen(entry)) return;
@@ -7238,7 +7238,6 @@ function nCardHTML(n, rank, periodOrder){
         ? "取得途中 " + (regEntry.epTitles || []).length + "/" + regEntry.narouTotal + "話・本棚に登録済み"
         : "本棚に登録済み") + "</span>"
     : "";
-  const dlLabel = regEntry ? (regInc ? "続きを取得" : "本棚で開く") : "全話取得して本棚へ";
   return '<article class="ncard">' +
     '<div class="ntop">' +
       (rank ? '<div class="nrank' + (rank <= 3 ? " top" : "") + '">' + rank + "</div>" : "") +
@@ -7263,8 +7262,7 @@ function nCardHTML(n, rank, periodOrder){
     (n.story ? "<details><summary>あらすじ</summary><p class=\"nstory\">" + esc(n.story) + "</p></details>" : "") +
     (kw ? '<p class="nkw">キーワード：' + esc(kw) + "</p>" : "") +
     '<div class="nactions">' +
-      '<button type="button" class="nbtn primary" data-ndl="' + esc(String(n.ncode).toUpperCase()) + '">' + dlLabel + "</button>" +
-      (regEntry ? "" : '<button type="button" class="nbtn" data-nreg="' + esc(String(n.ncode).toUpperCase()) + '">ダウンロードせず登録</button>') +
+      (regEntry ? "" : '<button type="button" class="nbtn primary" data-nreg="' + esc(String(n.ncode).toUpperCase()) + '">本棚へ登録</button>') +
       '<button type="button" class="nbtn" data-nsimilar="' + esc(String(n.ncode).toUpperCase()) + '">似た作品</button>' +
     "</div>" +
     (aff ? '<div class="naff"><a href="' + esc(aff) + '" target="_blank" rel="noopener sponsored">書籍版を探す（Amazon）</a></div>' : "") +
@@ -7513,20 +7511,6 @@ $("#nsimilarClose").addEventListener("click", () => $("#nsimilarPanel").classLis
 
 /* カード内ボタンの委譲 */
 narouEl.addEventListener("click", ev => {
-  const dl = ev.target.closest("[data-ndl]");
-  if (dl) {
-    const n = nNovelStore[String(dl.dataset.ndl).toUpperCase()];
-    if (n) {
-      /* 登録済みで全話そろっている作品は、二重に作らず本棚の本を開く。
-         取得途中の作品は同期エンジンが既存の本と台帳に合流させる */
-      const entry = S.library.find(x => x.key === "narou:" + String(n.ncode).toUpperCase());
-      if (entry && !isEntryIncomplete(entry)) {
-        showShelf();
-        openFromShelf(entry);
-      } else nStartDownload(n);
-    }
-    return;
-  }
   const reg = ev.target.closest("[data-nreg]");
   if (reg) {
     const n = nNovelStore[String(reg.dataset.nreg).toUpperCase()];
@@ -7540,7 +7524,7 @@ narouEl.addEventListener("click", ev => {
   }
 });
 
-/* ---------- ダウンロードせず登録（目次だけ取って本棚へ） ----------
+/* ---------- 本棚へ登録（目次だけ取って本棚へ） ----------
    作品メタデータと目次（全話のタイトル一覧）だけを取得して本棚へ登録する。
    本文は1話も取らない。台帳（同期ストア）には全話「未取得」で載せ、
    本棚エントリは話数0の取得途中の本として作る。開いたときに
@@ -8488,7 +8472,7 @@ async function nRunSync(novel, opts){
     ndl.downloading = false;
   }
 }
-/* 作品カードの「全話取得して本棚へ」／レジュームの入口 */
+/* 進捗シートの「全話再取得する」の入口（同期エンジンを通常モードで回す） */
 function nStartDownload(novel){ nRunSync(novel, {}); }
 /* 本棚カードの操作メニューの「更新を確認／続きを取得」：台帳の作品情報で差分チェックとして同期する */
 async function nCheckUpdate(entry){
@@ -8570,7 +8554,7 @@ function nStopReadingSync(){
 }
 
 /* ---------- 本文が無いなろう本を開く（開いた話だけ先に取得する） ----------
-   ダウンロードせず登録した本など、本文が1話も無い本を開くときの入口。
+   「本棚へ登録」した本など、本文が1話も無い本を開くときの入口。
    前回の読書位置の話が台帳で特定できればその話を、できなければ最初の話を
    取得して1話だけの本として開き、残りは読書中の自動取得へ引き継ぐ。
    台帳が無い・話が無い場合は false を返し、従来の「開けません」表示に任せる */
