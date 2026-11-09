@@ -380,6 +380,14 @@
      下に常駐する読書ステージ（最後に開いていたページ）が透けてちらつくため、
      遷移は不透明な即時切替にする（本棚・なろう・本追加・青空文庫で共通） */
   #shelf.show { display: block; }
+  /* 本棚左下のビルドID表示：小さく目立たず、カードや操作の邪魔にならないよう
+     固定位置・タップ透過で出す */
+  #buildId {
+    position: fixed; left: 10px; bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
+    font-size: 10px; letter-spacing: .04em; color: var(--sub); opacity: .75;
+    pointer-events: none; user-select: none; -webkit-user-select: none;
+    font-variant-numeric: tabular-nums;
+  }
   .shelf-inner {
     max-width: 720px; margin: 0 auto;
     padding: calc(env(safe-area-inset-top, 0px) + 22px) 18px calc(env(safe-area-inset-bottom, 0px) + 30px);
@@ -659,6 +667,7 @@
     <div class="grab"></div>
     <h2 id="tocWorkTitle"></h2>
     <p class="worknote" id="tocWorkNote"></p>
+    <p class="worknote" id="tocSyncNote" hidden></p>
     <div id="tocList"></div>
   </section>
 
@@ -800,6 +809,7 @@
       <p class="shelf-filter-count" id="shelfFilterCount" hidden></p>
       <div id="shelfList"></div>
     </div>
+    <div id="buildId" aria-hidden="true">build 2026-11-09 19:34</div>
   </div>
 
   <div id="narou" aria-label="なろうダウンローダー">
@@ -1127,6 +1137,8 @@ const GUIDE_EPISODES = [
       "「青空文庫ダウンローダー」からは、青空文庫の作品を作品名・著者名で検索し、テキストzipを取得してそのまま本棚へ登録できます。作品リスト（インデックス）は青空文庫の公式のものを使い、端末内にキャッシュされます。「インデックスを更新」で最新のリストに取り直せます。掲載は著作権の消滅した作品のみです。",
       "取得は1話ごとに端末へ保存されます。途中で中断しても、取得済みの話だけで本として本棚へ登録されます。その本は本棚で「取得途中 n/総話」と表示され、取得済み範囲の末尾まで読んでも読了にはならず、続きを案内するページが出ます。",
       "本棚のなろう作品は、カードのメニューボタン（⋯）から「更新を確認」を実行できます（取得途中の本では「続きを取得」になります）。実行すると目次だけを取得して手元の控えと比べ、増えた話と、更新日が変わった（書き換えられた）話だけを取得して本へ取り込みます。新しい話は末尾へ追加され、読書位置やしおりはそのまま残ります。差分がなければ「更新はありません」と表示されます。",
+      "取得途中の本を開いている間は、残りの話が裏側で自動的に取得され続けます。取得の順番は「今読んでいる話の次」からで、取得済みの話はそのまま読み進められます。取得中かどうかは、本文メニューの「目次」の上部に小さく表示されます。本を閉じる／本棚に戻ると自動取得は止まり、次に開いたときに続きから再開します。未取得の話が残っている間は、その本が「読了」になることはありません。",
+      "なろうの作品カードには「ダウンロードせず登録」もあります。これを選ぶと、本文は1話も取得せず、作品情報と目次（全話のタイトル一覧）だけを取って本棚へ登録します。登録された本は「取得途中 0/総話数」として並び、開くと、開いた話の本文がその場で取得されて読み始められ、残りの話は読んでいる間に順に取得されます。もちろん、従来どおり「全話取得して本棚へ」で全話を先に取得してから登録することもできます。",
       { t: "しおり", cls: "head" },
       "メニューの「しおり」から、今開いているページにしおりを挟めます。しおりは本ごとに保存され、一覧からいつでもそのページへ戻れます。",
       { t: "保存のしくみ", cls: "head" },
@@ -3653,6 +3665,7 @@ $("#pageSlider").addEventListener("input", e => {
 function buildToc(){
   $("#tocWorkTitle").textContent = S.work.title;
   $("#tocWorkNote").textContent = S.work.note || "";
+  nTocSyncRefresh();
   const list = $("#tocList");
   list.innerHTML = "";
   S.episodes.forEach((ep, i) => {
@@ -4748,6 +4761,9 @@ document.addEventListener("fullscreenchange", () => {
    しないため）。起動直後はどの本も開いていないので、この関数が空状態の
    まま呼ばれることもある（その場合は何もしない） */
 function closeCurrentBook(){
+  /* 本を閉じる＝読書中の自動取得（なろう）が動いていれば止める。
+     再度開けば、開いた話の次から続きが再開する */
+  try { nStopReadingSync(); } catch (e) { /* noop */ }
   /* 本棚へ戻る＝こちらから入った全画面はここで抜け、次に本を開くときに
      再び入れるようラッチも解除する。開いている本が無い場合でも先に行う */
   leaveFullscreenForShelf();
@@ -4945,13 +4961,20 @@ async function openFromShelfLoad(entry){
     }
   } else {
     const eps = await loadBookContent(entry.key);
-    if (eps) {
+    if (eps && eps.length) {
       const resumed = setBook({ title: entry.title, note: entry.note }, eps, entry.key,
         { kind: "file", fileName: entry.fileName, stored: true });
       hideShelf();
       toast(resumed ? "前回の続きから開きました" : "『" + entry.title + "』を開きました");
+      /* 未取得の話が残っているなろう作品は、開いている間だけ裏側で
+         続きを自動取得する（読書中ダウンロード） */
+      if (entry.key.indexOf("narou:") === 0) nStartReadingSync(entry);
       return;
     }
+    /* 本文がまだ1話も無いなろう作品（ダウンロードせず登録した本など）は、
+       開いた話の本文をその場で取得してから開く。続きは読書中の
+       自動取得が引き継ぐ */
+    if (entry.key.indexOf("narou:") === 0 && await nBootstrapOpen(entry)) return;
   }
   /* 本文が端末に残っていない本は、ファイルの再選択では開かない。
      ファイル選択は出さず、エラーを表示して本棚に留まる */
@@ -7241,6 +7264,7 @@ function nCardHTML(n, rank, periodOrder){
     (kw ? '<p class="nkw">キーワード：' + esc(kw) + "</p>" : "") +
     '<div class="nactions">' +
       '<button type="button" class="nbtn primary" data-ndl="' + esc(String(n.ncode).toUpperCase()) + '">' + dlLabel + "</button>" +
+      (regEntry ? "" : '<button type="button" class="nbtn" data-nreg="' + esc(String(n.ncode).toUpperCase()) + '">ダウンロードせず登録</button>') +
       '<button type="button" class="nbtn" data-nsimilar="' + esc(String(n.ncode).toUpperCase()) + '">似た作品</button>' +
     "</div>" +
     (aff ? '<div class="naff"><a href="' + esc(aff) + '" target="_blank" rel="noopener sponsored">書籍版を探す（Amazon）</a></div>' : "") +
@@ -7503,12 +7527,87 @@ narouEl.addEventListener("click", ev => {
     }
     return;
   }
+  const reg = ev.target.closest("[data-nreg]");
+  if (reg) {
+    const n = nNovelStore[String(reg.dataset.nreg).toUpperCase()];
+    if (n) nRegisterMetaOnly(n, reg);
+    return;
+  }
   const sim = ev.target.closest("[data-nsimilar]");
   if (sim) {
     const n = nNovelStore[String(sim.dataset.nsimilar).toUpperCase()];
     if (n) nLoadSimilar(n);
   }
 });
+
+/* ---------- ダウンロードせず登録（目次だけ取って本棚へ） ----------
+   作品メタデータと目次（全話のタイトル一覧）だけを取得して本棚へ登録する。
+   本文は1話も取らない。台帳（同期ストア）には全話「未取得」で載せ、
+   本棚エントリは話数0の取得途中の本として作る。開いたときに
+   nBootstrapOpen が開いた話を取得し、残りは読書中の自動取得が引き継ぐ */
+let nRegBusy = false;
+async function nRegisterMetaOnly(novel, btn){
+  if (nRegBusy) return;
+  if (ndl.downloading) { toast("別の作品を取得中です"); return; }
+  const ncodeU = String(novel.ncode).toUpperCase();
+  const key = "narou:" + ncodeU;
+  if (S.library.find(x => x.key === key)) { toast("すでに本棚に登録されています"); return; }
+  nRegBusy = true;
+  const origText = btn ? btn.textContent : "";
+  if (btn) { btn.disabled = true; btn.textContent = "目次を取得中…"; }
+  try {
+    ndl.cancelled = false;
+    const base = "https://ncode.syosetu.com/" + ncodeU.toLowerCase() + "/";
+    const collected = await nCollectEpisodes(novel, base);
+    const toc = collected.episodes;
+    if (!toc.length) throw new Error("目次が取得できませんでした。");
+    let m = await nLoadManifest(ncodeU);
+    if (!m) m = nNewManifest(novel);
+    m.title = novel.title;
+    m.writer = novel.writer || "";
+    m.novel = nNovelSnapshot(novel);
+    /* 既存の台帳がある場合（過去に取得して本だけ削除した等）は、更新日が
+       同じ話の「取得済み（同期ストア内）」状態だけを引き継ぐ。本文が
+       本に入っている扱い（inbook）は、本を作り直すので引き継がない */
+    const prevByNo = {};
+    (m.episodes || []).forEach(e => { prevByNo[e.no] = e; });
+    const storedNos = await nsStoredNos(ncodeU);
+    m.episodes = toc.map(te => {
+      const prev = prevByNo[te.no];
+      const e = {
+        no: te.no, title: te.title, chapter: te.chapter || "", date: te.date || "",
+        state: "none", bookIndex: null
+      };
+      if (prev && (prev.date || "") === e.date && prev.state === "stored" && storedNos[te.no]) e.state = "stored";
+      return e;
+    });
+    m.bookId = key;
+    m.lastCheck = Date.now();
+    await nSaveManifest(m);
+    const note = (novel.writer ? novel.writer + "／" : "") + "小説家になろう";
+    registerBook(key, novel.title, note, "file", "", [], true);
+    /* 話タイトル一覧はまだ本に入っていないので持たせない（本棚カードの
+       「全0話」表示を避け、未取得の判定は話数0として働かせる） */
+    const ent = S.library.find(x => x.key === key);
+    if (ent) delete ent.epTitles;
+    nSetEntryTotal(key, toc.length);
+    buildShelf();
+    toast("『" + novel.title + "』を本棚に登録しました。開くと、開いた話から取得が始まります", 3400);
+    /* 表示中のカード（検索・ランキング・おすすめ等）を登録済み表示へ差し替える */
+    document.querySelectorAll('[data-nreg="' + ncodeU + '"]').forEach(b => {
+      const card = b.closest("article.ncard");
+      if (!card) return;
+      const tmp = document.createElement("div");
+      tmp.innerHTML = nCardHTML(novel);
+      if (tmp.firstChild) card.replaceWith(tmp.firstChild);
+    });
+  } catch (err) {
+    toast("登録に失敗しました。時間をおいて再試行してください");
+    if (btn && btn.isConnected) { btn.disabled = false; btn.textContent = origText; }
+  } finally {
+    nRegBusy = false;
+  }
+}
 
 /* ---------- 本文取得と青空文庫形式変換（独立ページ版と同一ロジック） ---------- */
 function nParseToc(html, initialChapter){
@@ -8051,7 +8150,11 @@ async function nAssemblePartialBook(novel, m, key, note){
 async function nRunSync(novel, opts){
   opts = opts || {};
   const fromCheck = !!opts.fromCheck;
-  if (ndl.downloading) { toast("別の作品を取得中です"); return; }
+  /* 読書中モード（opts.reading）：進捗シートは出さず、開いている本へ
+     取得した話をその場で反映しながら進める。台帳・同期ストア・差分判定は
+     通常の取得と完全に同じ仕組みを使う */
+  const live = !!opts.reading;
+  if (ndl.downloading) { if (!live) toast("別の作品を取得中です"); return; }
   const ncodeU = String(novel.ncode).toUpperCase();
   const base = "https://ncode.syosetu.com/" + ncodeU.toLowerCase() + "/";
   const key = "narou:" + ncodeU;
@@ -8063,8 +8166,8 @@ async function nRunSync(novel, opts){
   ndl.pendingFull = null;
   ndl.total = 0; ndl.done = 0; ndl.startDone = 0;
   ndl.startedAt = Date.now();
-  openNProgress(novel);
-  if (fromCheck) $("#nprogText").textContent = "目次を確認しています…";
+  if (!live) openNProgress(novel);
+  if (fromCheck && !live) $("#nprogText").textContent = "目次を確認しています…";
   let mRef = null; /* 中断・例外時にも、取得済み分を本棚へ登録するために台帳を控える */
   try {
     const collected = await nCollectEpisodes(novel, base);
@@ -8072,7 +8175,7 @@ async function nRunSync(novel, opts){
       /* 目次取得の段階で中断しても、前回までの取得済み分があれば本棚へ登録する */
       const m0 = await nLoadManifest(ncodeU);
       const cnt = m0 ? await nAssemblePartialBook(novel, m0, key, note) : null;
-      nProgressCancelled(cnt, m0 ? m0.episodes.length : 0);
+      if (!live) nProgressCancelled(cnt, m0 ? m0.episodes.length : 0);
       return;
     }
     const toc = collected.episodes;
@@ -8110,10 +8213,10 @@ async function nRunSync(novel, opts){
         await nSaveManifest(m);
         nSetEntryTotal(key, toc.length);
         ndl.total = toc.length;
-        nProgressPlainDone("『" + novel.title + "』の更新はありませんでした（全" + toc.length + "話・最新です）。次回から差分だけを確認できます。");
+        if (!live) nProgressPlainDone("『" + novel.title + "』の更新はありませんでした（全" + toc.length + "話・最新です）。次回から差分だけを確認できます。");
         return;
       }
-      if (entry) { nProgressDrift(novel); return; }
+      if (entry) { if (!live) nProgressDrift(novel); return; }
       /* 本棚に無い場合は通常の取得として続行する */
     }
 
@@ -8124,7 +8227,7 @@ async function nRunSync(novel, opts){
     toc.forEach(e => { tocNos[e.no] = true; });
     const removed = (m.episodes || []).filter(e => !tocNos[e.no]);
     /* 本棚の本があるのに話が消えている＝構成が大きく変わった。無理にマージしない */
-    if (m.bookId && removed.length) { nProgressDrift(novel); return; }
+    if (m.bookId && removed.length) { if (!live) nProgressDrift(novel); return; }
     let storedNos = null;
     if ((m.episodes || []).some(e => e.state === "stored")) storedNos = await nsStoredNos(ncodeU);
     const merged = toc.map(te => {
@@ -8150,16 +8253,110 @@ async function nRunSync(novel, opts){
     /* 差分チェックで差分ゼロなら、本文取得は一切しない */
     if (fromCheck && !needFetch.length && !pendingStored.length && m.bookId) {
       ndl.total = toc.length;
-      nProgressPlainDone("『" + novel.title + "』の更新はありませんでした（全" + toc.length + "話・最新です）。");
+      if (!live) nProgressPlainDone("『" + novel.title + "』の更新はありませんでした（全" + toc.length + "話・最新です）。");
       return;
     }
     /* 取得起動で、登録済み・最新ならそのまま完了表示にする */
     if (!fromCheck && !needFetch.length && !pendingStored.length && m.bookId) {
       ndl.total = toc.length;
       ndl.lastBook = { key, title: novel.title, note, episodes: [], stored: true };
-      nProgressDone(novel, key, true);
-      $("#nprogDoneNote").textContent = "『" + novel.title + "』は最新の状態で本棚に登録済みです。";
+      if (!live) {
+        nProgressDone(novel, key, true);
+        $("#nprogDoneNote").textContent = "『" + novel.title + "』は最新の状態で本棚に登録済みです。";
+      }
       return;
+    }
+
+    const headingOf = e => (e.chapter ? e.chapter + "　" + e.title : e.title);
+    const parseStored = async e => {
+      const text = await nsGet(NS_EP_STORE, nsEpKey(ncodeU, e.no));
+      if (text == null) return null;
+      const heading = headingOf(e);
+      return mergeParsedEpisodes(parseTextBook(text, heading + ".txt"), heading);
+    };
+
+    /* 読書中モードの準備：開いている本の話順（話番号の並び）を控え、取得した
+       話をその場で本へ差し込めるようにする。台帳の本内位置と開いている本の
+       話数が一致しない場合は、開いている本への反映はせず通常の取得だけを行う。
+       保存側の本は従来どおり反映フェーズで一括して揃える */
+    let liveOrder = null, liveDiverged = false;
+    if (live && S.work && S.work.key === key) {
+      const inbook = merged.filter(e => e.state === "inbook" && e.bookIndex != null)
+        .sort((a, b) => a.bookIndex - b.bookIndex);
+      if (inbook.length === S.episodes.length) liveOrder = inbook.map(e => e.no);
+    }
+    const liveReflect = async e => {
+      if (!liveOrder || !S.work || S.work.key !== key) return;
+      const parsed = await parseStored(e);
+      if (!parsed || !parsed.paragraphs.length) return;
+      if (e.bookIndex != null) {
+        /* 既存話の差し替え：今読んでいる話は表示を乱さないよう触らず、
+           それ以外の話は開いている本へも差し替える */
+        const idx = liveOrder.indexOf(e.no);
+        if (idx >= 0 && idx !== S.ep) {
+          S.episodes[idx] = parsed;
+          S.cache.delete(idx);
+          liveDiverged = true;
+        }
+        return;
+      }
+      /* 新しい話：目次順の正しい位置へ差し込む */
+      const posInToc = merged.indexOf(e);
+      let idx = -1;
+      for (let i = posInToc - 1; i >= 0; i--) {
+        const j = liveOrder.indexOf(merged[i].no);
+        if (j >= 0) { idx = j + 1; break; }
+      }
+      if (idx < 0) {
+        for (let i = posInToc + 1; i < merged.length; i++) {
+          const j = liveOrder.indexOf(merged[i].no);
+          if (j >= 0) { idx = j; break; }
+        }
+      }
+      if (idx < 0) idx = S.episodes.length;
+      const atEnd = idx === S.episodes.length;
+      S.episodes.splice(idx, 0, parsed);
+      liveOrder.splice(idx, 0, e.no);
+      const shifted = idx <= S.ep;
+      if (shifted) { S.ep++; liveDiverged = true; }
+      if (!atEnd) liveDiverged = true;
+      S.cache.clear();
+      clearPrebuiltPages();
+      if (shifted) renderCurrent(null);
+      nUpdateLibraryEntry(key, S.episodes);
+      nTocSyncRefresh();
+    };
+    /* 読書中モードの完了時：保存側の本（反映フェーズの結果）と開いている本の
+       並びが食い違っていたら、現在位置を話番号で引き継いで読み直す */
+    const liveReload = finalBook => {
+      if (!live || !liveDiverged || !liveOrder) return;
+      if (!S.work || S.work.key !== key) return;
+      const curNo = liveOrder[S.ep];
+      if (curNo == null) return;
+      const ne = merged.find(e => e.no === curNo);
+      if (!ne || ne.bookIndex == null || !finalBook[ne.bookIndex]) return;
+      const pos = currentPos();
+      S.episodes = finalBook;
+      S.cache.clear();
+      clearPrebuiltPages();
+      goToPos(ne.bookIndex, pos);
+      buildToc();
+    };
+    /* 同期ストアに取得済みで本へ未反映の話は、本文取得より先に開いている本へ反映する */
+    if (live && liveOrder) {
+      for (const e of pendingStored) {
+        if (ndl.cancelled) break;
+        await liveReflect(e);
+      }
+    }
+    /* 読書中モードでは、取得の優先順位を「今読んでいる話の次」からにする
+       （opts.priorityNo がその話番号。その話自体が未取得なら最優先になる） */
+    if (live && opts.priorityNo != null) {
+      let maxNo = 0;
+      toc.forEach(e => { if (e.no > maxNo) maxNo = e.no; });
+      const span = maxNo + 1, p = opts.priorityNo;
+      const dist = no => (((no - p) % span) + span) % span;
+      needFetch.sort((a, b) => dist(a.no) - dist(b.no));
     }
 
     /* 本文取得フェーズ：足りない話だけを取り、1話ごとに即保存する */
@@ -8167,8 +8364,10 @@ async function nRunSync(novel, opts){
     ndl.done = merged.length - needFetch.length;
     ndl.startDone = ndl.done;
     ndl.startedAt = Date.now();
-    nProgressUpdate();
+    if (!live) nProgressUpdate(); else nTocSyncRefresh();
     for (let i = 0; i < needFetch.length; i++) {
+      /* 読書中モードで本が閉じられた／別の本に切り替わったら、そこで止める */
+      if (live && (!S.work || S.work.key !== key)) ndl.cancelled = true;
       if (ndl.cancelled) break;
       const e = needFetch[i];
       const te = tocByNo[e.no];
@@ -8181,25 +8380,19 @@ async function nRunSync(novel, opts){
       e.state = "stored";
       await nSaveManifest(m);
       ndl.done++;
-      nProgressUpdate(e.title);
+      if (!live) nProgressUpdate(e.title);
+      else await liveReflect(e);
       if (i < needFetch.length - 1) await nSleep(700); /* 各話の間隔は礼儀正しく空ける */
     }
     if (ndl.cancelled) {
       /* 中断時は、取得済みの話だけでも本として本棚へ登録する（本棚一本化） */
       const cnt = await nAssemblePartialBook(novel, m, key, note);
-      nProgressCancelled(cnt, toc.length);
+      if (!live) nProgressCancelled(cnt, toc.length);
       return;
     }
 
     /* 反映フェーズ */
-    $("#nprogText").textContent = m.bookId ? "本へ反映しています…" : "本棚へ登録しています…";
-    const headingOf = e => (e.chapter ? e.chapter + "　" + e.title : e.title);
-    const parseStored = async e => {
-      const text = await nsGet(NS_EP_STORE, nsEpKey(ncodeU, e.no));
-      if (text == null) return null;
-      const heading = headingOf(e);
-      return mergeParsedEpisodes(parseTextBook(text, heading + ".txt"), heading);
-    };
+    if (!live) $("#nprogText").textContent = m.bookId ? "本へ反映しています…" : "本棚へ登録しています…";
 
     if (m.bookId && existingBook) {
       /* 差分マージ：同じ話番号は差し替え、新しい話は末尾に追加だけ。
@@ -8220,7 +8413,7 @@ async function nRunSync(novel, opts){
           e.state = "inbook";
         }
       }
-      if (drift) { nProgressDrift(novel); return; }
+      if (drift) { if (!live) nProgressDrift(novel); return; }
       const storedOk = await saveBookContent(key, book);
       if (!storedOk) throw new Error("更新した本を保存できませんでした（容量不足など）。取得した本文は残してあるので、再試行できます。");
       nUpdateLibraryEntry(key, book);
@@ -8231,18 +8424,21 @@ async function nRunSync(novel, opts){
       await nSaveManifest(m);
       buildShelf();
       ndl.total = toc.length;
+      if (live) liveReload(book);
       if (!added && !replaced) {
-        nProgressPlainDone("『" + novel.title + "』の更新はありませんでした（全" + toc.length + "話・最新です）。");
+        if (!live) nProgressPlainDone("『" + novel.title + "』の更新はありませんでした（全" + toc.length + "話・最新です）。");
       } else if (fromCheck) {
-        nProgressPlainDone("『" + novel.title + "』を更新しました：" +
+        if (!live) nProgressPlainDone("『" + novel.title + "』を更新しました：" +
           (added ? added + "話を追加" : "") + (added && replaced ? "、" : "") +
           (replaced ? replaced + "話を差し替え" : "") + "（全" + book.length + "話）。読書位置としおりはそのままです。");
       } else {
         ndl.lastBook = { key, title: novel.title, note, episodes: [], stored: true };
-        nProgressDone(novel, key, true);
-        $("#nprogDoneNote").textContent = "『" + novel.title + "』を更新しました：" +
-          (added ? added + "話を追加" : "") + (added && replaced ? "、" : "") +
-          (replaced ? replaced + "話を差し替え" : "") + "（全" + book.length + "話）。";
+        if (!live) {
+          nProgressDone(novel, key, true);
+          $("#nprogDoneNote").textContent = "『" + novel.title + "』を更新しました：" +
+            (added ? added + "話を追加" : "") + (added && replaced ? "、" : "") +
+            (replaced ? replaced + "話を差し替え" : "") + "（全" + book.length + "話）。";
+        }
       }
       return;
     }
@@ -8277,14 +8473,17 @@ async function nRunSync(novel, opts){
       await nSaveManifest(m);
     }
     buildShelf();
-    nProgressDone(novel, key, stored);
-    if (stored) toast("『" + novel.title + "』を本棚に追加しました", 3000);
+    if (live && stored) liveReload(episodes);
+    if (!live) {
+      nProgressDone(novel, key, stored);
+      if (stored) toast("『" + novel.title + "』を本棚に追加しました", 3000);
+    }
   } catch (err) {
     if (ndl.cancelled) {
       const cnt = mRef ? await nAssemblePartialBook(novel, mRef, key, note) : null;
-      nProgressCancelled(cnt, mRef ? mRef.episodes.length : 0);
+      if (!live) nProgressCancelled(cnt, mRef ? mRef.episodes.length : 0);
     }
-    else nProgressError(err && err.message ? err.message : "取得に失敗しました。時間をおいて再試行してください。");
+    else if (!live) nProgressError(err && err.message ? err.message : "取得に失敗しました。時間をおいて再試行してください。");
   } finally {
     ndl.downloading = false;
   }
@@ -8306,6 +8505,131 @@ async function nCheckUpdate(entry){
   }
   if (!novel) { toast("作品情報を取得できませんでした。時間をおいて再試行してください"); return; }
   nRunSync(novel, { fromCheck: true });
+}
+
+/* ---------- 読書中の自動取得（本を開いている間だけ裏で続きを取る） ----------
+   未取得の話が残っているなろう作品を開いたら、閉じるまでの間だけ同期
+   エンジン（nRunSync の読書中モード）で残りを取り続ける。優先順位は
+   「今読んでいる話の次」から。本を閉じる／本棚に戻る操作は
+   closeCurrentBook → nStopReadingSync で止め、次に開けば続きから再開する */
+const nReadSession = { active: false, key: null };
+function nTocSyncRefresh(){
+  const el = $("#tocSyncNote");
+  if (!el) return;
+  const key = S.work && S.work.key;
+  const entry = key ? S.library.find(x => x.key === key) : null;
+  if (!entry || !isEntryIncomplete(entry)) {
+    el.hidden = true;
+    el.textContent = "";
+    return;
+  }
+  const have = (entry.epTitles || []).length, total = entry.narouTotal || 0;
+  el.hidden = false;
+  el.textContent = (nReadSession.active && nReadSession.key === key)
+    ? "続きを取得中です（" + have + "／" + total + "話まで取得済み）。このまま読み進められます。"
+    : "取得途中です（" + have + "／" + total + "話）。開いている間、続きを自動で取得します。";
+}
+function nStartReadingSync(entry, retried){
+  if (!entry || typeof entry.key !== "string" || entry.key.indexOf("narou:") !== 0) return;
+  if (!isEntryIncomplete(entry)) return;
+  const key = entry.key;
+  if (nReadSession.active) {
+    /* 直前まで開いていた同じ本のセッションが止まり切っていない場合は、
+       少し待って一度だけ開始し直す */
+    if (!retried && nReadSession.key === key) {
+      setTimeout(() => {
+        const e2 = S.library.find(x => x.key === key);
+        if (e2 && S.work && S.work.key === key) nStartReadingSync(e2, true);
+      }, 1600);
+    }
+    return;
+  }
+  const ncodeU = key.slice(6).toUpperCase();
+  nLoadManifest(ncodeU).then(m => {
+    if (!m || !m.novel || !Array.isArray(m.episodes) || !m.episodes.length) return;
+    if (!S.work || S.work.key !== key || !S.episodes.length) return;
+    if (nReadSession.active) return;
+    /* 優先順位の起点は「今読んでいる話」。台帳の本内位置から話番号を引く */
+    let priorityNo = null;
+    const cur = m.episodes.find(e => e.bookIndex === S.ep);
+    if (cur) priorityNo = cur.no;
+    nReadSession.active = true;
+    nReadSession.key = key;
+    nTocSyncRefresh();
+    nRunSync(m.novel, { reading: true, priorityNo }).then(() => {
+      if (nReadSession.key === key) {
+        nReadSession.active = false;
+        nReadSession.key = null;
+      }
+      nTocSyncRefresh();
+    });
+  }).catch(() => { /* noop */ });
+}
+function nStopReadingSync(){
+  if (nReadSession.active) ndl.cancelled = true;
+}
+
+/* ---------- 本文が無いなろう本を開く（開いた話だけ先に取得する） ----------
+   ダウンロードせず登録した本など、本文が1話も無い本を開くときの入口。
+   前回の読書位置の話が台帳で特定できればその話を、できなければ最初の話を
+   取得して1話だけの本として開き、残りは読書中の自動取得へ引き継ぐ。
+   台帳が無い・話が無い場合は false を返し、従来の「開けません」表示に任せる */
+async function nBootstrapOpen(entry){
+  const key = entry.key, ncodeU = key.slice(6).toUpperCase();
+  const m = await nLoadManifest(ncodeU);
+  if (!m || !m.novel || !Array.isArray(m.episodes) || !m.episodes.length) return false;
+  const novel = m.novel;
+  const note = (novel.writer ? novel.writer + "／" : "") + "小説家になろう";
+  try {
+    let target = null;
+    const pos = S.positions[key];
+    if (pos) target = m.episodes.find(e => e.bookIndex === pos.ep) || null;
+    if (!target) target = m.episodes[0];
+    const heading = target.chapter ? target.chapter + "　" + target.title : target.title;
+    let parsed = null;
+    const storedText = target.state === "stored"
+      ? await nsGet(NS_EP_STORE, nsEpKey(ncodeU, target.no)) : null;
+    if (storedText != null) {
+      parsed = mergeParsedEpisodes(parseTextBook(storedText, heading + ".txt"), heading);
+    } else {
+      const base = "https://ncode.syosetu.com/" + ncodeU.toLowerCase() + "/";
+      let text = null;
+      if (novel.novel_type === 2) {
+        /* 短編は作品トップページ自体に本文が載っている */
+        text = nEpisodeText(await nFetchText(base, 3), novel.title);
+      } else {
+        text = nEpisodeText(await nFetchText(base + target.no + "/", 3), heading);
+      }
+      if (text == null) throw new Error("本文が見つかりませんでした。");
+      await nsPut(NS_EP_STORE, nsEpKey(ncodeU, target.no), text);
+      parsed = mergeParsedEpisodes(parseTextBook(text, heading + ".txt"), heading);
+    }
+    if (!parsed || !parsed.paragraphs.length) throw new Error("本文を取り込めませんでした。");
+    /* 1話だけの本として台帳の本内位置を作り直す。他の話で「本に入っている」
+       扱いが残っていたら、同期ストアに実物がある話だけ「取得済み」に戻す */
+    const storedNos = await nsStoredNos(ncodeU);
+    m.episodes.forEach(e => {
+      if (e.no === target.no) { e.state = "inbook"; e.bookIndex = 0; }
+      else {
+        e.bookIndex = null;
+        if (e.state === "inbook") e.state = storedNos[e.no] ? "stored" : "none";
+      }
+    });
+    m.bookId = key;
+    await nSaveManifest(m);
+    const episodes = [parsed];
+    const stored = await saveBookContent(key, episodes);
+    if (stored) await nsDel(NS_EP_STORE, nsEpKey(ncodeU, target.no));
+    const resumed = setBook({ title: entry.title, note: entry.note || note }, episodes, key,
+      { kind: "file", fileName: "", stored });
+    hideShelf();
+    toast(resumed ? "前回の続きから開きました" : "『" + entry.title + "』を開きました");
+    nStartReadingSync(S.library.find(x => x.key === key) || entry);
+    return true;
+  } catch (err) {
+    toast("エラー：『" + entry.title + "』の話を取得できませんでした。通信環境を確認して、もう一度開いてください", 3600);
+    return true;
+  }
 }
 nInitAdSlots();
 
