@@ -809,7 +809,7 @@
       <p class="shelf-filter-count" id="shelfFilterCount" hidden></p>
       <div id="shelfList"></div>
     </div>
-    <div id="buildId" aria-hidden="true">build 2026-11-09 21:15</div>
+    <div id="buildId" aria-hidden="true">build 2026-11-09 21:30</div>
   </div>
 
   <div id="narou" aria-label="なろうダウンローダー">
@@ -1136,7 +1136,7 @@ const GUIDE_EPISODES = [
       "「なろうダウンローダー」からは、「小説家になろう」の作品を検索・ランキング・おすすめ・URL指定で探し、作品カードの「本棚へ登録」で本棚へ登録できます。登録のときは本文を取得しないので、話数が多い作品でもすぐ終わります。別ページのダウンローダーで登録した本も、従来どおり前面に戻ったときに自動で本棚へ追加されます。",
       "「青空文庫ダウンローダー」からは、青空文庫の作品を作品名・著者名で検索し、テキストzipを取得してそのまま本棚へ登録できます。作品リスト（インデックス）は青空文庫の公式のものを使い、端末内にキャッシュされます。「インデックスを更新」で最新のリストに取り直せます。掲載は著作権の消滅した作品のみです。",
       "取得は1話ごとに端末へ保存されます。途中で中断しても、取得済みの話だけで本として本棚へ登録されます。その本は本棚で「取得途中 n/総話」と表示され、取得済み範囲の末尾まで読んでも読了にはならず、続きを案内するページが出ます。",
-      "本棚のなろう作品は、カードのメニューボタン（⋯）から「更新を確認」を実行できます。実行すると目次だけを取得して手元の控えと比べ、増えた話と、更新日が変わった（書き換えられた）話だけを取得して本へ取り込みます。新しい話は末尾へ追加され、読書位置やしおりはそのまま残ります。差分がなければ「更新はありません」と表示されます。",
+      "本棚のなろう作品は、カードのメニューボタン（⋯）から「更新を確認」を実行できます。実行すると目次だけを取得して手元の控えと比べ、新しい話や、更新日が変わった（書き換えられた）話があるかどうかを確認します。本文は取得しないので、確認はすぐ終わります。新しい話が見つかった場合はその話数が表示され、本文はその本を開いたときに自動で取得されます。差分がなければ「更新はありません」と表示されます。",
       "取得途中の本を開いている間は、残りの話が裏側で自動的に取得され続けます。取得の順番は「今読んでいる話の次」からで、取得済みの話はそのまま読み進められます。取得中かどうかは、本文メニューの「目次」の上部に小さく表示されます。本を閉じる／本棚に戻ると自動取得は止まり、次に開いたときに続きから再開します。未取得の話が残っている間は、その本が「読了」になることはありません。",
       "なろうの作品カードの「本棚へ登録」を選ぶと、本文は1話も取得せず、作品情報と目次（全話のタイトル一覧）だけを取って本棚へ登録します。登録された本は「取得途中 0/総話数」として並び、開くと、開いた話の本文がその場で取得されて読み始められ、残りの話は読んでいる間に順に取得されます。",
       { t: "しおり", cls: "head" },
@@ -8233,10 +8233,36 @@ async function nRunSync(novel, opts){
     const needFetch = merged.filter(e => e.state === "none");
     const pendingStored = merged.filter(e => e.state === "stored");
 
-    /* 差分チェックで差分ゼロなら、本文取得は一切しない */
-    if (fromCheck && !needFetch.length && !pendingStored.length && m.bookId) {
+    /* 「更新を確認」は目次だけを確認する：本文の取得も本への取り込みも
+       行わない。新着・変更・未取得の内訳だけを数えて知らせ、本文の取得は
+       本を開いたときの読書中ダウンロードに任せる。台帳は目次と照合済みの
+       状態で保存してあり、総話数も本棚側へ反映するので、開けば未取得分が
+       「取得途中」として自動取得の対象になる */
+    if (fromCheck) {
       ndl.total = toc.length;
-      if (!live) nProgressPlainDone("『" + novel.title + "』の更新はありませんでした（全" + toc.length + "話・最新です）。");
+      nSetEntryTotal(key, toc.length);
+      buildShelf();
+      let newCount = 0, changedCount = 0;
+      merged.forEach(e => {
+        const p = prevByNo[e.no];
+        if (!p) newCount++;
+        else if ((p.date || "") !== e.date) changedCount++;
+      });
+      /* まだ本に入っていない話＝未取得の残り＋同期ストア止まりの話 */
+      const missingCount = needFetch.length - newCount - changedCount + pendingStored.length;
+      if (!live) {
+        if (newCount || changedCount) {
+          nProgressPlainDone("『" + novel.title + "』に" +
+            (newCount ? "新しい話が" + newCount + "話" : "") +
+            (newCount && changedCount ? "、" : "") +
+            (changedCount ? "更新された話が" + changedCount + "話" : "") +
+            "あります（全" + toc.length + "話）。本文は取得していません。本を開くと自動で取得されます。");
+        } else if (missingCount > 0) {
+          nProgressPlainDone("『" + novel.title + "』の更新はありませんでした（全" + toc.length + "話）。まだ本に入っていない話が" + missingCount + "話あります。本を開くと自動で取得されます。");
+        } else {
+          nProgressPlainDone("『" + novel.title + "』の更新はありませんでした（全" + toc.length + "話・最新です）。");
+        }
+      }
       return;
     }
     /* 取得起動で、登録済み・最新ならそのまま完了表示にする */
