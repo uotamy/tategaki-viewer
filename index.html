@@ -931,7 +931,7 @@
         })();
       </script><script src="https://adm.shinobi.jp/s/15f61b0238a01ce2999b531089637173"></script></div>
     </div>
-    <div id="buildId" aria-hidden="true">build 2026-11-10 09:05</div>
+    <div id="buildId" aria-hidden="true">build 2026-11-10 11:18</div>
   </div>
 
   <div id="narou" aria-label="なろうダウンローダー">
@@ -1209,7 +1209,8 @@ const GUIDE_EPISODES = [
       "テキストファイルが複数入った.zipも開けます。その場合は1冊に連結して扱い、「話」の区切りはzipのルート直下で決まります。ルート直下にフォルダがある場合はフォルダごとに1話になり、フォルダ内のファイルはその話の中でファイル名の順に連結されます（「次の話／前の話」ではフォルダの先頭へ移動します）。フォルダに入っていないファイルは1ファイルで1話、zipの中にzipがある場合はそのzip全体で1話になり、1階層まで開いて連結します。フォルダしか入っていないフォルダは包みのまま1話にはせず、内側のフォルダやファイルがそのまま話の単位になります（ルート直下かどうかは問いません）。ルートに本体フォルダ（複数のテキストを持つ唯一のフォルダ）がある場合は、そのフォルダの中身がルートとして扱われます。横に説明テキストなどの小さなファイルが入っていても本体フォルダは剥がされ、同居したファイルは独立した話として残ります（フォルダが入れ子に続く場合も同様で、書名には一番外側のフォルダ名が使われます）。",
       "画像だけが入った.zip／.cbz（漫画のアーカイブ）も開けます。その場合は「画像の本」として扱われ、画像1枚が1ページになり、ファイル名の数値順（1、2、…、10の順）に並びます。フォルダ構成がある場合はテキストのzipと同じ考え方で話が分かれます：フォルダは配下の画像をまとめて1話、フォルダしか入っていないフォルダは内側の単位で分かれ、バラの画像はその階層で1話にまとまります。ルートがフォルダ1つだけの場合は、そのフォルダ名が書名になります。ページ送りの方向や方式は小説と同じで、本棚・進み具合・しおりもそのまま使えます。.zip／.cbzは、取り込むときもファイル全体ではなく末尾にある目録だけを読み、画像はページを表示するタイミングで1枚ずつ読み出されるので、大きなzipでもまとめて展開はしません。メモリの少ない端末でも、大きな漫画zipを取り込めます（.rar／.cbrは従来どおりアーカイブ全体を読みます）。",
       "画像が入った .rar／.cbr も、漫画のアーカイブとしてまったく同じ扱いで開けます（テキストが入った .rar は、テキストの本としても開けます）。RAR／CBR を開くときだけ、展開用の部品（ライブラリとWASM）をその時点で読み込むため、初回だけ少し時間がかかります。なお、暗号化（パスワード付き）されたRAR／CBRと、分割されたRAR（マルチボリューム）は開けません。",
-      "なお、Kindle本のようなDRM（コピー防止）付きの本は開けません。対象は、自分の原稿や青空文庫など、DRMのないファイルです。"
+      "なお、Kindle本のようなDRM（コピー防止）付きの本は開けません。対象は、自分の原稿や青空文庫など、DRMのないファイルです。",
+      "この「使い方」は、アプリの版と一緒に更新されます。取り込み直しは不要で、アプリが新しい版になれば、そのまま新しい内容が表示されます。"
     ]
   },
   {
@@ -1268,7 +1269,8 @@ const GUIDE_EPISODES = [
       "メニューの「しおり」から、今開いているページにしおりを挟めます。しおりは本ごとに保存され、一覧からいつでもそのページへ戻れます。",
       { t: "保存のしくみ", cls: "head" },
       "読書位置・しおり・表示設定はこの端末の保存領域（localStorage）に、開いた本の本文は端末内データベース（IndexedDB）に保存されます。サーバーへ送信されることはありません。",
-      "起動すると、まず本棚（履歴）が表示されます。本を選ぶと、その本を最後に読んでいたページから開くので、閉じる前の続きをそのまま読めます。"
+      "起動すると、まず本棚（履歴）が表示されます。本を選ぶと、その本を最後に読んでいたページから開くので、閉じる前の続きをそのまま読めます。",
+      "本棚の右上にある「タテヨミ」を押すと、紹介ページ（https://tateyomi.pages.dev/about/）へ移動できます。紹介ページの「タテヨミを開く」ボタンを押すか、ブラウザの「戻る」操作をすると、本棚へ戻れます。"
     ]
   }
 ];
@@ -1717,13 +1719,30 @@ function purgeLegacySample(){
 }
 function ensureGuideEntry(){
   purgeLegacySample();
-  if (S.library.some(x => x.key === "guide")) return;
   const eps = makeEpisodesFromGuide();
   const counts = epCharCounts(eps);
+  const epTitles = eps.map(e => e.title);
+  const totalChars = counts.reduce((a, b) => a + b, 0);
+  const existing = S.library.find(x => x.key === "guide");
+  if (existing) {
+    /* 既存エントリがある場合も、文字数メタデータだけは現行ガイドから
+       再計算して静かに同期する（初回値のまま残ると本棚の進捗％の母数が
+       古くなるため）。読書位置・しおり・読了ラッチ・lastRead には触らない */
+    const changed = JSON.stringify(existing.epTitles) !== JSON.stringify(epTitles)
+      || JSON.stringify(existing.epChars) !== JSON.stringify(counts)
+      || existing.totalChars !== totalChars;
+    if (changed) {
+      existing.epTitles = epTitles;
+      existing.epChars = counts;
+      existing.totalChars = totalChars;
+      persist();
+    }
+    return;
+  }
   S.library.push({
     key: "guide", kind: "guide", title: GUIDE_WORK.title, note: GUIDE_WORK.note, fileName: "",
-    epTitles: eps.map(e => e.title), epChars: counts,
-    totalChars: counts.reduce((a, b) => a + b, 0), stored: true, lastRead: 0
+    epTitles: epTitles, epChars: counts,
+    totalChars: totalChars, stored: true, lastRead: 0
   });
 }
 document.addEventListener("visibilitychange", () => { if (document.hidden) persistNow(); });
