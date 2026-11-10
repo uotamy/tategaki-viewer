@@ -931,7 +931,7 @@
         })();
       </script><script src="https://adm.shinobi.jp/s/15f61b0238a01ce2999b531089637173"></script></div>
     </div>
-    <div id="buildId" aria-hidden="true">build 2026-11-10 21:32</div>
+    <div id="buildId" aria-hidden="true">build 2026-11-11 06:31</div>
   </div>
 
   <div id="narou" aria-label="なろうダウンローダー">
@@ -1076,10 +1076,6 @@
           <p>青空文庫の作品を検索し、テキストzipを取得してそのまま本棚へ登録します。</p>
         </div>
       </div>
-      <div class="nform">
-        <p class="nchip-label" id="aozoraIndexStatus" style="margin-bottom:10px;">インデックスを準備しています…</p>
-        <button type="button" class="nbtn" id="btnAozoraIndexUpdate">インデックスを更新</button>
-      </div>
       <form class="nform" id="aozoraSearchForm">
         <div class="nfield">
           <label for="aozoraWord">作品名・著者名</label>
@@ -1088,7 +1084,7 @@
         <button type="submit" class="nbtn primary" id="aozoraSearchSubmit">検索する</button>
       </form>
       <div id="aozoraResults"></div>
-      <p class="narou-foot">作品リストは青空文庫の公式インデックスを使い、端末内にキャッシュします。取得は中継サーバー経由で、掲載は著作権の消滅した作品のみです。作品の権利は各権利者に帰属します。</p>
+      <p class="narou-foot">検索と取得は中継サーバー経由で行います。掲載は著作権の消滅した作品のみです。作品の権利は各権利者に帰属します。</p>
       <div class="adslot" data-adslot hidden></div>
     </div>
   </div>
@@ -8248,7 +8244,7 @@ function nsOpen(){
         const db = req.result;
         if (!db.objectStoreNames.contains(NS_MAN_STORE)) db.createObjectStore(NS_MAN_STORE);
         if (!db.objectStoreNames.contains(NS_EP_STORE)) db.createObjectStore(NS_EP_STORE);
-        /* 青空文庫の作品インデックスのキャッシュ置き場 */
+        /* 旧・青空文庫インデックス用ストア（互換のため残す。検索では使わない） */
         if (!db.objectStoreNames.contains(AOZORA_STORE)) db.createObjectStore(AOZORA_STORE);
       } catch (e) { /* noop */ }
     };
@@ -9109,9 +9105,6 @@ function showAozora(){
     try { history.pushState({ v: "aozora" }, ""); histLive.aozora = true; }
     catch (e) { histLive.aozora = false; }
   }
-  /* インデックスは裏で用意しておく（キャッシュがあれば即返る） */
-  aEnsureIndex(false).then(() => aRenderIndexStatus())
-    .catch(() => aRenderIndexStatus("インデックスの取得に失敗しました。「インデックスを更新」で再試行できます。"));
 }
 function backFromAozora(){
   hideAozoraUI();
@@ -9131,34 +9124,31 @@ $("#btnAddNarou").addEventListener("click", () => showNarou());
 $("#btnAddAozora").addEventListener("click", () => showAozora());
 
 /* ---------------- 青空文庫ダウンローダー ----------------
-   公式の作品一覧インデックス（list_person_all_extended_utf8.zip）を
-   中継経由で取得し、端末内で検索できる形にして同期DBへキャッシュする。
-   検索は作品名・著者名（読みも含む）への部分一致。選んだ作品は
-   テキストzipを取得し、既存の zip 取り込み（parseZipBook）でそのまま
+   検索は中継サーバーの検索API経由で行う。検索語は入力値を trim して
+   そのまま送り、単語分割・AND判定はサーバー側で実施されるため、
+   アプリ側では分割も照合もしない。選んだ作品はテキストzipを
+   中継経由で取得し、既存の zip 取り込み（parseZipBook）でそのまま
    本棚へ直接登録する。青空の作品は単体完結のため、なろう式の台帳・
    差分更新の対象にはしない。
-   インデックスの副題（巻名はこちらに入る）も保持し、検索結果では
-   「作品名 副題」と表示する。本棚への登録書名はインデックスの作品名を
+   検索結果の副題（巻名はこちらに入る）も保持し、検索結果では
+   「作品名 副題」と表示する。本棚への登録書名は検索結果の作品名を
    常に正とし、副題があれば「作品名 副題」にして、同名・同著者の
    巻物を区別できるようにする（作品名に副題が既に含まれていれば
    二重に付けない）。解析側の書名（zip内テキストのファイル名由来）は
-   インデックスの作品名が空の場合にだけフォールバックとして使う。
+   検索結果の作品名が空の場合にだけフォールバックとして使う。
    青空文庫の配布zipは既に青空文庫形式そのものなので、ダウンローダーは
    変換も再生成もしない：原本zipのバイト列をファイル取り込みと同じく
    saveBookArchive でそのまま端末に保持し、本棚の「ダウンロード」では
    その原本が無加工で出る（取り込み→書き出し→取り込みでデータが
    劣化しない）。本文の解釈（段落分け等）は取り込み側の仕事で、
    ダウンローダー側では一切行わない */
-const AOZORA_INDEX_URL = "https://www.aozora.gr.jp/index_pages/list_person_all_extended_utf8.zip";
-let aozoraItems = null;   /* [{t:作品名, sub:副題, a:著者, u:テキストzip URL, s:検索用文字列}] */
-let aozoraIndexAt = 0;
-let aozoraLoading = null;
+const AOZORA_SEARCH_API = "https://narou-relay.gogo-nakachan.workers.dev/api/aozora/search";
 let aozoraResults = [];
 /* この画面で取得・登録した作品の「テキストzip URL → 本棚キー」の控え。
    青空の本棚キーは「書名:バイト数」で取得するまで確定しないため、
    登録済み判定の確実な手がかりとして使う（揮発でよい：セッション内のみ） */
 const aozoraRegKeys = {};
-/* 登録書名の決定（インデックス優先）：インデックスの作品名 item.t を
+/* 登録書名の決定（検索結果優先）：検索結果の作品名 item.t を
    常に正とし、副題があれば「item.t + ' ' + sub」にする（item.t に副題が
    既に含まれていれば二重に付けない）。item.t が空の場合のみ、解析側の
    書名（fallbackTitle）へフォールバックする。登録処理（aImportAozora）と
@@ -9185,119 +9175,6 @@ function aFetchBinary(target, tries){
   };
   return go();
 }
-/* 引用符とカンマを含むCSVを1行ずつ読む（このインデックスは1行＝1レコード） */
-function aCsvParseLine(line){
-  const out = [];
-  let cur = "", inQ = false;
-  for (let i = 0; i < line.length; i++) {
-    const c = line[i];
-    if (inQ) {
-      if (c === '"') {
-        if (line[i + 1] === '"') { cur += '"'; i++; }
-        else inQ = false;
-      } else cur += c;
-    } else if (c === '"') inQ = true;
-    else if (c === ",") { out.push(cur); cur = ""; }
-    else cur += c;
-  }
-  out.push(cur);
-  return out;
-}
-async function aFetchIndex(){
-  const buf = await aFetchBinary(AOZORA_INDEX_URL, 2);
-  const zip = await loadZipBuf(buf);
-  const csvName = Object.keys(zip.files).find(n => /\.csv$/i.test(n));
-  if (!csvName) throw new Error("indexcsv");
-  const csvText = (await zip.files[csvName].async("text")).replace(/^﻿/, "");
-  const lines = csvText.split(/\r\n|\r|\n/);
-  if (lines.length < 2) throw new Error("indexcsv");
-  const header = aCsvParseLine(lines[0]);
-  const iTitle = header.indexOf("作品名"), iUrl = header.indexOf("テキストファイルURL"),
-    iFlag = header.indexOf("作品著作権フラグ"),
-    iSub = header.indexOf("副題"), iSubY = header.indexOf("副題読み"),
-    iLast = header.indexOf("姓"), iFirst = header.indexOf("名"),
-    iTitleY = header.indexOf("作品名読み"), iLastY = header.indexOf("姓読み"), iFirstY = header.indexOf("名読み");
-  if (iTitle < 0 || iUrl < 0 || iLast < 0) throw new Error("indexcsv");
-  const byUrl = new Map();
-  for (let li = 1; li < lines.length; li++) {
-    if (!lines[li]) continue;
-    const r = aCsvParseLine(lines[li]);
-    if (r.length <= iUrl) continue;
-    if (iFlag >= 0 && r[iFlag] !== "なし") continue; /* 著作権の消滅した作品のみ */
-    const u = (r[iUrl] || "").trim();
-    if (!u || byUrl.has(u)) continue; /* 同じテキストへの複数人物行は先勝ち */
-    const t = (r[iTitle] || "").trim();
-    const a = ((r[iLast] || "") + (r[iFirst] || "")).trim();
-    if (!t) continue;
-    /* 副題：青空では巻ごとに別作品として登録され、巻名は副題に入る
-       （例：『宮本武蔵』の各巻は副題が「02 地の巻」など）。同名・同著者の
-       作品を検索結果と本棚で区別できるよう、副題も保持する */
-    const sub = iSub >= 0 ? (r[iSub] || "").trim() : "";
-    const yomi = (r[iTitleY] || "") + " " + (iSubY >= 0 ? r[iSubY] || "" : "") + " " +
-      (iLastY >= 0 ? r[iLastY] || "" : "") + (iFirstY >= 0 ? r[iFirstY] || "" : "");
-    byUrl.set(u, { t, sub, a, u, s: (t + " " + sub + " " + a + " " + yomi).toLowerCase() });
-  }
-  aozoraItems = Array.from(byUrl.values());
-  aozoraIndexAt = Date.now();
-  /* v: 2 = 副題（sub）を持つ形式。旧形式のキャッシュは aLoadIndexFromCache
-     側で読み直し対象にする */
-  await nsPut(AOZORA_STORE, "index", { at: aozoraIndexAt, v: 2, items: aozoraItems });
-  return aozoraItems;
-}
-async function aLoadIndexFromCache(anyVersion){
-  const rec = await nsGet(AOZORA_STORE, "index");
-  if (rec && Array.isArray(rec.items) && rec.items.length && (anyVersion || rec.v >= 2)) {
-    aozoraItems = rec.items;
-    aozoraIndexAt = rec.at || 0;
-    return true;
-  }
-  return false;
-}
-function aEnsureIndex(force){
-  if (aozoraLoading) return aozoraLoading;
-  if (aozoraItems && !force) return Promise.resolve(aozoraItems);
-  aozoraLoading = (async () => {
-    try {
-      if (!force) {
-        if (await aLoadIndexFromCache(false)) return aozoraItems;
-        /* 副題を持たない旧形式のキャッシュしか無い場合は取り直す。
-           取り直しに失敗したときだけ、旧形式でも検索できるよう
-           フォールバックする（オフライン時に検索ごと死なせない） */
-        try { return await aFetchIndex(); }
-        catch (e) {
-          if (await aLoadIndexFromCache(true)) return aozoraItems;
-          throw e;
-        }
-      }
-      return await aFetchIndex();
-    } finally { aozoraLoading = null; }
-  })();
-  return aozoraLoading;
-}
-function aRenderIndexStatus(msg){
-  const el = $("#aozoraIndexStatus");
-  if (!el) return;
-  if (msg) { el.textContent = msg; return; }
-  if (aozoraItems) {
-    const d = new Date(aozoraIndexAt || Date.now());
-    el.textContent = "インデックス：" + nFmtNum(aozoraItems.length) + "件（" +
-      (d.getMonth() + 1) + "/" + d.getDate() + " 取得）";
-  } else {
-    el.textContent = "インデックスは未取得です。検索すると自動で取得します。";
-  }
-}
-$("#btnAozoraIndexUpdate").addEventListener("click", async () => {
-  const btn = $("#btnAozoraIndexUpdate");
-  btn.disabled = true;
-  aRenderIndexStatus("インデックスを取得しています…");
-  try {
-    await aEnsureIndex(true);
-    aRenderIndexStatus();
-    toast("インデックスを更新しました（" + nFmtNum(aozoraItems.length) + "件）", 2600);
-  } catch (e) {
-    aRenderIndexStatus("インデックスの取得に失敗しました。時間をおいて再試行してください。");
-  } finally { btn.disabled = false; }
-});
 $("#aozoraSearchForm").addEventListener("submit", async ev => {
   ev.preventDefault();
   const q = $("#aozoraWord").value.trim();
@@ -9305,29 +9182,23 @@ $("#aozoraSearchForm").addEventListener("submit", async ev => {
   if (!q) { toast("作品名か著者名を入力してください"); return; }
   btn.disabled = true; btn.textContent = "検索中…";
   try {
-    if (!aozoraItems) {
-      box.innerHTML = '<div class="nempty">インデックスを取得しています…</div>';
-      await aEnsureIndex(false);
-    }
-    const words = q.toLowerCase().split(/[\s　]+/).filter(Boolean);
-    aozoraResults = [];
-    for (const it of aozoraItems) {
-      if (words.every(w => it.s.indexOf(w) >= 0)) {
-        aozoraResults.push(it);
-        if (aozoraResults.length >= 60) break;
-      }
-    }
+    const res = await fetch(AOZORA_SEARCH_API + "?q=" + encodeURIComponent(q));
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const data = await res.json();
+    if (!data || !Array.isArray(data.items)) throw new Error("bad response");
+    aozoraResults = data.items;
+    const total = (typeof data.total === "number" && isFinite(data.total)) ? data.total : aozoraResults.length;
     if (!aozoraResults.length) {
       box.innerHTML = '<div class="nempty">条件に合う作品がありませんでした。</div>';
       return;
     }
     box.innerHTML =
       '<div class="nresults-head"><h3>検索結果</h3><span>' +
-      (aozoraResults.length >= 60 ? "60件まで表示" : aozoraResults.length + "件") + "</span></div>" +
+      (total > aozoraResults.length ? "60件まで表示" : total + "件") + "</span></div>" +
       aozoraResults.map((it, i) => {
         /* 登録済みの作品は「今すぐ読む」を出す（なろう画面と導線を揃える）。
            判定は、この画面で登録した控え（URL→キー）があればそれを最優先し、
-           無ければ登録書名（aozoraRegTitle：インデックスの作品名を正とし、
+           無ければ登録書名（aozoraRegTitle：検索結果の作品名を正とし、
            副題があれば「作品名 副題」）が一致する青空由来の
            本棚エントリで補う */
         let regKey = aozoraRegKeys[it.u] || null;
@@ -9378,7 +9249,7 @@ async function aImportAozora(item, btn){
     const buf = await aFetchBinary(item.u, 2);
     const fileName = item.u.split("/").pop() || "aozora.zip";
     const book = await parseZipBook(buf, fileName);
-    /* 登録書名はインデックス優先：インデックスの作品名 item.t を常に
+    /* 登録書名は検索結果優先：検索結果の作品名 item.t を常に
        正とし、副題があれば「作品名 副題」にする（item.t に副題が既に
        含まれていれば二重に付けない）。解析側の書名は zip内のテキスト
        ファイル名由来で作品名と一致しないことがあり（例：
