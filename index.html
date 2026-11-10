@@ -931,7 +931,7 @@
         })();
       </script><script src="https://adm.shinobi.jp/s/15f61b0238a01ce2999b531089637173"></script></div>
     </div>
-    <div id="buildId" aria-hidden="true">build 2026-11-11 06:31</div>
+    <div id="buildId" aria-hidden="true">build 2026-11-11 07:02</div>
   </div>
 
   <div id="narou" aria-label="なろうダウンローダー">
@@ -1663,11 +1663,16 @@ async function loadBookArchive(key){
 function epCharCounts(episodes){
   return episodes.map(ep => ep.paragraphs.reduce((a, p) => a + p.units.length, 0));
 }
-function registerBook(key, title, note, kind, fileName, episodes, stored){
+function registerBook(key, title, note, kind, fileName, episodes, stored, author){
   const counts = epCharCounts(episodes);
   let e = S.library.find(x => x.key === key);
   if (!e) { e = { key, kind }; }
   e.title = title; e.note = note || ""; e.fileName = fileName || "";
+  /* 著者は任意の追加フィールド（青空文庫・EPUBの登録時にだけ渡される）。
+     渡されたときだけ保存し、著者を知らない経路からの再登録では既存の
+     著者を消さない。著者フィールドの無い既存レコードは「著者なし」と
+     して扱い、ストレージキー・DBバージョンは従来のまま変えない */
+  if (author) e.author = String(author);
   e.epTitles = episodes.map(ep => ep.title);
   e.epChars = counts;
   e.totalChars = counts.reduce((a, b) => a + b, 0);
@@ -4597,7 +4602,9 @@ async function switchBookMode(entry, toManga){
     } else {
       const textBook = await parseZipBook(buf, fileName, zipObj);
       newEpisodes = textBook.episodes;
-      newNote = isRarName ? "RAR" : "青空文庫ZIP";
+      /* 著者が保存されている本（青空文庫から登録した本）は、読み方を
+         切り替えて戻したときも著者表示が消えないようノートを引き継ぐ */
+      newNote = isRarName ? "RAR" : (entry.author ? entry.author + "／青空文庫" : "青空文庫ZIP");
       try { newThumb = await thumbFromEpisodes(newEpisodes, false); } catch (err) { newThumb = null; }
     }
     if (!newEpisodes || !newEpisodes.length) { toast("切り替え先の中身を読み取れませんでした", 3600); return; }
@@ -5265,7 +5272,7 @@ function setBook(work, episodes, key, opts){
   buildProbe();
   registerBook(key, work.title, work.note || "",
     opts.kind || (key === "guide" ? "guide" : "file"),
-    opts.fileName || "", episodes, opts.stored);
+    opts.fileName || "", episodes, opts.stored, work.author || "");
   /* サムネイル：取り込み時に作れたものは本棚エントリへ保存し、
      無い本（旧バージョンで取り込んだ本など）は開いたこのタイミングで作る */
   if (opts.thumb) {
@@ -5626,6 +5633,11 @@ async function parseEpub(buf, fileName){
   const odoc = new DOMParser().parseFromString(opfText, "text/xml");
   const dcTitle = odoc.getElementsByTagName("dc:title")[0];
   const workTitle = (dcTitle && dcTitle.textContent.trim()) || fileName.replace(/\.epub$/i, "");
+  /* 著者は OPF メタデータの dc:creator から取る（複数ある場合は最初の
+     1件のみ）。メタデータに著者が無い EPUB では空文字のままにし、
+     本棚では従来どおり著者表示なしになる */
+  const dcCreator = odoc.getElementsByTagName("dc:creator")[0] || odoc.getElementsByTagName("creator")[0];
+  const workAuthor = (dcCreator && dcCreator.textContent.trim()) || "";
   const manifest = {};
   [...odoc.getElementsByTagName("item")].forEach(it => {
     manifest[it.getAttribute("id")] = {
@@ -5831,7 +5843,7 @@ async function parseEpub(buf, fileName){
     episodes.push({ title: cleanEpTitle(ttl), paragraphs: paras });
   }
   if (!episodes.length) throw new Error("notext");
-  return { title: workTitle, episodes, thumb };
+  return { title: workTitle, episodes, thumb, author: workAuthor };
 }
 
 /* ---- zipのエントリ名デコード（エントリ名を使う全経路で統一） ----
@@ -6888,7 +6900,9 @@ $("#fileInput").addEventListener("change", async e => {
       const book = await parseEpub(await getBuf(), file.name);
       const key = keyFor(book.title);
       const stored = await saveBookContent(key, book.episodes);
-      const resumed = setBook({ title: book.title, note: "EPUB" }, book.episodes, key,
+      /* 著者があれば、なろう本と同じ形式（著者名／出所）でノートに持たせ、
+         著者フィールドにも保存する。無い EPUB は従来どおり「EPUB」のみ */
+      const resumed = setBook({ title: book.title, note: book.author ? book.author + "／EPUB" : "EPUB", author: book.author || "" }, book.episodes, key,
         { kind: "file", fileName: file.name, stored, thumb: book.thumb || null });
       toast(resumed ? "前回の続きから開きました" : "『" + book.title + "』を開きました（全" + book.episodes.length + "章）");
       notifyNotStored(stored);
@@ -7147,7 +7161,7 @@ async function importInboxBook(rec){
   if (/\.epub$/i.test(fileName)) {
     const book = await parseEpub(await getBuf(), fileName);
     const stored = await saveBookContent(key, book.episodes);
-    registerBook(key, book.title, "EPUB", "file", fileName, book.episodes, stored);
+    registerBook(key, book.title, book.author ? book.author + "／EPUB" : "EPUB", "file", fileName, book.episodes, stored, book.author || "");
     if (book.thumb) {
       const e = S.library.find(x => x.key === key);
       if (e) { e.thumb = book.thumb; e.thumbSize = THUMB_MAX_DIM; persist(); }
@@ -9205,7 +9219,7 @@ $("#aozoraSearchForm").addEventListener("submit", async ev => {
         if (regKey && !S.library.find(x => x.key === regKey)) regKey = null;
         if (!regKey) {
           const dispTitle = aozoraRegTitle(it, "");
-          const regEntry = S.library.find(x => x.title === dispTitle && x.note === "青空文庫ZIP");
+          const regEntry = S.library.find(x => x.title === dispTitle && (x.note === "青空文庫ZIP" || /／青空文庫$/.test(x.note || "")));
           if (regEntry) regKey = regEntry.key;
         }
         return '<article class="ncard">' +
@@ -9266,7 +9280,10 @@ async function aImportAozora(item, btn){
        原本の目録から正確に判定する */
     const arcStored = await saveBookArchive(key, new Blob([buf], { type: "application/zip" }));
     const thumb = await thumbFromEpisodes(book.episodes, false);
-    registerBook(key, regTitle, "青空文庫ZIP", "file", fileName, book.episodes, stored);
+    /* 著者は検索結果（item.a）を一緒に保存し、ノートはなろう本と同じ
+       形式（著者名／出所）にする。著者が無い場合のみ従来の表記にする */
+    const author = ((item && item.a) || "").trim();
+    registerBook(key, regTitle, author ? author + "／青空文庫" : "青空文庫ZIP", "file", fileName, book.episodes, stored, author);
     setArchiveFlags(key, { hasArchive: arcStored });
     if (thumb) {
       const e = S.library.find(x => x.key === key);
@@ -9288,6 +9305,51 @@ async function aImportAozora(item, btn){
   } catch (e) {
     toast("取得に失敗しました。時間をおいて再試行してください", 3000);
     if (btn) { btn.disabled = false; btn.textContent = "取得して本棚へ"; }
+  }
+}
+
+/* ---------------- 既登録の青空文庫の本：著者の復元 ----------------
+   著者フィールド追加より前に登録された青空文庫の本は、保存済み本文の
+   先頭から著者を復元できる場合だけ著者を持たせる。青空文庫テキストの
+   書式は「1行目＝作品名、2行目＝著者名」で、取り込み後の本文でも
+   先頭話の最初の段落が作品名、次の段落が著者名として残っている。
+   登録書名（検索結果の作品名＋任意の副題）と先頭段落が一致するときだけ
+   次の段落を著者として採用し、一致しない本は無理に埋めず表示なしの
+   ままにする。既存の本のキー・書名・読書位置には一切触らない */
+function aozoraAuthorFromEpisodes(entry, episodes){
+  if (!episodes || !episodes.length) return "";
+  const paras = (episodes[0].paragraphs || []).filter(p => p && !p.img && !p.table && p.units && p.units.length);
+  if (paras.length < 2) return "";
+  const head = unitsToText(paras[0].units).trim();
+  const cand = unitsToText(paras[1].units).trim();
+  if (!head || !cand || cand === head) return "";
+  const title = String(entry.title || "");
+  if (title !== head && title.indexOf(head + " ") !== 0) return "";
+  if (cand.length > 40) return "";
+  if (/^第/.test(cand) || /[。【】［］：:。]/.test(cand)) return "";
+  return cand;
+}
+let aozoraRecoverTried = false;
+async function recoverAozoraAuthors(){
+  if (aozoraRecoverTried) return;
+  aozoraRecoverTried = true;
+  const targets = S.library.filter(x => x && x.kind !== "guide" && !x.author && x.note === "青空文庫ZIP" && x.stored);
+  if (!targets.length) return;
+  let changed = false;
+  for (const entry of targets) {
+    try {
+      const eps = await loadBookContent(entry.key);
+      const author = aozoraAuthorFromEpisodes(entry, eps);
+      if (author) {
+        entry.author = author;
+        entry.note = author + "／青空文庫";
+        changed = true;
+      }
+    } catch (e) { /* 復元できない本は表示なしのままにする */ }
+  }
+  if (changed) {
+    persist();
+    if (shelfEl.classList.contains("show")) buildShelf();
   }
 }
 
@@ -9343,6 +9405,9 @@ ensureGuideEntry();
   /* なろうダウンローダーからの受け渡しは、起動時に確認し、その後も
      アプリが前面に戻るたびに再確認する（上のリスナー側） */
   checkDownloaderInbox();
+  /* 著者フィールド追加より前に登録された青空文庫の本は、保存済み本文から
+     著者を復元できるものだけ起動時に著者を持たせる（失敗しても無言で続行） */
+  recoverAozoraAuthors();
   if (!lsOK) {
     /* 保存できない環境では止めずに、保存なしモードとして読書を続けられるようにする */
     setTimeout(() => toast("この環境では保存できないため、保存なしモードで動作します"), 600);
