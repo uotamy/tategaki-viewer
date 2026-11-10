@@ -931,7 +931,7 @@
         })();
       </script><script src="https://adm.shinobi.jp/s/15f61b0238a01ce2999b531089637173"></script></div>
     </div>
-    <div id="buildId" aria-hidden="true">build 2026-11-10 17:36</div>
+    <div id="buildId" aria-hidden="true">build 2026-11-10 21:32</div>
   </div>
 
   <div id="narou" aria-label="なろうダウンローダー">
@@ -3551,6 +3551,26 @@ function overlayGroup(dir, tgt, flip){
   leaf.style.transition = "transform .4s cubic-bezier(.35,.6,.3,1)";
   leaf.style.transform = "rotateY(" + toDeg + "deg)";
 }
+/* 読了ページ表示中かどうか：現在表示中のウィンドウ全体を見て、finish
+   フラグのページ（partial は除く）が含まれれば true。見開き（ppv=2）で
+   読了ページが組の2枚目にあり S.page が本文ページを指す場合も拾うため、
+   pages[S.page].finish だけでは判定しない */
+function finishVisible(){
+  const pages = paginate(S.ep);
+  return visibleWindow(S.ep, S.page).some(p => {
+    const pd = pages[p];
+    return !!(pd && pd.finish && !pd.partial);
+  });
+}
+/* 読了ページでの次送りの終端処理：読了ページ内の「本棚に戻る」ボタン
+   （.fin-btn の click ハンドラ）と完全に同じ経路で本棚へ戻る。
+   独自の遷移は作らない（読書位置・しおり・読了ラッチの保存、
+   close-on-return のメモリ解放、全画面表示の解除は既存挙動のまま保つ） */
+function backToShelfFromFinish(){
+  closeSheets();
+  showShelf();
+  pokeUI();
+}
 function targetFor(dir){
   const pages = paginate(S.ep);
   if (dir === "next") {
@@ -3599,8 +3619,11 @@ function dispatchTurn(dir, tgt, forceSlide){
   slideGroupTo(dir, tgt);
 }
 function turn(dir){
-  if (animating) return;
   const tgt = targetFor(dir);
+  /* 読了ページでの次送り（終端）：アニメーション状態・ページ送り方式・
+     reduceMotion にかかわらず、既存の本棚へ戻る経路へつなぐ */
+  if (!tgt && dir === "next" && finishVisible()) { backToShelfFromFinish(); return; }
+  if (animating) return;
   if (!tgt) {
     const curPg = paginate(S.ep)[S.page];
     toast(dir === "next" ? (curPg && curPg.finish ? "最後まで読みました" : "この話の最後のページです") : "最初のページです");
@@ -3619,7 +3642,6 @@ function turn(dir){
    等の通常のページ送りは、従来どおりページめくり設定（スライド／
    めくり／なし）に従う */
 function moveOnePage(dir){
-  if (animating) return;
   const pages = paginate(S.ep);
   let tgt = null;
   if (dir === "next") {
@@ -3632,6 +3654,10 @@ function moveOnePage(dir){
       tgt = { ep: S.ep - 1, page: pp.length - 1 };
     }
   }
+  /* 読了ページでの次送り（終端）：アニメーション状態にかかわらず、
+     既存の本棚へ戻る経路へつなぐ */
+  if (!tgt && dir === "next" && finishVisible()) { backToShelfFromFinish(); return; }
+  if (animating) return;
   if (!tgt) {
     toast(dir === "next" ? "この話の最後のページです" : "最初のページです");
     return;
@@ -3704,6 +3730,15 @@ function endDrag(e, cancelled){
       /* 章内・章またぎとも同じ離散スライドへ（章またぎも slideGroupTo が引き継ぐ） */
       if (tgt && tgt.ep === S.ep) { hideUI(); animateGroupTo(tgt.page); return; }
       if (tgt) { hideUI(); slideGroupTo(dir, tgt); return; }
+      /* 読了ページでの次送り（終端）：turn() を経由しないスライド方式でも、
+         既存の本棚へ戻る経路へつなぐ。partial の案内ページでは発動せず、
+         従来どおりトースト相当の留まり方（再描画）になる */
+      if (dir === "next" && finishVisible()) {
+        stage.classList.remove("sliding");
+        renderWindow();
+        backToShelfFromFinish();
+        return;
+      }
       stage.classList.remove("sliding");
       renderWindow();
       return;
