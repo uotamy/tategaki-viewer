@@ -117,6 +117,12 @@
     width:9px;height:9px;background:var(--accent);
     transform:rotate(45deg);
   }
+  .shot{margin:30px auto 6px;text-align:center;}
+  .shot img{
+    width:min(300px,78%);height:auto;
+    border:1px solid var(--line);border-radius:10px;
+    box-shadow:0 4px 18px rgba(60,50,30,.12);
+  }
   dl.faq{margin:0;}
   dl.faq dt{font-weight:600;margin:22px 0 4px;}
   dl.faq dt::before{content:"Q．";color:var(--accent);}
@@ -148,6 +154,9 @@
     <li>文字サイズ・行間・背景色を調整可能</li>
     <li>PWA対応：ホーム画面に追加すればアプリのように使えて、保存済みの本はオフラインでも読める</li>
   </ul>
+  <figure class="shot">
+    <img src="reader-ginga.webp" alt="タテヨミで青空文庫『銀河鉄道の夜』を縦書き表示した読書画面" loading="lazy" width="500" height="678">
+  </figure>
 
   <h2>よくある質問</h2>
   <dl class="faq">
