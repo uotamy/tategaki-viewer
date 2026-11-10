@@ -931,7 +931,7 @@
         })();
       </script><script src="https://adm.shinobi.jp/s/15f61b0238a01ce2999b531089637173"></script></div>
     </div>
-    <div id="buildId" aria-hidden="true">build 2026-11-10 12:41</div>
+    <div id="buildId" aria-hidden="true">build 2026-11-10 17:36</div>
   </div>
 
   <div id="narou" aria-label="なろうダウンローダー">
@@ -9103,8 +9103,11 @@ $("#btnAddAozora").addEventListener("click", () => showAozora());
    本棚へ直接登録する。青空の作品は単体完結のため、なろう式の台帳・
    差分更新の対象にはしない。
    インデックスの副題（巻名はこちらに入る）も保持し、検索結果では
-   「作品名 副題」と表示する。副題のある作品は本棚への登録書名も
-   「作品名 副題」にして、同名・同著者の巻物を区別できるようにする。
+   「作品名 副題」と表示する。本棚への登録書名はインデックスの作品名を
+   常に正とし、副題があれば「作品名 副題」にして、同名・同著者の
+   巻物を区別できるようにする（作品名に副題が既に含まれていれば
+   二重に付けない）。解析側の書名（zip内テキストのファイル名由来）は
+   インデックスの作品名が空の場合にだけフォールバックとして使う。
    青空文庫の配布zipは既に青空文庫形式そのものなので、ダウンローダーは
    変換も再生成もしない：原本zipのバイト列をファイル取り込みと同じく
    saveBookArchive でそのまま端末に保持し、本棚の「ダウンロード」では
@@ -9120,6 +9123,18 @@ let aozoraResults = [];
    青空の本棚キーは「書名:バイト数」で取得するまで確定しないため、
    登録済み判定の確実な手がかりとして使う（揮発でよい：セッション内のみ） */
 const aozoraRegKeys = {};
+/* 登録書名の決定（インデックス優先）：インデックスの作品名 item.t を
+   常に正とし、副題があれば「item.t + ' ' + sub」にする（item.t に副題が
+   既に含まれていれば二重に付けない）。item.t が空の場合のみ、解析側の
+   書名（fallbackTitle）へフォールバックする。登録処理（aImportAozora）と
+   検索結果側の登録済み判定（dispTitle）で同じ規則を使うための共通関数 */
+function aozoraRegTitle(item, fallbackTitle){
+  const t = ((item && item.t) || "").trim();
+  if (!t) return fallbackTitle || "";
+  const sub = ((item && item.sub) || "").trim();
+  if (sub && t.indexOf(sub) < 0) return t + " " + sub;
+  return t;
+}
 function aFetchBinary(target, tries){
   tries = tries || 2;
   let attempt = 0;
@@ -9277,12 +9292,13 @@ $("#aozoraSearchForm").addEventListener("submit", async ev => {
       aozoraResults.map((it, i) => {
         /* 登録済みの作品は「今すぐ読む」を出す（なろう画面と導線を揃える）。
            判定は、この画面で登録した控え（URL→キー）があればそれを最優先し、
-           無ければ登録書名（副題つきは「作品名 副題」）が一致する青空由来の
+           無ければ登録書名（aozoraRegTitle：インデックスの作品名を正とし、
+           副題があれば「作品名 副題」）が一致する青空由来の
            本棚エントリで補う */
         let regKey = aozoraRegKeys[it.u] || null;
         if (regKey && !S.library.find(x => x.key === regKey)) regKey = null;
         if (!regKey) {
-          const dispTitle = it.sub ? it.t + " " + it.sub : it.t;
+          const dispTitle = aozoraRegTitle(it, "");
           const regEntry = S.library.find(x => x.title === dispTitle && x.note === "青空文庫ZIP");
           if (regEntry) regKey = regEntry.key;
         }
@@ -9327,14 +9343,14 @@ async function aImportAozora(item, btn){
     const buf = await aFetchBinary(item.u, 2);
     const fileName = item.u.split("/").pop() || "aozora.zip";
     const book = await parseZipBook(buf, fileName);
-    /* 副題のある作品は「作品名 副題」を登録書名にする。解析側の書名は
-       zip内のテキストファイル名由来で作品名と一致しないことがあり
-       （例：02chino_maki）、そのままでは同名の巻が本棚で区別できない。
-       既に副題を含む書名なら二重に付けない。副題の無い作品は従来どおり
-       解析側の書名のまま（既存の登録済み本にも影響しない） */
-    const aozoraSub = (item.sub || "").trim();
-    const regTitle = aozoraSub && book.title.indexOf(aozoraSub) < 0
-      ? item.t + " " + aozoraSub : book.title;
+    /* 登録書名はインデックス優先：インデックスの作品名 item.t を常に
+       正とし、副題があれば「作品名 副題」にする（item.t に副題が既に
+       含まれていれば二重に付けない）。解析側の書名は zip内のテキスト
+       ファイル名由来で作品名と一致しないことがあり（例：
+       ginga_tetsudono_yoru）、item.t が空の場合にだけフォールバック
+       として使う。この新ルールは新規登録からのみ適用し、既登録の本の
+       キーや書名は変更しない */
+    const regTitle = aozoraRegTitle(item, book.title);
     const key = regTitle + ":" + buf.byteLength;
     const stored = await saveBookContent(key, book.episodes);
     /* 原本zipをそのまま保持する（ファイル取り込みのアーカイブ本と同じ
