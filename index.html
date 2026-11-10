@@ -931,7 +931,7 @@
         })();
       </script><script src="https://adm.shinobi.jp/s/15f61b0238a01ce2999b531089637173"></script></div>
     </div>
-    <div id="buildId" aria-hidden="true">build 2026-11-10 11:18</div>
+    <div id="buildId" aria-hidden="true">build 2026-11-10 12:41</div>
   </div>
 
   <div id="narou" aria-label="なろうダウンローダー">
@@ -7556,7 +7556,9 @@ function nCardHTML(n, rank, periodOrder){
     (n.story ? "<details><summary>あらすじ</summary><p class=\"nstory\">" + esc(n.story) + "</p></details>" : "") +
     (kw ? '<p class="nkw">キーワード：' + esc(kw) + "</p>" : "") +
     '<div class="nactions">' +
-      (regEntry ? "" : '<button type="button" class="nbtn primary" data-nreg="' + esc(String(n.ncode).toUpperCase()) + '">本棚へ登録</button>') +
+      (regEntry
+        ? '<button type="button" class="nbtn primary" data-nread="' + esc(String(n.ncode).toUpperCase()) + '">今すぐ読む</button>'
+        : '<button type="button" class="nbtn primary" data-nreg="' + esc(String(n.ncode).toUpperCase()) + '">本棚へ登録</button>') +
       '<button type="button" class="nbtn" data-nsimilar="' + esc(String(n.ncode).toUpperCase()) + '">似た作品</button>' +
     "</div>" +
     (aff ? '<div class="naff"><a href="' + esc(aff) + '" target="_blank" rel="noopener sponsored">書籍版を探す（Amazon）</a></div>' : "") +
@@ -7803,8 +7805,25 @@ function nLoadSimilar(n){
 }
 $("#nsimilarClose").addEventListener("click", () => $("#nsimilarPanel").classList.remove("open"));
 
+/* 登録済み作品を、本棚へ戻らずにそのまま開く。本棚から開く場合と
+   まったく同じ経路（openFromShelf）を通すので、初回は第1話から
+   ブートストラップ取得が始まり、既存の本は保存済みの続き位置から開く。
+   読書中の自動取得も通常の開き方と同じに働く。履歴は取得進捗シートの
+   「今すぐ読む」（nprogRead）と同じ作法で [本棚, 読書] に整えてから開く */
+async function nOpenRegistered(ncodeU){
+  const entry = S.library.find(x => x.key === "narou:" + ncodeU);
+  if (!entry) { toast("本棚に登録が見つかりませんでした"); return; }
+  showShelf();
+  await openFromShelf(entry);
+}
+
 /* カード内ボタンの委譲 */
 narouEl.addEventListener("click", ev => {
+  const read = ev.target.closest("[data-nread]");
+  if (read) {
+    nOpenRegistered(String(read.dataset.nread).toUpperCase());
+    return;
+  }
   const reg = ev.target.closest("[data-nreg]");
   if (reg) {
     const n = nNovelStore[String(reg.dataset.nreg).toUpperCase()];
@@ -9097,6 +9116,10 @@ let aozoraItems = null;   /* [{t:作品名, sub:副題, a:著者, u:テキスト
 let aozoraIndexAt = 0;
 let aozoraLoading = null;
 let aozoraResults = [];
+/* この画面で取得・登録した作品の「テキストzip URL → 本棚キー」の控え。
+   青空の本棚キーは「書名:バイト数」で取得するまで確定しないため、
+   登録済み判定の確実な手がかりとして使う（揮発でよい：セッション内のみ） */
+const aozoraRegKeys = {};
 function aFetchBinary(target, tries){
   tries = tries || 2;
   let attempt = 0;
@@ -9251,17 +9274,31 @@ $("#aozoraSearchForm").addEventListener("submit", async ev => {
     box.innerHTML =
       '<div class="nresults-head"><h3>検索結果</h3><span>' +
       (aozoraResults.length >= 60 ? "60件まで表示" : aozoraResults.length + "件") + "</span></div>" +
-      aozoraResults.map((it, i) =>
-        '<article class="ncard">' +
+      aozoraResults.map((it, i) => {
+        /* 登録済みの作品は「今すぐ読む」を出す（なろう画面と導線を揃える）。
+           判定は、この画面で登録した控え（URL→キー）があればそれを最優先し、
+           無ければ登録書名（副題つきは「作品名 副題」）が一致する青空由来の
+           本棚エントリで補う */
+        let regKey = aozoraRegKeys[it.u] || null;
+        if (regKey && !S.library.find(x => x.key === regKey)) regKey = null;
+        if (!regKey) {
+          const dispTitle = it.sub ? it.t + " " + it.sub : it.t;
+          const regEntry = S.library.find(x => x.title === dispTitle && x.note === "青空文庫ZIP");
+          if (regEntry) regKey = regEntry.key;
+        }
+        return '<article class="ncard">' +
           '<div class="ntop"><div style="flex:1;min-width:0;">' +
             '<h3 class="ntitle">' + esc(it.t) +
               (it.sub ? ' <span class="nsubtitle">' + esc(it.sub) + "</span>" : "") + "</h3>" +
             '<div class="nwriter">' + esc(it.a) + "</div>" +
           "</div></div>" +
           '<div class="nactions">' +
-            '<button type="button" class="nbtn primary" data-aozora-dl="' + i + '">取得して本棚へ</button>' +
+            (regKey
+              ? '<button type="button" class="nbtn primary" data-aozora-read="' + esc(regKey) + '">今すぐ読む</button>'
+              : '<button type="button" class="nbtn primary" data-aozora-dl="' + i + '">取得して本棚へ</button>') +
           "</div>" +
-        "</article>").join("");
+        "</article>";
+      }).join("");
   } catch (e) {
     box.innerHTML = '<div class="nempty">検索に失敗しました。時間をおいて再試行してください。</div>';
   } finally {
@@ -9269,6 +9306,16 @@ $("#aozoraSearchForm").addEventListener("submit", async ev => {
   }
 });
 aozoraEl.addEventListener("click", ev => {
+  const rd = ev.target.closest("[data-aozora-read]");
+  if (rd) {
+    const entry = S.library.find(x => x.key === rd.dataset.aozoraRead);
+    if (!entry) { toast("本棚に登録が見つかりませんでした"); return; }
+    /* 本棚から開く場合とまったく同じ経路（openFromShelf）で開く。
+       履歴は [本棚, 読書] の形に整えてから開く */
+    showShelf();
+    openFromShelf(entry);
+    return;
+  }
   const dl = ev.target.closest("[data-aozora-dl]");
   if (!dl) return;
   const item = aozoraResults[Number(dl.dataset.aozoraDl)];
@@ -9306,7 +9353,16 @@ async function aImportAozora(item, btn){
     buildShelf();
     toast(stored ? "『" + regTitle + "』を本棚に追加しました"
                  : "『" + regTitle + "』を取り込みましたが、この端末に保存できませんでした", 3200);
-    if (btn) btn.textContent = "本棚に追加しました";
+    aozoraRegKeys[item.u] = key;
+    if (btn) {
+      /* 登録が済んだボタンは、そのまま本を開ける「今すぐ読む」に切り替える
+         （なろう画面の登録後導線と揃える）。押下時は data-aozora-read の
+         委譲が本棚から開くのと同じ経路でその本を開く */
+      btn.disabled = false;
+      btn.textContent = "今すぐ読む";
+      btn.removeAttribute("data-aozora-dl");
+      btn.setAttribute("data-aozora-read", key);
+    }
   } catch (e) {
     toast("取得に失敗しました。時間をおいて再試行してください", 3000);
     if (btn) { btn.disabled = false; btn.textContent = "取得して本棚へ"; }
