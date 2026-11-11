@@ -20,7 +20,7 @@
      ルート直下に置けばそのままルートスコープ版としても動く（パスは scope から算出する）。
    ========================================================= */
 
-var VERSION = "v6";
+var VERSION = "v8";
 var SHELL_CACHE = "tategaki-shell-" + VERSION;
 var RUNTIME_CACHE = "tategaki-runtime-" + VERSION;
 
@@ -39,9 +39,16 @@ var SHELL_URLS = [
 self.addEventListener("install", function (event) {
   event.waitUntil(
     caches.open(SHELL_CACHE).then(function (cache) {
-      /* 1つ失敗してもインストール全体を落とさないよう、個別に追加する */
+      /* 1つ失敗してもインストール全体を落とさないよう、個別に追加する。
+         取得は cache:"no-cache" でHTTPキャッシュを再検証させる：古い版の
+         ドキュメントがHTTPキャッシュに残っていると、cache.add の通常取得では
+         その古い版が新しいキャッシュへ混入し、版を上げても中身が旧版のまま
+         になる（11:14版を公開しても端末では11:05と表示され続けた一因） */
       return Promise.all(SHELL_URLS.map(function (url) {
-        return cache.add(url).catch(function () { /* 取れないものは実行時キャッシュに任せる */ });
+        return fetch(url, { cache: "no-cache" }).then(function (res) {
+          if (res && (res.status === 200 || res.type === "opaque")) return cache.put(url, res);
+          return null;
+        }).catch(function () { /* 取れないものは実行時キャッシュに任せる */ });
       }));
     }).then(function () {
       /* 新しい版が用意できたら、待たずに有効化へ進む */
