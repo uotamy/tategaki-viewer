@@ -478,6 +478,10 @@
   .bookcard .bfoot { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--sub); }
   .bookcard .bfoot > button:first-of-type { margin-left: auto; }
   .bookcard .bneed { color: var(--accent); border: 1px solid var(--accent); border-radius: 999px; padding: 1px 8px; font-size: 11px; white-space: nowrap; }
+  /* なろう作品の連載ステータス（完結／連載中／短編）：カード下部に
+     小さなピルで出す。完結だけアクセント色にして一目で分かるようにする */
+  .bookcard .bstatus { border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; font-size: 11px; white-space: nowrap; }
+  .bookcard .bstatus.done { color: var(--accent); border-color: var(--accent); }
   .bookcard { user-select: none; -webkit-user-select: none; }
   .bookcard:active { background: var(--tint); }
 
@@ -931,7 +935,7 @@
         })();
       </script><script src="https://adm.shinobi.jp/s/15f61b0238a01ce2999b531089637173"></script></div>
     </div>
-    <div id="buildId" aria-hidden="true">build 2026-11-11 07:02</div>
+    <div id="buildId" aria-hidden="true">build 2026-11-11 11:05</div>
   </div>
 
   <div id="narou" aria-label="なろうダウンローダー">
@@ -4829,6 +4833,8 @@ function buildShelf(){
     const pct = Math.round(bookProgress(entry) * 100);
     const finished = isBookFinished(entry);
     const incomplete = isEntryIncomplete(entry);
+    /* 連載ステータス（完結／連載中／短編）はなろう作品だけが持つ */
+    const nStatus = entry.key.indexOf("narou:") === 0 ? (entry.narouStatus || "") : "";
     const barPct = finished ? 100 : pct;
     const epName = pos && entry.epTitles && entry.epTitles[pos.ep] ? cleanEpTitle(entry.epTitles[pos.ep]) : "";
     const started = !!(pos && (pos.ep > 0 || (pos.charInEp || 0) > 0));
@@ -4850,7 +4856,8 @@ function buildShelf(){
       '<div class="bt">' + esc(entry.title) + "</div>" +
       (meta ? '<div class="bmeta">' + meta + "</div>" : "") +
       '<div class="bprog"><i style="width:' + barPct + '%"></i></div>' +
-      '<div class="bfoot"><span>' + (finished ? "読了" : started ? pct + "%まで読了" : "未読") + "</span>" +
+      '<div class="bfoot">' + (nStatus ? '<span class="bstatus' + (nStatus === "完結" ? " done" : "") + '">' + nStatus + "</span>" : "") +
+      '<span>' + (finished ? "読了" : started ? pct + "%まで読了" : "未読") + "</span>" +
       (entry.lastRead ? "<span>" + fmtReadDate(entry.lastRead) + "</span>" : "") +
       (!entry.stored && entry.kind !== "guide" ? '<span class="bneed">本文が保存されていません</span>' : "") +
       (incomplete ? '<span class="bneed">取得途中 ' + (entry.epTitles || []).length + "/" + entry.narouTotal + "話</span>" : "") +
@@ -4875,6 +4882,11 @@ function buildShelf(){
       foot.appendChild(menu);
     }
     list.appendChild(card);
+  });
+  /* ステータス未保存のなろう作品は、台帳の控えから一度だけ補完する
+     （旧版で登録した本向け。通信はせず、端末内の台帳だけを見る） */
+  shown.forEach(entry => {
+    if (entry.key.indexOf("narou:") === 0 && !entry.narouStatus) nBackfillEntryStatus(entry.key);
   });
 }
 /* ---------------- 全画面表示（設定トグル制） ----------------
@@ -7933,6 +7945,7 @@ async function nRegisterMetaOnly(novel, btn){
     const ent = S.library.find(x => x.key === key);
     if (ent) delete ent.epTitles;
     nSetEntryTotal(key, toc.length);
+    nSetEntryStatus(key, novel);
     buildShelf();
     toast("『" + novel.title + "』を本棚に登録しました。開くと、開いた話から取得が始まります", 3400);
     /* 表示中のカード（検索・ランキング・おすすめ等）を登録済み表示へ差し替える */
@@ -8404,6 +8417,25 @@ function nSetEntryTotal(key, total){
   else delete e.narouTotal;
   persist();
 }
+/* なろう作品の連載ステータスを本棚エントリへ控える（本棚カードの表示用）。
+   作品情報を持つ処理（登録・取得・同期・更新チェック）が呼ぶ */
+function nSetEntryStatus(key, novel){
+  if (!novel) return;
+  const e = S.library.find(x => x.key === key);
+  if (!e) return;
+  const label = nStatusLabel(novel);
+  if (e.narouStatus !== label) { e.narouStatus = label; persist(); }
+}
+/* ステータス未保存の本（旧版で登録した本など）は、台帳のスナップショット
+   から一度だけ補完する。通信はしない。本棚の描画から呼ばれる */
+function nBackfillEntryStatus(key){
+  const tried = nBackfillEntryStatus.tried || (nBackfillEntryStatus.tried = {});
+  if (tried[key]) return;
+  tried[key] = true;
+  nLoadManifest(key.slice(6).toUpperCase()).then(m => {
+    if (m && m.novel) { nSetEntryStatus(key, m.novel); buildShelf(); }
+  }).catch(() => { /* noop */ });
+}
 function isEntryIncomplete(entry){
   if (!entry || typeof entry.key !== "string" || entry.key.indexOf("narou:") !== 0) return false;
   const total = entry.narouTotal || 0;
@@ -8475,6 +8507,7 @@ async function nAssemblePartialBook(novel, m, key, note){
       return null;
     }
     registerBook(key, novel.title, note, "file", "", episodes, stored);
+    nSetEntryStatus(key, novel);
     m.bookId = key;
     await nSaveManifest(m);
     for (const e of m.episodes) if (e.state === "inbook") await nsDel(NS_EP_STORE, nsEpKey(ncodeU, e.no));
@@ -8535,6 +8568,7 @@ async function nRunSync(novel, opts){
     m.writer = novel.writer || "";
     m.novel = nNovelSnapshot(novel);
     mRef = m;
+    nSetEntryStatus(key, novel);
 
     /* 登録済みの本の本文が端末から消えている場合は、本棚リンクを無効として
        全話取り直し→組み立て直しの経路に倒す（位置・しおりはキーに紐づくので残る） */
@@ -8835,6 +8869,7 @@ async function nRunSync(novel, opts){
     if (!episodes.length) throw new Error("本文を取り込めませんでした。");
     const stored = await saveBookContent(key, episodes);
     registerBook(key, novel.title, note, "file", "", episodes, stored);
+    nSetEntryStatus(key, novel);
     ndl.lastBook = { key, title: novel.title, note, episodes, stored };
     if (stored) {
       m.bookId = key;
@@ -8874,16 +8909,19 @@ function nStartDownload(novel){ nRunSync(novel, {}); }
    どちらも目次だけを取得して台帳と照合し、本文は取得しない。
    照合結果は本棚エントリの hasUpdate（更新ドット）に反映する。
    ドットは「前回のチェックで新着があった」印で、本を開くと消える */
-/* チェック対象の作品情報を用意する（台帳が無ければAPIで取り直す） */
+/* チェック対象の作品情報を用意する。まずAPIで最新の情報を取り
+   （連載中→完結のような変化を本棚のステータス表示へ反映するため）、
+   取れなければ台帳の控えで代替する */
 async function nResolveNovelForCheck(entry){
   const ncodeU = entry.key.slice(6).toUpperCase();
-  const m = await nLoadManifest(ncodeU);
-  let novel = m && m.novel ? m.novel : null;
+  let novel = null;
+  try {
+    const res = await nApiFetch({ ncode: ncodeU.toLowerCase(), lim: 1 });
+    if (res.novels.length) novel = res.novels[0];
+  } catch (e) { /* noop */ }
   if (!novel) {
-    try {
-      const res = await nApiFetch({ ncode: ncodeU.toLowerCase(), lim: 1 });
-      if (res.novels.length) novel = res.novels[0];
-    } catch (e) { /* noop */ }
+    const m = await nLoadManifest(ncodeU);
+    if (m && m.novel) novel = m.novel;
   }
   return novel;
 }
