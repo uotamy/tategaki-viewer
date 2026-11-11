@@ -957,7 +957,7 @@
         })();
       </script><script src="https://adm.shinobi.jp/s/15f61b0238a01ce2999b531089637173"></script></div>
     </div>
-    <div id="buildId" aria-hidden="true">build 2026-11-11 12:36</div>
+    <div id="buildId" aria-hidden="true">build 2026-11-12 08:13</div>
   </div>
 
   <div id="narou" aria-label="なろうダウンローダー">
@@ -1688,6 +1688,29 @@ async function loadBookArchive(key){
 }
 function epCharCounts(episodes){
   return episodes.map(ep => ep.paragraphs.reduce((a, p) => a + p.units.length, 0));
+}
+/* ---------- 本棚追加ログ（中継サーバーへの明示イベント） ----------
+   将来の独自ランキング（「検索された数」でなく「本棚に入った実数」）の
+   材料として、本棚への新規登録が完了した瞬間にアプリ側から1回だけ
+   中継サーバーへ通知する。中継プロキシの通信からの推測はしない（本文
+   取得と本棚追加を通信だけでは区別できないため）。対象は青空文庫と
+   なろうだけ（正規IDを持ちランキングの材料になるもの）。ファイル取り
+   込み（EPUB／ローカル）は正規IDが無く対象外。記録は本のメタデータ
+   のみで、IP・端末ID等の識別子は送らない（検索ログと同方針）。
+   送信は fire-and-forget：失敗しても登録処理は一切妨げない。
+   via は登録の入口：search（検索結果）／recommend（おすすめ・似た作品）
+   ／ranking（ランキング）／direct（ncode・URL直接指定） */
+const SHELF_LOG_API = "https://narou-relay.gogo-nakachan.workers.dev/api/log/shelf";
+function logShelfAdd(src, id, title, author, via){
+  try {
+    if (!id) return;
+    fetch(SHELF_LOG_API, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ src, id: String(id), title: title || "", author: author || "", via }),
+      keepalive: true
+    }).catch(() => {});
+  } catch (e) { /* ログ送信の失敗で登録を妨げない */ }
 }
 function registerBook(key, title, note, kind, fileName, episodes, stored, author){
   const counts = epCharCounts(episodes);
@@ -7605,7 +7628,7 @@ function backToShelfFromNarou(){
 $("#btnNarouBack").addEventListener("click", () => backToShelfFromNarou());
 
 /* ---------- 作品カード ---------- */
-function nCardHTML(n, rank, periodOrder){
+function nCardHTML(n, rank, periodOrder, via){
   nNovelStore[String(n.ncode).toUpperCase()] = n;
   const status = nStatusLabel(n);
   const eps = n.novel_type === 2 ? "短編" : ("全" + nFmtNum(n.general_all_no) + "話");
@@ -7651,7 +7674,7 @@ function nCardHTML(n, rank, periodOrder){
     '<div class="nactions">' +
       (regEntry
         ? '<button type="button" class="nbtn primary" data-nread="' + esc(String(n.ncode).toUpperCase()) + '">今すぐ読む</button>'
-        : '<button type="button" class="nbtn primary" data-nreg="' + esc(String(n.ncode).toUpperCase()) + '">本棚へ登録</button>') +
+        : '<button type="button" class="nbtn primary" data-nreg="' + esc(String(n.ncode).toUpperCase()) + '"' + (via ? ' data-nvia="' + esc(via) + '"' : '') + '>本棚へ登録</button>') +
       '<button type="button" class="nbtn" data-nsimilar="' + esc(String(n.ncode).toUpperCase()) + '">似た作品</button>' +
     "</div>" +
     (aff ? '<div class="naff"><a href="' + esc(aff) + '" target="_blank" rel="noopener sponsored">書籍版を探す（Amazon）</a></div>' : "") +
@@ -7669,7 +7692,7 @@ function nRenderList(container, novels, opts){
       (opts.countText ? "<span>" + esc(opts.countText) + "</span>" : "") + "</div>";
   }
   novels.forEach((n, i) => {
-    html += nCardHTML(n, opts.ranked ? (opts.rankOffset || 0) + i + 1 : null, opts.periodOrder);
+    html += nCardHTML(n, opts.ranked ? (opts.rankOffset || 0) + i + 1 : null, opts.periodOrder, opts.via);
   });
   container.innerHTML = html;
 }
@@ -7719,13 +7742,13 @@ function nRunSearch(reset){
     if (reset) {
       nRenderList(box, res.novels, {
         heading: "検索結果", countText: "全" + nFmtNum(res.allcount) + "件",
-        emptyText: "条件に合う作品がありませんでした。"
+        emptyText: "条件に合う作品がありませんでした。", via: "search"
       });
     } else {
       const more = box.querySelector(".nmore-wrap");
       if (more) more.remove();
       const tmp = document.createElement("div");
-      tmp.innerHTML = res.novels.map(n => nCardHTML(n)).join("");
+      tmp.innerHTML = res.novels.map(n => nCardHTML(n, null, null, "search")).join("");
       while (tmp.firstChild) box.appendChild(tmp.firstChild);
     }
     if (nSearchState.loaded < nSearchState.allcount && res.novels.length) {
@@ -7770,13 +7793,13 @@ function nLoadRanking(reset){
     if (reset) {
       nRenderList(box, res.novels, {
         heading: periodLabel + "ランキング", countText: "全" + nFmtNum(res.allcount) + "件",
-        ranked: true, periodOrder: nRankState.period, emptyText: "ランキングが取得できませんでした。"
+        ranked: true, periodOrder: nRankState.period, emptyText: "ランキングが取得できませんでした。", via: "ranking"
       });
     } else {
       const more = box.querySelector(".nmore-wrap");
       if (more) more.remove();
       const tmp = document.createElement("div");
-      tmp.innerHTML = res.novels.map((n, i) => nCardHTML(n, offset + i + 1, nRankState.period)).join("");
+      tmp.innerHTML = res.novels.map((n, i) => nCardHTML(n, offset + i + 1, nRankState.period, "ranking")).join("");
       while (tmp.firstChild) box.appendChild(tmp.firstChild);
     }
     if (nRankState.loaded < nRankState.allcount && res.novels.length) {
@@ -7815,7 +7838,7 @@ function nDrawRecommend(){
   nRenderList($("#nrecResults"), nShufflePick(nRecState.pool, 10), {
     heading: NAROU_PRESETS[nRecState.idx].label,
     countText: "プール" + nFmtNum(nRecState.pool.length) + "件からランダム10件",
-    emptyText: "候補がありませんでした。"
+    emptyText: "候補がありませんでした。", via: "recommend"
   });
 }
 function nFetchRecommend(){
@@ -7865,7 +7888,7 @@ $("#nurlForm").addEventListener("submit", ev => {
       box.innerHTML = '<div class="nempty">作品が見つかりませんでした（' + esc(ncode) + "）。</div>";
       return;
     }
-    nRenderList(box, res.novels, { heading: "作品情報" });
+    nRenderList(box, res.novels, { heading: "作品情報", via: "direct" });
   }).catch(() => {
     box.innerHTML = '<div class="nempty">取得に失敗しました。時間をおいて再試行してください。</div>';
   }).finally(() => {
@@ -7891,7 +7914,7 @@ function nLoadSimilar(n){
     word: nSimilarKeywords(n).join(" "), genre: n.genre, order: "hyoka",
     lim: 20, notncode: n.ncode
   }).then(res => {
-    nRenderList(box, res.novels, { emptyText: "似た作品が見つかりませんでした。" });
+    nRenderList(box, res.novels, { emptyText: "似た作品が見つかりませんでした。", via: "recommend" });
   }).catch(() => {
     box.innerHTML = '<div class="nempty">取得に失敗しました。</div>';
   });
@@ -7940,6 +7963,11 @@ async function nRegisterMetaOnly(novel, btn){
   if (nRegBusy) return;
   if (ndl.downloading) { toast("別の作品を取得中です"); return; }
   const ncodeU = String(novel.ncode).toUpperCase();
+  /* 本棚追加ログの入口タグ：押された登録ボタンに付いた data-nvia を使う。
+     カードの表示元（検索／おすすめ／ランキング／URL指定）ごとに正しい
+     タグが付くよう、描画側でボタンへ刻んである。不明な場合は検索扱い */
+  const shelfVia = (btn && btn.dataset && ["search", "recommend", "ranking", "direct"].indexOf(btn.dataset.nvia) >= 0)
+    ? btn.dataset.nvia : "search";
   const key = "narou:" + ncodeU;
   if (S.library.find(x => x.key === key)) { toast("すでに本棚に登録されています"); return; }
   nRegBusy = true;
@@ -7976,6 +8004,9 @@ async function nRegisterMetaOnly(novel, btn){
     await nSaveManifest(m);
     const note = (novel.writer ? novel.writer + "／" : "") + "小説家になろう";
     registerBook(key, novel.title, note, "file", "", [], true);
+    /* 本棚への新規登録が完了した瞬間に1回だけ追加ログを送る（この関数は
+       登録済みなら冒頭で弾くため、ここを通るのは新規登録のときだけ） */
+    logShelfAdd("narou", ncodeU, novel.title, novel.writer || "", shelfVia);
     /* 話タイトル一覧はまだ本に入っていないので持たせない（本棚カードの
        「全0話」表示を避け、未取得の判定は話数0として働かせる） */
     const ent = S.library.find(x => x.key === key);
@@ -9357,7 +9388,11 @@ async function aImportAozora(item, btn){
     /* 著者は検索結果（item.a）を一緒に保存し、ノートはなろう本と同じ
        形式（著者名／出所）にする。著者が無い場合のみ従来の表記にする */
     const author = ((item && item.a) || "").trim();
+    const shelfIsNew = !S.library.find(x => x.key === key);
     registerBook(key, regTitle, author ? author + "／青空文庫" : "青空文庫ZIP", "file", fileName, book.episodes, stored, author);
+    /* 本棚への新規登録のときだけ追加ログを送る（青空の入口は検索結果
+       のみ。id は検索インデックスのテキストファイルURL＝ item.u） */
+    if (shelfIsNew) logShelfAdd("aozora", item.u, regTitle, author, "search");
     setArchiveFlags(key, { hasArchive: arcStored });
     if (thumb) {
       const e = S.library.find(x => x.key === key);
