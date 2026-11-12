@@ -323,12 +323,6 @@
   .tocrow.notfetched .tt { color: var(--sub); }
   .tocrow .fetchbadge { font-size: 10.5px; color: var(--sub); border: 1px solid var(--line);
     border-radius: 999px; padding: 1px 7px; white-space: nowrap; }
-  .toclatest {
-    width: 100%; border: 1px solid var(--accent); background: transparent; color: var(--accent);
-    font: inherit; font-size: 13.5px; font-weight: 600; padding: 11px 12px; border-radius: 12px;
-    cursor: pointer; margin: 2px 0 8px; text-align: left;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  }
   .markrow { display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--line); padding: 6px 0; }
   .markrow .go { flex: 1 1 auto; min-width: 0; text-align: left; border: 0; background: transparent;
     color: var(--ink); font: inherit; padding: 8px 2px; cursor: pointer; }
@@ -756,7 +750,6 @@
     <h2 id="tocWorkTitle"></h2>
     <p class="worknote" id="tocWorkNote"></p>
     <p class="worknote" id="tocSyncNote" hidden></p>
-    <button class="toclatest" id="btnTocLatest" hidden></button>
     <div id="tocList"></div>
   </section>
 
@@ -967,7 +960,7 @@
         })();
       </script><script src="https://adm.shinobi.jp/s/15f61b0238a01ce2999b531089637173"></script></div>
     </div>
-    <div id="buildId" aria-hidden="true">build 2026-11-13 07:31</div>
+    <div id="buildId" aria-hidden="true">build 2026-11-13 07:42</div>
   </div>
 
   <div id="narou" aria-label="なろうダウンローダー">
@@ -1297,7 +1290,7 @@ const GUIDE_EPISODES = [
       "なろう作品に新しい話があるかどうかは、本棚の「検索」の隣にある更新チェックのボタンで、全作品まとめて確認できます。実行すると各作品の目次だけを取得して手元の控えと照合します（本文は取得しないので、確認はすぐ終わります）。新しい話や、更新日が変わった（書き換えられた）話があった本には、本棚のカードに小さな丸印（ドット）が付きます。ドットは「開けば新しい話が読める」合図です。その本を開くとドットは消えます。また、なろうの本を開いたときにも、その本の目次照合が自動で行われ、未取得の話や新しい話があれば、そのまま読書中のダウンロードで取得されます（今読んでいる話の続きから先へ順に、開いている間ずっと続きます）。",
       "取得途中の本を開いている間は、残りの話が裏側で自動的に取得され続けます。取得の順番は、今読んでいる話から先へ（新しい話の方向へ）順に進み、最新話まで到達したら先頭に戻って、残っている話を先頭から順に取得します。目次などで未取得の話へ移動したときは、その話をその場で取得して表示し、残りは移動先から先へ、最新話のあとは先頭へ、という同じ順番で裏で取得し続けます。取得済みの話はそのまま読み進められます。取得中かどうかは、本文メニューの「目次」の上部に小さく表示されます。本を閉じる／本棚に戻ると自動取得は止まり、次に開いたときに続きから再開します。未取得の話が残っている間は、その本が「読了」になることはありません。",
       "なろうの作品カードの「本棚へ登録」を選ぶと、本文は1話も取得せず、作品情報と目次（全話のタイトル一覧）だけを取って本棚へ登録します。登録された本は「取得途中 0/総話数」として並び、開くと、開いた話の本文がその場で取得されて読み始められ、残りの話は読んでいる間に順に取得されます。",
-      "本を開いたあとの目次には、登録時に取得した目次をもとに、まだ本文を取得していない話も含めて全話が並びます。未取得の話は目次から消えず、「未取得」と表示されたまま残ります。未取得の話を選ぶと、その話だけをその場で取得して、本の目次順の位置へ差し込んでから開きます。目次の先頭にある「最新話へ移動」からは、最新話へ直接跳べます。最新話へ移動したあとも目次には全話が並び、前のほうの未取得の話は裏で順に取得されます。",
+      "本を開いたあとの目次には、登録時に取得した目次をもとに、まだ本文を取得していない話も含めて全話が並びます。未取得の話は目次から消えず、「未取得」と表示されたまま残ります。未取得の話を選ぶと、その話だけをその場で取得して、本の目次順の位置へ差し込んでから開きます。",
       { t: "しおり", cls: "head" },
       "メニューの「しおり」から、今開いているページにしおりを挟めます。しおりは本ごとに保存され、一覧からいつでもそのページへ戻れます。",
       { t: "保存のしくみ", cls: "head" },
@@ -3906,8 +3899,6 @@ function buildToc(){
   $("#tocWorkTitle").textContent = S.work.title;
   $("#tocWorkNote").textContent = S.work.note || "";
   nTocSyncRefresh();
-  const latestBtn = $("#btnTocLatest");
-  if (latestBtn) latestBtn.hidden = true;
   renderTocFromBook();
   /* なろう本は、本棚登録時に取得した目次（台帳）が全話分ある。台帳が
      読めたら、未取得の話も含めた全話表示へ差し替える */
@@ -3987,7 +3978,7 @@ function nBookPosOfManifest(m){
    話だけの表示（renderTocFromBook）へ倒すのは、対応が1件も取れず
    台帳と本の対応がまったく信用できないときだけにする。全話が本に
    入っている場合も、台帳から描く内容は本だけの目次と等価なので、
-   そのまま台帳から描いてよい（最新話ボタンの判定もここで一貫する） */
+   そのまま台帳から描いてよい */
 function renderTocFromManifest(m){
   if (!m || !Array.isArray(m.episodes) || !m.episodes.length) return;
   if (!S.episodes.length) return;
@@ -4018,23 +4009,6 @@ function renderTocFromManifest(m){
     }
     list.appendChild(b);
   });
-  /* 最新話への近道：最後の話が今読んでいる話でなければ、目次の先頭に出す */
-  const last = m.episodes[m.episodes.length - 1];
-  const lastPos = posOf[posOf.length - 1];
-  const btn = $("#btnTocLatest");
-  if (btn && last) {
-    const lastIsCurrent = lastPos != null && lastPos === S.ep;
-    btn.hidden = !!lastIsCurrent;
-    if (!lastIsCurrent) {
-      const lastHeading = last.chapter ? last.chapter + "　" + last.title : last.title;
-      btn.textContent = "最新話へ移動：" + cleanEpTitle(lastHeading);
-      btn.onclick = () => {
-        if (lastPos != null && S.episodes[lastPos]) {
-          closeSheets(); openEpisode(lastPos, 0);
-        } else nJumpToEpisode(last.no);
-      };
-    }
-  }
   const now = list.querySelector(".tocrow.now");
   if (now && $("#tocSheet").classList.contains("open")) {
     try { now.scrollIntoView({ block: "center" }); } catch (err) { /* noop */ }
@@ -9343,8 +9317,7 @@ async function nBootstrapOpen(entry){
 /* ---------- 目次から任意の話へ移動（未取得の話はその場で取得する） ----------
    目次シートには台帳の全話が並ぶ（renderTocFromManifest）。未取得の話を
    選んだら、その話だけを取得して本の目次順の位置へ差し込み、そのまま
-   開く。いきなり最新話から読みたい場合も、目次上部の「最新話へ移動」
-   ボタンからここを通る。
+   開く。
    読書中の自動取得が動いている場合は一度止めて待つ。中断した自動取得は
    後始末で本を保存し直すため、開いている本を保存済みへ合わせ直してから
    差し込まないと、台帳の本内位置と開いている本の並びがずれてしまう */
