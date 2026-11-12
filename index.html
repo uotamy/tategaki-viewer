@@ -320,6 +320,15 @@
   .tocrow.now .tt { color: var(--accent); font-weight: 600; }
   .tocrow .reading { font-size: 10.5px; color: var(--accent); border: 1px solid var(--accent);
     border-radius: 999px; padding: 1px 7px; white-space: nowrap; }
+  .tocrow.notfetched .tt { color: var(--sub); }
+  .tocrow .fetchbadge { font-size: 10.5px; color: var(--sub); border: 1px solid var(--line);
+    border-radius: 999px; padding: 1px 7px; white-space: nowrap; }
+  .toclatest {
+    width: 100%; border: 1px solid var(--accent); background: transparent; color: var(--accent);
+    font: inherit; font-size: 13.5px; font-weight: 600; padding: 11px 12px; border-radius: 12px;
+    cursor: pointer; margin: 2px 0 8px; text-align: left;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
   .markrow { display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--line); padding: 6px 0; }
   .markrow .go { flex: 1 1 auto; min-width: 0; text-align: left; border: 0; background: transparent;
     color: var(--ink); font: inherit; padding: 8px 2px; cursor: pointer; }
@@ -747,6 +756,7 @@
     <h2 id="tocWorkTitle"></h2>
     <p class="worknote" id="tocWorkNote"></p>
     <p class="worknote" id="tocSyncNote" hidden></p>
+    <button class="toclatest" id="btnTocLatest" hidden></button>
     <div id="tocList"></div>
   </section>
 
@@ -957,7 +967,7 @@
         })();
       </script><script src="https://adm.shinobi.jp/s/15f61b0238a01ce2999b531089637173"></script></div>
     </div>
-    <div id="buildId" aria-hidden="true">build 2026-11-12 08:13</div>
+    <div id="buildId" aria-hidden="true">build 2026-11-13 07:11</div>
   </div>
 
   <div id="narou" aria-label="なろうダウンローダー">
@@ -1287,6 +1297,7 @@ const GUIDE_EPISODES = [
       "なろう作品に新しい話があるかどうかは、本棚の「検索」の隣にある更新チェックのボタンで、全作品まとめて確認できます。実行すると各作品の目次だけを取得して手元の控えと照合します（本文は取得しないので、確認はすぐ終わります）。新しい話や、更新日が変わった（書き換えられた）話があった本には、本棚のカードに小さな丸印（ドット）が付きます。ドットは「開けば新しい話が読める」合図です。その本を開くとドットは消えます。また、なろうの本を開いたときにも、その本の目次照合が自動で行われ、未取得の話や新しい話があれば、そのまま読書中のダウンロードで取得されます（今読んでいる話の次を優先して、開いている間ずっと続きます）。",
       "取得途中の本を開いている間は、残りの話が裏側で自動的に取得され続けます。取得の順番は「今読んでいる話の次」からで、取得済みの話はそのまま読み進められます。取得中かどうかは、本文メニューの「目次」の上部に小さく表示されます。本を閉じる／本棚に戻ると自動取得は止まり、次に開いたときに続きから再開します。未取得の話が残っている間は、その本が「読了」になることはありません。",
       "なろうの作品カードの「本棚へ登録」を選ぶと、本文は1話も取得せず、作品情報と目次（全話のタイトル一覧）だけを取って本棚へ登録します。登録された本は「取得途中 0/総話数」として並び、開くと、開いた話の本文がその場で取得されて読み始められ、残りの話は読んでいる間に順に取得されます。",
+      "本を開いたあとの目次には、登録時に取得した目次をもとに、まだ本文を取得していない話も含めて全話が並びます。未取得の話を選ぶと、その話だけをその場で取得して、本の目次順の位置へ差し込んでから開きます。目次の先頭にある「最新話へ移動」からは、最新話へ直接跳べます。",
       { t: "しおり", cls: "head" },
       "メニューの「しおり」から、今開いているページにしおりを挟めます。しおりは本ごとに保存され、一覧からいつでもそのページへ戻れます。",
       { t: "保存のしくみ", cls: "head" },
@@ -3890,10 +3901,27 @@ $("#pageSlider").addEventListener("input", e => {
   renderCurrent(null);
 });
 
+let nTocRenderSeq = 0;
 function buildToc(){
   $("#tocWorkTitle").textContent = S.work.title;
   $("#tocWorkNote").textContent = S.work.note || "";
   nTocSyncRefresh();
+  const latestBtn = $("#btnTocLatest");
+  if (latestBtn) latestBtn.hidden = true;
+  renderTocFromBook();
+  /* なろう本は、本棚登録時に取得した目次（台帳）が全話分ある。台帳が
+     読めたら、未取得の話も含めた全話表示へ差し替える */
+  const key = S.work && S.work.key;
+  if (key && key.indexOf("narou:") === 0 && S.episodes.length) {
+    const seq = ++nTocRenderSeq;
+    nLoadManifest(key.slice(6).toUpperCase()).then(m => {
+      if (seq !== nTocRenderSeq || !m) return;
+      if (!S.work || S.work.key !== key || !S.episodes.length) return;
+      renderTocFromManifest(m);
+    }).catch(() => { /* noop */ });
+  }
+}
+function renderTocFromBook(){
   const list = $("#tocList");
   list.innerHTML = "";
   S.episodes.forEach((ep, i) => {
@@ -3908,6 +3936,61 @@ function buildToc(){
     b.addEventListener("click", () => { closeSheets(); openEpisode(i, 0); });
     list.appendChild(b);
   });
+}
+/* なろう本の目次を台帳（全話の目次）から描く。本に入っていない話も
+   「未取得」として並べ、選ぶとその場で取得して移動する（nJumpToEpisode）。
+   台帳と開いている本の対応（本内位置）が取れないときは、本に入っている
+   話だけの表示（renderTocFromBook）のままにする */
+function renderTocFromManifest(m){
+  if (!m || !Array.isArray(m.episodes)) return;
+  if (!m.episodes.some(e => e.state !== "inbook" || e.bookIndex == null)) return;
+  const inbook = m.episodes.filter(e => e.state === "inbook" && e.bookIndex != null)
+    .sort((a, b) => a.bookIndex - b.bookIndex);
+  if (inbook.length !== S.episodes.length || inbook.some((e, i) => e.bookIndex !== i)) return;
+  const list = $("#tocList");
+  list.innerHTML = "";
+  m.episodes.forEach(e => {
+    const b = document.createElement("button");
+    if (e.state === "inbook") {
+      const i = e.bookIndex;
+      const ep = S.episodes[i];
+      const chars = ep.paragraphs.reduce((a, p) => a + p.units.length, 0);
+      const metaTxt = ep.isManga ? ep.paragraphs.length.toLocaleString() + "ページ"
+                                  : chars.toLocaleString() + "字";
+      b.className = "tocrow" + (i === S.ep ? " now" : "");
+      b.innerHTML = '<span class="tt">' + esc(cleanEpTitle(ep.title)) + "</span>" +
+        (i === S.ep ? '<span class="reading">読書中</span>' : "") +
+        '<span class="meta">' + metaTxt + "</span>";
+      b.addEventListener("click", () => { closeSheets(); openEpisode(i, 0); });
+    } else {
+      const heading = e.chapter ? e.chapter + "　" + e.title : e.title;
+      b.className = "tocrow notfetched";
+      b.innerHTML = '<span class="tt">' + esc(cleanEpTitle(heading)) + "</span>" +
+        '<span class="fetchbadge">' + (e.state === "stored" ? "取得済み" : "未取得") + "</span>";
+      b.addEventListener("click", () => { nJumpToEpisode(e.no); });
+    }
+    list.appendChild(b);
+  });
+  /* 最新話への近道：最後の話が今読んでいる話でなければ、目次の先頭に出す */
+  const last = m.episodes[m.episodes.length - 1];
+  const btn = $("#btnTocLatest");
+  if (btn && last) {
+    const lastIsCurrent = last.state === "inbook" && last.bookIndex === S.ep;
+    btn.hidden = !!lastIsCurrent;
+    if (!lastIsCurrent) {
+      const lastHeading = last.chapter ? last.chapter + "　" + last.title : last.title;
+      btn.textContent = "最新話へ移動：" + cleanEpTitle(lastHeading);
+      btn.onclick = () => {
+        if (last.state === "inbook" && last.bookIndex != null && S.episodes[last.bookIndex]) {
+          closeSheets(); openEpisode(last.bookIndex, 0);
+        } else nJumpToEpisode(last.no);
+      };
+    }
+  }
+  const now = list.querySelector(".tocrow.now");
+  if (now && $("#tocSheet").classList.contains("open")) {
+    try { now.scrollIntoView({ block: "center" }); } catch (err) { /* noop */ }
+  }
 }
 /* しおり */
 function buildMarks(){
@@ -9189,6 +9272,135 @@ async function nBootstrapOpen(entry){
   } catch (err) {
     toast("エラー：『" + entry.title + "』の話を取得できませんでした。通信環境を確認して、もう一度開いてください", 3600);
     return true;
+  }
+}
+
+/* ---------- 目次から任意の話へ移動（未取得の話はその場で取得する） ----------
+   目次シートには台帳の全話が並ぶ（renderTocFromManifest）。未取得の話を
+   選んだら、その話だけを取得して本の目次順の位置へ差し込み、そのまま
+   開く。いきなり最新話から読みたい場合も、目次上部の「最新話へ移動」
+   ボタンからここを通る。
+   読書中の自動取得が動いている場合は一度止めて待つ。中断した自動取得は
+   後始末で本を保存し直すため、開いている本を保存済みへ合わせ直してから
+   差し込まないと、台帳の本内位置と開いている本の並びがずれてしまう */
+let nJumpBusy = false;
+async function nJumpToEpisode(no){
+  if (nJumpBusy) return;
+  const key = S.work && S.work.key;
+  if (!key || key.indexOf("narou:") !== 0 || !S.episodes.length) return;
+  if (nReadSession.active && nReadSession.key && nReadSession.key !== key) return;
+  const ncodeU = key.slice(6).toUpperCase();
+  nJumpBusy = true;
+  setLoading(true);
+  let m = null, target = null, keptInStore = false;
+  try {
+    /* 自動取得・目次照合が動いていれば止めて、落ち着くまで待つ */
+    let stoppedSync = false;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (nReadSession.active && nReadSession.key === key) { nStopReadingSync(); stoppedSync = true; }
+      if (!ndl.downloading && !nReadSession.active) break;
+      for (let i = 0; i < 100 && (ndl.downloading || nReadSession.active); i++) await nSleep(200);
+      if (!S.work || S.work.key !== key || !S.episodes.length) return;
+    }
+    if (ndl.downloading || nReadSession.active) {
+      toast("取得処理が終わるまで待ってから、もう一度お試しください", 3200);
+      return;
+    }
+    /* 自動取得を止めた場合は、中断時の後始末で保存し直された本が正。
+       開いている本を保存済みへ合わせ直し、読書位置は話タイトルで引き継ぐ */
+    if (stoppedSync) {
+      const savedBook = await loadBookContent(key);
+      if (!savedBook || !savedBook.length) { toast("本の本文を読み直せませんでした", 3200); return; }
+      const curTitle = S.episodes[S.ep] ? S.episodes[S.ep].title : null;
+      const pos = currentPos();
+      S.episodes = savedBook;
+      S.cache.clear();
+      clearPrebuiltPages();
+      let idx0 = curTitle ? savedBook.findIndex(e => e.title === curTitle) : -1;
+      if (idx0 < 0) idx0 = Math.min(S.ep, savedBook.length - 1);
+      goToPos(idx0, pos);
+    }
+    m = await nLoadManifest(ncodeU);
+    if (!m || !Array.isArray(m.episodes) || !m.episodes.length) { toast("目次情報が見つかりませんでした", 3200); return; }
+    target = m.episodes.find(e => e.no === no);
+    if (!target) return;
+    if (target.state === "inbook" && target.bookIndex != null && S.episodes[target.bookIndex]) {
+      closeSheets();
+      openEpisode(target.bookIndex, 0);
+      return;
+    }
+    /* 台帳の「本に入っている話」と開いている本の対応が取れているときだけ差し込む */
+    const inbook = m.episodes.filter(e => e.state === "inbook" && e.bookIndex != null)
+      .sort((a, b) => a.bookIndex - b.bookIndex);
+    const order = inbook.map(e => e.no);
+    if (inbook.length !== S.episodes.length || inbook.some((e, i) => e.bookIndex !== i)) {
+      toast("この本の目次情報と本文が一致していないため、移動できませんでした", 3400);
+      return;
+    }
+    const novel = m.novel || {};
+    const heading = target.chapter ? target.chapter + "　" + target.title : target.title;
+    let parsed = null;
+    if (target.state === "stored") {
+      const text = await nsGet(NS_EP_STORE, nsEpKey(ncodeU, target.no));
+      if (text != null) parsed = mergeParsedEpisodes(parseTextBook(text, heading + ".txt"), heading);
+      if (parsed && !parsed.paragraphs.length) parsed = null; /* 中身が空なら取り直す */
+    }
+    if (!parsed) {
+      const base = "https://ncode.syosetu.com/" + ncodeU.toLowerCase() + "/";
+      let text = null;
+      if (novel.novel_type === 2) text = nEpisodeText(await nFetchText(base, 3), novel.title || S.work.title);
+      else text = nEpisodeText(await nFetchText(base + target.no + "/", 3), heading);
+      if (text == null) throw new Error("本文が見つかりませんでした。");
+      await nsPut(NS_EP_STORE, nsEpKey(ncodeU, target.no), text);
+      keptInStore = true;
+      parsed = mergeParsedEpisodes(parseTextBook(text, heading + ".txt"), heading);
+    }
+    if (!parsed || !parsed.paragraphs.length) throw new Error("本文を取り込めませんでした。");
+    if (!S.work || S.work.key !== key || !S.episodes.length) return; /* 取得中に本が閉じられた */
+    /* 差し込み位置：目次順で前後にある取得済みの話との間 */
+    const posInToc = m.episodes.indexOf(target);
+    let idx = -1;
+    for (let i = posInToc - 1; i >= 0; i--) { const j = order.indexOf(m.episodes[i].no); if (j >= 0) { idx = j + 1; break; } }
+    if (idx < 0) for (let i = posInToc + 1; i < m.episodes.length; i++) { const j = order.indexOf(m.episodes[i].no); if (j >= 0) { idx = j; break; } }
+    if (idx < 0) idx = S.episodes.length;
+    const newEpisodes = S.episodes.slice();
+    newEpisodes.splice(idx, 0, parsed);
+    const storedOk = await saveBookContent(key, newEpisodes);
+    if (!storedOk) { toast("保存できませんでした（容量不足など）。時間をおいて再試行してください", 3400); return; }
+    /* ここから先は本へ取り込めたものとして台帳を揃える */
+    keptInStore = false;
+    S.episodes = newEpisodes;
+    S.cache.clear();
+    clearPrebuiltPages();
+    order.splice(idx, 0, target.no);
+    order.forEach((epNo, i) => {
+      const e = m.episodes.find(x => x.no === epNo);
+      if (e) e.bookIndex = i;
+    });
+    target.state = "inbook";
+    target.bookIndex = idx;
+    await nSaveManifest(m);
+    await nsDel(NS_EP_STORE, nsEpKey(ncodeU, target.no));
+    nUpdateLibraryEntry(key, S.episodes);
+    closeSheets();
+    openEpisode(idx, 0);
+    buildToc();
+    nTocSyncRefresh();
+    toast("『" + cleanEpTitle(heading) + "』へ移動しました", 2200);
+    /* 残りの話は、開いている間の自動取得に引き続き任せる */
+    const entry = S.library.find(x => x.key === key);
+    if (entry) nStartReadingSync(entry);
+  } catch (err) {
+    toast("エラー：話を取得できませんでした。通信環境を確認して、もう一度お試しください", 3600);
+  } finally {
+    /* 本へ入れられなかった本文は、台帳上で「取得済み（同期ストア内）」と
+       して残し、次回は通信なしで取り込めるようにする */
+    if (keptInStore && m && target && target.state !== "inbook") {
+      target.state = "stored";
+      try { await nSaveManifest(m); } catch (e) { /* noop */ }
+    }
+    setLoading(false);
+    nJumpBusy = false;
   }
 }
 nInitAdSlots();

@@ -20,7 +20,7 @@
      ルート直下に置けばそのままルートスコープ版としても動く（パスは scope から算出する）。
    ========================================================= */
 
-var VERSION = "v12";
+var VERSION = "v13";
 var SHELL_CACHE = "tategaki-shell-" + VERSION;
 var RUNTIME_CACHE = "tategaki-runtime-" + VERSION;
 
