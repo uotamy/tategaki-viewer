@@ -967,7 +967,7 @@
         })();
       </script><script src="https://adm.shinobi.jp/s/15f61b0238a01ce2999b531089637173"></script></div>
     </div>
-    <div id="buildId" aria-hidden="true">build 2026-11-13 07:11</div>
+    <div id="buildId" aria-hidden="true">build 2026-11-13 07:31</div>
   </div>
 
   <div id="narou" aria-label="なろうダウンローダー">
@@ -1294,10 +1294,10 @@ const GUIDE_EPISODES = [
       "「なろうダウンローダー」からは、「小説家になろう」の作品を検索・ランキング・おすすめ・URL指定で探し、作品カードの「本棚へ登録」で本棚へ登録できます。登録のときは本文を取得しないので、話数が多い作品でもすぐ終わります。別ページのダウンローダーで登録した本も、従来どおり前面に戻ったときに自動で本棚へ追加されます。",
       "「青空文庫ダウンローダー」からは、青空文庫の作品を作品名・著者名で検索し、テキストzipを取得してそのまま本棚へ登録できます。作品リスト（インデックス）は青空文庫の公式のものを使い、端末内にキャッシュされます。「インデックスを更新」で最新のリストに取り直せます。掲載は著作権の消滅した作品のみです。",
       "取得は1話ごとに端末へ保存されます。途中で中断しても、取得済みの話だけで本として本棚へ登録されます。その本は本棚で「取得途中 n/総話」と表示され、取得済み範囲の末尾まで読んでも読了にはならず、続きを案内するページが出ます。",
-      "なろう作品に新しい話があるかどうかは、本棚の「検索」の隣にある更新チェックのボタンで、全作品まとめて確認できます。実行すると各作品の目次だけを取得して手元の控えと照合します（本文は取得しないので、確認はすぐ終わります）。新しい話や、更新日が変わった（書き換えられた）話があった本には、本棚のカードに小さな丸印（ドット）が付きます。ドットは「開けば新しい話が読める」合図です。その本を開くとドットは消えます。また、なろうの本を開いたときにも、その本の目次照合が自動で行われ、未取得の話や新しい話があれば、そのまま読書中のダウンロードで取得されます（今読んでいる話の次を優先して、開いている間ずっと続きます）。",
-      "取得途中の本を開いている間は、残りの話が裏側で自動的に取得され続けます。取得の順番は「今読んでいる話の次」からで、取得済みの話はそのまま読み進められます。取得中かどうかは、本文メニューの「目次」の上部に小さく表示されます。本を閉じる／本棚に戻ると自動取得は止まり、次に開いたときに続きから再開します。未取得の話が残っている間は、その本が「読了」になることはありません。",
+      "なろう作品に新しい話があるかどうかは、本棚の「検索」の隣にある更新チェックのボタンで、全作品まとめて確認できます。実行すると各作品の目次だけを取得して手元の控えと照合します（本文は取得しないので、確認はすぐ終わります）。新しい話や、更新日が変わった（書き換えられた）話があった本には、本棚のカードに小さな丸印（ドット）が付きます。ドットは「開けば新しい話が読める」合図です。その本を開くとドットは消えます。また、なろうの本を開いたときにも、その本の目次照合が自動で行われ、未取得の話や新しい話があれば、そのまま読書中のダウンロードで取得されます（今読んでいる話の続きから先へ順に、開いている間ずっと続きます）。",
+      "取得途中の本を開いている間は、残りの話が裏側で自動的に取得され続けます。取得の順番は、今読んでいる話から先へ（新しい話の方向へ）順に進み、最新話まで到達したら先頭に戻って、残っている話を先頭から順に取得します。目次などで未取得の話へ移動したときは、その話をその場で取得して表示し、残りは移動先から先へ、最新話のあとは先頭へ、という同じ順番で裏で取得し続けます。取得済みの話はそのまま読み進められます。取得中かどうかは、本文メニューの「目次」の上部に小さく表示されます。本を閉じる／本棚に戻ると自動取得は止まり、次に開いたときに続きから再開します。未取得の話が残っている間は、その本が「読了」になることはありません。",
       "なろうの作品カードの「本棚へ登録」を選ぶと、本文は1話も取得せず、作品情報と目次（全話のタイトル一覧）だけを取って本棚へ登録します。登録された本は「取得途中 0/総話数」として並び、開くと、開いた話の本文がその場で取得されて読み始められ、残りの話は読んでいる間に順に取得されます。",
-      "本を開いたあとの目次には、登録時に取得した目次をもとに、まだ本文を取得していない話も含めて全話が並びます。未取得の話を選ぶと、その話だけをその場で取得して、本の目次順の位置へ差し込んでから開きます。目次の先頭にある「最新話へ移動」からは、最新話へ直接跳べます。",
+      "本を開いたあとの目次には、登録時に取得した目次をもとに、まだ本文を取得していない話も含めて全話が並びます。未取得の話は目次から消えず、「未取得」と表示されたまま残ります。未取得の話を選ぶと、その話だけをその場で取得して、本の目次順の位置へ差し込んでから開きます。目次の先頭にある「最新話へ移動」からは、最新話へ直接跳べます。最新話へ移動したあとも目次には全話が並び、前のほうの未取得の話は裏で順に取得されます。",
       { t: "しおり", cls: "head" },
       "メニューの「しおり」から、今開いているページにしおりを挟めます。しおりは本ごとに保存され、一覧からいつでもそのページへ戻れます。",
       { t: "保存のしくみ", cls: "head" },
@@ -3937,52 +3937,100 @@ function renderTocFromBook(){
     list.appendChild(b);
   });
 }
-/* なろう本の目次を台帳（全話の目次）から描く。本に入っていない話も
-   「未取得」として並べ、選ぶとその場で取得して移動する（nJumpToEpisode）。
-   台帳と開いている本の対応（本内位置）が取れないときは、本に入っている
-   話だけの表示（renderTocFromBook）のままにする */
-function renderTocFromManifest(m){
-  if (!m || !Array.isArray(m.episodes)) return;
-  if (!m.episodes.some(e => e.state !== "inbook" || e.bookIndex == null)) return;
+/* 台帳の話と開いている本の位置の対応を取る共通処理。
+   戻り値: posOf[台帳の位置] = 本の中の位置（本に入っていなければ null）、
+   bookNoAt[本の中の位置] = 話番号（対応が取れなければ null）、matched =
+   対応が取れた本の話数、perfect = 本の全話に対応が取れたかどうか。
+   原則は台帳の bookIndex で取る。ただし読書中の自動取得が動いている間は、
+   取得した話が開いている本へ先に差し込まれ、台帳の保存（本内位置の
+   付け替え）は全話取得後の反映フェーズまで遅れるため、bookIndex が
+   開いている本とずれる。その場合は話タイトルで照合して対応を再構成
+   する（なろうの話は、取り込むと見出し文字列がそのまま本の中の
+   タイトルになる） */
+function nBookPosOfManifest(m){
+  const posOf = m.episodes.map(() => null);
+  const bookNoAt = S.episodes.map(() => null);
+  let matched = 0;
   const inbook = m.episodes.filter(e => e.state === "inbook" && e.bookIndex != null)
     .sort((a, b) => a.bookIndex - b.bookIndex);
-  if (inbook.length !== S.episodes.length || inbook.some((e, i) => e.bookIndex !== i)) return;
+  if (inbook.length === S.episodes.length && !inbook.some((e, i) => e.bookIndex !== i)) {
+    m.episodes.forEach((e, i) => {
+      if (e.state === "inbook" && e.bookIndex != null) {
+        posOf[i] = e.bookIndex;
+        bookNoAt[e.bookIndex] = e.no;
+        matched++;
+      }
+    });
+    return { posOf, bookNoAt, matched, perfect: true };
+  }
+  const byTitle = {};
+  m.episodes.forEach((e, i) => {
+    const h = e.chapter ? e.chapter + "　" + e.title : e.title;
+    (byTitle[h] = byTitle[h] || []).push(i);
+  });
+  S.episodes.forEach((ep, bi) => {
+    const q = byTitle[ep.title];
+    if (q && q.length) {
+      const mi = q.shift();
+      posOf[mi] = bi;
+      bookNoAt[bi] = m.episodes[mi].no;
+      matched++;
+    }
+  });
+  return { posOf, bookNoAt, matched, perfect: matched === S.episodes.length };
+}
+/* なろう本の目次を台帳（全話の目次）から描く。本に入っていない話も
+   「未取得」として並べ、選ぶとその場で取得して移動する（nJumpToEpisode）。
+   未取得の話は目次から絶対に消さない：対応（nBookPosOfManifest）が
+   一部しか取れない場合でも、台帳の全話を並べ、対応が取れた話は本へ、
+   取れない話は「未取得」として nJumpToEpisode へつなぐ。本に入っている
+   話だけの表示（renderTocFromBook）へ倒すのは、対応が1件も取れず
+   台帳と本の対応がまったく信用できないときだけにする。全話が本に
+   入っている場合も、台帳から描く内容は本だけの目次と等価なので、
+   そのまま台帳から描いてよい（最新話ボタンの判定もここで一貫する） */
+function renderTocFromManifest(m){
+  if (!m || !Array.isArray(m.episodes) || !m.episodes.length) return;
+  if (!S.episodes.length) return;
+  const mapping = nBookPosOfManifest(m);
+  const posOf = mapping.posOf;
+  if (!mapping.matched) return;
   const list = $("#tocList");
   list.innerHTML = "";
-  m.episodes.forEach(e => {
+  m.episodes.forEach((e, mi) => {
     const b = document.createElement("button");
-    if (e.state === "inbook") {
-      const i = e.bookIndex;
-      const ep = S.episodes[i];
+    const bi = posOf[mi];
+    if (bi != null) {
+      const ep = S.episodes[bi];
       const chars = ep.paragraphs.reduce((a, p) => a + p.units.length, 0);
       const metaTxt = ep.isManga ? ep.paragraphs.length.toLocaleString() + "ページ"
                                   : chars.toLocaleString() + "字";
-      b.className = "tocrow" + (i === S.ep ? " now" : "");
+      b.className = "tocrow" + (bi === S.ep ? " now" : "");
       b.innerHTML = '<span class="tt">' + esc(cleanEpTitle(ep.title)) + "</span>" +
-        (i === S.ep ? '<span class="reading">読書中</span>' : "") +
+        (bi === S.ep ? '<span class="reading">読書中</span>' : "") +
         '<span class="meta">' + metaTxt + "</span>";
-      b.addEventListener("click", () => { closeSheets(); openEpisode(i, 0); });
+      b.addEventListener("click", () => { closeSheets(); openEpisode(bi, 0); });
     } else {
       const heading = e.chapter ? e.chapter + "　" + e.title : e.title;
       b.className = "tocrow notfetched";
       b.innerHTML = '<span class="tt">' + esc(cleanEpTitle(heading)) + "</span>" +
-        '<span class="fetchbadge">' + (e.state === "stored" ? "取得済み" : "未取得") + "</span>";
+        '<span class="fetchbadge">' + (e.state === "none" ? "未取得" : "取得済み") + "</span>";
       b.addEventListener("click", () => { nJumpToEpisode(e.no); });
     }
     list.appendChild(b);
   });
   /* 最新話への近道：最後の話が今読んでいる話でなければ、目次の先頭に出す */
   const last = m.episodes[m.episodes.length - 1];
+  const lastPos = posOf[posOf.length - 1];
   const btn = $("#btnTocLatest");
   if (btn && last) {
-    const lastIsCurrent = last.state === "inbook" && last.bookIndex === S.ep;
+    const lastIsCurrent = lastPos != null && lastPos === S.ep;
     btn.hidden = !!lastIsCurrent;
     if (!lastIsCurrent) {
       const lastHeading = last.chapter ? last.chapter + "　" + last.title : last.title;
       btn.textContent = "最新話へ移動：" + cleanEpTitle(lastHeading);
       btn.onclick = () => {
-        if (last.state === "inbook" && last.bookIndex != null && S.episodes[last.bookIndex]) {
-          closeSheets(); openEpisode(last.bookIndex, 0);
+        if (lastPos != null && S.episodes[lastPos]) {
+          closeSheets(); openEpisode(lastPos, 0);
         } else nJumpToEpisode(last.no);
       };
     }
@@ -8909,14 +8957,20 @@ async function nRunSync(novel, opts){
         await liveReflect(e);
       }
     }
-    /* 読書中モードでは、取得の優先順位を「今読んでいる話の次」からにする
-       （opts.priorityNo がその話番号。その話自体が未取得なら最優先になる） */
+    /* 読書中モードの取得順（opts.priorityNo が今読んでいる話の話番号）:
+       まず今の話から先へ（話番号の昇順に）最新話まで先読みし続け、
+       最新話まで到達したら先頭に戻って、残っている話を先頭から順に
+       取得する。途中で目次などから未取得の話へ移動した場合は、その移動先が
+       新しい起点になる（移動自体は nJumpToEpisode がその話を取得して
+       表示し、残りはここが移動先から先へ→先頭へ、の順で引き継ぐ）。
+       起点が特定できないときは目次順（先頭から昇順）のままにする */
     if (live && opts.priorityNo != null) {
-      let maxNo = 0;
-      toc.forEach(e => { if (e.no > maxNo) maxNo = e.no; });
-      const span = maxNo + 1, p = opts.priorityNo;
-      const dist = no => (((no - p) % span) + span) % span;
-      needFetch.sort((a, b) => dist(a.no) - dist(b.no));
+      const p = opts.priorityNo;
+      needFetch.sort((a, b) => {
+        const ra = a.no >= p ? 0 : 1, rb = b.no >= p ? 0 : 1;
+        if (ra !== rb) return ra - rb;
+        return a.no - b.no;
+      });
     }
 
     /* 本文取得フェーズ：足りない話だけを取り、1話ごとに即保存する */
@@ -9101,7 +9155,8 @@ async function nSilentCheck(entry, setDot){
    照合込みで新着まで取得するのでそちらに任せる（ここでは何もしない）。
    照合で新着・変更が見つかったら、チェックだけで止めず、そのまま
    読書中ダウンロードへつないで本文まで取得する（開いている間、
-   現在位置の次を優先して残りを取得し続ける既存の動作） */
+   現在位置から先へ、最新話のあとは先頭から、という順で残りを
+   取得し続ける既存の動作） */
 function nAutoCheckOnOpen(entry){
   if (!entry || typeof entry.key !== "string" || entry.key.indexOf("narou:") !== 0) return;
   const key = entry.key;
@@ -9149,8 +9204,10 @@ async function nCheckAllUpdates(){
 
 /* ---------- 読書中の自動取得（本を開いている間だけ裏で続きを取る） ----------
    未取得の話が残っているなろう作品を開いたら、閉じるまでの間だけ同期
-   エンジン（nRunSync の読書中モード）で残りを取り続ける。優先順位は
-   「今読んでいる話の次」から。本を閉じる／本棚に戻る操作は
+   エンジン（nRunSync の読書中モード）で残りを取り続ける。取得順は
+   「今読んでいる話から先へ順に、最新話まで到達したら先頭に戻って
+   先頭から順に」。目次などで未取得の話へ移動したあとも、移動先を
+   起点に同じ順で裏で取得し続ける。本を閉じる／本棚に戻る操作は
    closeCurrentBook → nStopReadingSync で止め、次に開けば続きから再開する */
 const nReadSession = { active: false, key: null };
 function nTocSyncRefresh(){
@@ -9192,10 +9249,18 @@ function nStartReadingSync(entry, retried, force){
     if (!m || !m.novel || !Array.isArray(m.episodes) || !m.episodes.length) return;
     if (!S.work || S.work.key !== key || !S.episodes.length) return;
     if (nReadSession.active) return;
-    /* 優先順位の起点は「今読んでいる話」。台帳の本内位置から話番号を引く */
+    /* 取得順の起点は「今読んでいる話」。台帳の本内位置から話番号を引く。
+       読書中の差し込みで本内位置が台帳とずれている間は位置で引けない
+       ことがあるため、その場合はタイトル照合（nBookPosOfManifest）で
+       起点を引く。これを欠くと起点なし＝先頭からの順序になってしまい、
+       最新話などへ移動したあとに「移動先から先へ」の取得が始まらない */
     let priorityNo = null;
     const cur = m.episodes.find(e => e.bookIndex === S.ep);
     if (cur) priorityNo = cur.no;
+    else {
+      const mapping = nBookPosOfManifest(m);
+      if (mapping.bookNoAt[S.ep] != null) priorityNo = mapping.bookNoAt[S.ep];
+    }
     nReadSession.active = true;
     nReadSession.key = key;
     nTocSyncRefresh();
@@ -9292,7 +9357,7 @@ async function nJumpToEpisode(no){
   const ncodeU = key.slice(6).toUpperCase();
   nJumpBusy = true;
   setLoading(true);
-  let m = null, target = null, keptInStore = false;
+  let m = null, target = null, keptInStore = false, restartedSync = false;
   try {
     /* 自動取得・目次照合が動いていれば止めて、落ち着くまで待つ */
     let stoppedSync = false;
@@ -9324,19 +9389,31 @@ async function nJumpToEpisode(no){
     if (!m || !Array.isArray(m.episodes) || !m.episodes.length) { toast("目次情報が見つかりませんでした", 3200); return; }
     target = m.episodes.find(e => e.no === no);
     if (!target) return;
+    /* 本との対応は bookIndex がずれている間も使えるタイトル照合で取る。
+       対応が取れた話は、本に入っているものとしてそのまま開く */
+    const mapping = nBookPosOfManifest(m);
+    const targetPos = mapping.posOf[m.episodes.indexOf(target)];
+    if (targetPos != null && S.episodes[targetPos]) {
+      closeSheets();
+      openEpisode(targetPos, 0);
+      return;
+    }
     if (target.state === "inbook" && target.bookIndex != null && S.episodes[target.bookIndex]) {
       closeSheets();
       openEpisode(target.bookIndex, 0);
       return;
     }
-    /* 台帳の「本に入っている話」と開いている本の対応が取れているときだけ差し込む */
-    const inbook = m.episodes.filter(e => e.state === "inbook" && e.bookIndex != null)
-      .sort((a, b) => a.bookIndex - b.bookIndex);
-    const order = inbook.map(e => e.no);
-    if (inbook.length !== S.episodes.length || inbook.some((e, i) => e.bookIndex !== i)) {
+    /* 差し込みに必要なのは、目次順で前後にある取得済み話との対応だけ。
+       対応が1件も取れないときだけ、位置が決められないため移動を止める。
+       以前は本の全話と bookIndex が完全に一致しないと止めていたため、
+       読書中の差し込みで位置がずれた直後などに、未取得話への移動も
+       目次の再表示も巻き添えで失敗していた */
+    if (!mapping.matched) {
       toast("この本の目次情報と本文が一致していないため、移動できませんでした", 3400);
       return;
     }
+    const posOf = mapping.posOf;
+    const bookNoAt = mapping.bookNoAt.slice();
     const novel = m.novel || {};
     const heading = target.chapter ? target.chapter + "　" + target.title : target.title;
     let parsed = null;
@@ -9357,25 +9434,28 @@ async function nJumpToEpisode(no){
     }
     if (!parsed || !parsed.paragraphs.length) throw new Error("本文を取り込めませんでした。");
     if (!S.work || S.work.key !== key || !S.episodes.length) return; /* 取得中に本が閉じられた */
-    /* 差し込み位置：目次順で前後にある取得済みの話との間 */
+    /* 差し込み位置：目次順で前後にある取得済みの話との間（対応表 posOf で決める） */
     const posInToc = m.episodes.indexOf(target);
     let idx = -1;
-    for (let i = posInToc - 1; i >= 0; i--) { const j = order.indexOf(m.episodes[i].no); if (j >= 0) { idx = j + 1; break; } }
-    if (idx < 0) for (let i = posInToc + 1; i < m.episodes.length; i++) { const j = order.indexOf(m.episodes[i].no); if (j >= 0) { idx = j; break; } }
+    for (let i = posInToc - 1; i >= 0; i--) { if (posOf[i] != null) { idx = posOf[i] + 1; break; } }
+    if (idx < 0) for (let i = posInToc + 1; i < m.episodes.length; i++) { if (posOf[i] != null) { idx = posOf[i]; break; } }
     if (idx < 0) idx = S.episodes.length;
     const newEpisodes = S.episodes.slice();
     newEpisodes.splice(idx, 0, parsed);
     const storedOk = await saveBookContent(key, newEpisodes);
     if (!storedOk) { toast("保存できませんでした（容量不足など）。時間をおいて再試行してください", 3400); return; }
-    /* ここから先は本へ取り込めたものとして台帳を揃える */
+    /* ここから先は本へ取り込めたものとして台帳を揃える。対応が取れた
+       話と移動先だけ本内位置を付け替え、対応が取れなかった話の台帳には
+       触らない（付け替えると誤った位置を確定させてしまうため） */
     keptInStore = false;
     S.episodes = newEpisodes;
     S.cache.clear();
     clearPrebuiltPages();
-    order.splice(idx, 0, target.no);
-    order.forEach((epNo, i) => {
+    bookNoAt.splice(idx, 0, target.no);
+    bookNoAt.forEach((epNo, i) => {
+      if (epNo == null) return;
       const e = m.episodes.find(x => x.no === epNo);
-      if (e) e.bookIndex = i;
+      if (e) { e.bookIndex = i; if (epNo === target.no) e.state = "inbook"; }
     });
     target.state = "inbook";
     target.bookIndex = idx;
@@ -9387,9 +9467,16 @@ async function nJumpToEpisode(no){
     buildToc();
     nTocSyncRefresh();
     toast("『" + cleanEpTitle(heading) + "』へ移動しました", 2200);
-    /* 残りの話は、開いている間の自動取得に引き続き任せる */
+    /* 残りの話は、開いている間の自動取得に引き続き任せる。起点は
+       移動先の話（今 S.ep が指す話）になる。台帳の総話数と手元の話数が
+       食い違う間は、本棚エントリ側の取得途中判定（narouTotal 依存）が
+       古くても裏取得が止まらないよう、強制指定で開始する */
     const entry = S.library.find(x => x.key === key);
-    if (entry) nStartReadingSync(entry);
+    if (entry) {
+      const force = !!(m && Array.isArray(m.episodes) && m.episodes.length > S.episodes.length);
+      nStartReadingSync(entry, false, force);
+      restartedSync = true;
+    }
   } catch (err) {
     toast("エラー：話を取得できませんでした。通信環境を確認して、もう一度お試しください", 3600);
   } finally {
@@ -9401,6 +9488,21 @@ async function nJumpToEpisode(no){
     }
     setLoading(false);
     nJumpBusy = false;
+    /* 移動のために止めた裏の自動取得は、成功・失敗・既取得への移動の
+       どの経路で終わっても必ず再開する。再開し忘れると「移動したあと
+       前のほうの未取得話が裏で取られない」状態になるため、再開は
+       ここ（finally）に一本化する。既に別の取得が動いている場合と、
+       本が閉じられた／切り替わった場合は nStartReadingSync 側と
+       ここの判定で自然に譲る。再開時の起点は今開いている話で、
+       取得順は「そこから先へ→最新話のあとは先頭から」になる */
+    if (!restartedSync && S.work && S.work.key === key && S.episodes.length &&
+        !nReadSession.active && !ndl.downloading) {
+      const entry2 = S.library.find(x => x.key === key);
+      if (entry2) {
+        const force2 = !!(m && Array.isArray(m.episodes) && m.episodes.length > S.episodes.length);
+        try { nStartReadingSync(entry2, false, force2); } catch (e) { /* noop */ }
+      }
+    }
   }
 }
 nInitAdSlots();
