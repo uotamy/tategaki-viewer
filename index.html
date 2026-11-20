@@ -960,7 +960,7 @@
         })();
       </script><script src="https://adm.shinobi.jp/s/15f61b0238a01ce2999b531089637173"></script></div>
     </div>
-    <div id="buildId" aria-hidden="true">build 2026-11-13 07:42</div>
+    <div id="buildId" aria-hidden="true">build 2026-11-20 20:27</div>
   </div>
 
   <div id="narou" aria-label="なろうダウンローダー">
@@ -1747,7 +1747,18 @@ function bookProgress(entry){
   const chars = entry.epChars || [];
   for (let i = 0; i < Math.min(pos.ep, chars.length); i++) done += chars[i];
   done += pos.charInEp || 0;
-  return Math.max(0, Math.min(1, done / entry.totalChars));
+  /* 分母は取得済み話の文字数（totalChars）だけだと、連載の新話が
+     見つかった直後（narouTotal が増えたのに、未取得話の文字数が
+     まだ無い）に、取得済み範囲の末尾まで読んだ本が 100% のままに
+     なる（2026-11-20 実機報告：12話まで読了→17話に増えても100%）。
+     未取得話は取得済みの平均文字数で見込んで分母へ足し、新話が
+     ある間は 100% にならないようにする。全部取得できれば従来どおり
+     totalChars がそのまま分母になる */
+  let total = entry.totalChars;
+  const have = chars.length;
+  const known = entry.narouTotal || 0;
+  if (have > 0 && known > have) total = entry.totalChars * known / have;
+  return Math.max(0, Math.min(1, done / total));
 }
 /* 読了ラッチの判定。本ごとの finished（永続化）に加え、旧版が位置レコードへ
    残した fin も読了として扱う（移行漏れの保険） */
