@@ -981,7 +981,7 @@
         })();
       </script><script src="https://adm.shinobi.jp/s/15f61b0238a01ce2999b531089637173"></script></div>
     </div>
-    <div id="buildId" aria-hidden="true">build 2026-11-21 23:11</div>
+    <div id="buildId" aria-hidden="true">build 2026-11-21 23:13</div>
   </div>
 
   <div id="narou" aria-label="なろうダウンローダー">
@@ -2355,6 +2355,15 @@ function gluedChunkIdx(chunks, paras){
       if (planned > 1) continue;
     }
     if (rendered > planned) return j;
+    /* 計画が2列以上でも、モデル上は1列に収まるチャンクは接着の疑いが
+       強い（容量絞りで「1チャンク＝2列」に化けると、ブラウザはその
+       2列を接着位置で割り、半分空の列が残る）。モデルどおり1列に
+       収まるなら、実チャンクとして切り直すべき対象 */
+    if (planned > 1 && ch.pi !== undefined && paras[ch.pi]){
+      const ind = !/(cont|noind|head|title|endmark)/.test(ch.cls || '');
+      const n1 = simulateSplit(paras[ch.pi], ch.off, 1, ind).n;
+      if (ch.units.length <= n1) return j;
+    }
   }
   return -1;
 }
@@ -2364,14 +2373,19 @@ function gluedChunkIdx(chunks, paras){
    割り付けが probeFits を落とす場合は元の計画を返す（安全弁） */
 function unglue(paras, pos, prefix, budget, res){
   let cur = res;
-  const caps = new Map();
+  const caps = new Map(), ones = new Set();
   for (let step = 0; step < 4; step++){
     const gi = gluedChunkIdx(cur.chunks, paras);
     if (gi < 0) return cur;
     const ch = cur.chunks[gi];
     if (ch.pi === undefined || !paras[ch.pi]) return res;
+    /* 容量を絞るだけでは「1チャンク＝2列」の計画になるだけで、ブラウザは
+       その2列を接着位置で割ってしまう。容量を絞ったうえで、その段落の
+       次のチャンクを1列に強制し、モデルの禁則位置で実チャンクとして
+       切ることが要る */
     caps.set(ch.pi, (caps.get(ch.pi) || colCap()) - M.fs);
-    const res2 = fillTierCore(paras, pos, prefix, budget, caps);
+    ones.add(ch.pi);
+    const res2 = fillTierCore(paras, pos, prefix, budget, caps, ones);
     if (!res2.chunks.length || !probeFits(res2.chunks)) return res;
     cur = res2;
   }
@@ -2460,7 +2474,7 @@ function fillTier(paras, pos, prefix){
   if (!res.chunks.length && res0.chunks.length) return res0;
   return res;
 }
-function fillTierCore(paras, pos, prefix, budget, capMap){
+function fillTierCore(paras, pos, prefix, budget, capMap, cols1Set){
   const chunks = prefix ? prefix.slice() : [];
   const baseLen = chunks.length;
   let pi = pos.pi, off = pos.off;
@@ -2504,7 +2518,8 @@ function fillTierCore(paras, pos, prefix, budget, capMap){
        以前の colsFor 概算（禁則による無駄を一律0.3em/列と見積もる）は、
        禁則が続く段落や大きなフォントでは実際の列数より少なく返ることが
        あり、そのまま「収まった」ことにして段の最終列をはみ出させていた */
-    const sim = simulateSplit(para, off, colsAvail, ind, undefined, capMap ? capMap.get(pi) : undefined);
+    const force1 = !!(cols1Set && cols1Set.has(pi));
+    const sim = simulateSplit(para, off, force1 ? 1 : colsAvail, ind, undefined, capMap ? capMap.get(pi) : undefined);
     const n = sim.n;
     if (n === 0) {
       if (chunks.length === baseLen) { chunks.push({ units: para.units.slice(off, off + 1), cls: startCls, pi, off, colsP: 1 }); off += 1; }
@@ -2513,6 +2528,9 @@ function fillTierCore(paras, pos, prefix, budget, capMap){
     /* pi/off は実測修復（fillTier の列分割）が元の段落と開始位置を引くための注記。
        描画・保存では使わない。colsP は計画列数（接着折り返しの検出用） */
     chunks.push({ units: para.units.slice(off, off + n), cls: startCls, pi, off, colsP: sim.cols });
+    /* 接着修復で1列に強制したチャンクは、段落の途中でも予算を引いて
+       次のチャンクへ進む（通常の途中打ち切りは段の残り幅が無い前提） */
+    if (force1 && n < total - off) { budget -= sim.cols * colW + extra; off += n; cols1Set.delete(pi); continue; }
     /* 模擬では丸ごと収まった場合は、使った列数ぶん予算を引いて次の段落の
        詰め込みを続ける */
     if (n >= total - off) { budget -= sim.cols * colW + extra; pi++; off = 0; continue; }
