@@ -960,7 +960,7 @@
         })();
       </script><script src="https://adm.shinobi.jp/s/15f61b0238a01ce2999b531089637173"></script></div>
     </div>
-    <div id="buildId" aria-hidden="true">build 2026-11-20 20:27</div>
+    <div id="buildId" aria-hidden="true">build 2026-11-21 20:13</div>
   </div>
 
   <div id="narou" aria-label="なろうダウンローダー">
@@ -2227,6 +2227,28 @@ function chunksHaveBoten(chunks){
   }
   return false;
 }
+/* 段の詰まり具合（予算の残り）を、割り付け済みチャンクの占有幅を
+   fillTierCore と同じ会計で再生して返す。表・挿絵を含む段は
+   fillTierCore 側で実測済みのため、判定対象外として大きな値を返す */
+function tierSlack(chunks, paras, prefix){
+  let used = 0, i = 0;
+  if (prefix) { used += prefixWidth(prefix[0]); i = prefix.length; }
+  for (; i < chunks.length; i++) {
+    const ch = chunks[i];
+    if (ch.blank) { used += M.lh; continue; }
+    if (!ch.units || ch.pi === undefined || ch.table || ch.img) return Infinity;
+    const para = paras[ch.pi];
+    if (!para) return Infinity;
+    const ind = !/(cont|noind|head|title|endmark)/.test(ch.cls || "");
+    const breaks = [];
+    simulateSplit(para, ch.off, 1e9, ind, breaks);
+    const end = ch.off + ch.units.length;
+    let cols = 1;
+    for (const b of breaks) if (b > ch.off && b < end) cols++;
+    used += cols * colWFor(para, ch.off) + headExtra(para, ch.off);
+  }
+  return (M.tierW - 1) - used;
+}
 /* 実測で「高さ」がはみ出た段の修復：チャンクを列モデルの改列位置で
    分割し、実描画の列境界をモデルに一致させる。はみ出しの主因は列の
    内部で起きる実描画とのずれ（例：列末の「？＋全角空白」を行頭禁則の
@@ -2278,8 +2300,15 @@ function fillTier(paras, pos, prefix){
      が、広がり量はモデル化できない。実例（刀語第1話、101ページ相当）：
      傍点の列の広がりの累積で段の最終列が段の外へ押し出され、字が欠けて
      傍点の点だけが段内に残った。以前は (2) を検証しておらず、モデル
-     どおり収まる前提でそのまま描いて文字欠けになっていた */
-  const suspect = firstColHasRuby(paras, pos, prefix) || chunksHaveBoten(res0.chunks);
+     どおり収まる前提でそのまま描いて文字欠けになっていた
+     (3) 詰まった段（予算の残りが1列未満）：列モデルと実描画のわずかな
+     ずれ（書体の実測差など環境依存のもの）は、余裕のある段では吸収
+     されるが、詰まった段では最終列がはみ出して文字欠けになる。
+     実例（刀語第七話、Pixel実機）：最初の列にルビが無く傍点も無い段で、
+     実描画の列がモデルより増えて段末の文の途中が欠けた。(1)(2) の
+     判定をすり抜けたため、詰まり具合でも判定する */
+  const suspect = firstColHasRuby(paras, pos, prefix) || chunksHaveBoten(res0.chunks)
+    || tierSlack(res0.chunks, paras, prefix) < M.lh;
   if (!suspect) return res0;
   if (probeFits(res0.chunks)) return res0;
   /* 高さのはみ出し（列内部のぶら下げ等で列が段より高く測れる型）は、
