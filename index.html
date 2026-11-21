@@ -960,7 +960,7 @@
         })();
       </script><script src="https://adm.shinobi.jp/s/15f61b0238a01ce2999b531089637173"></script></div>
     </div>
-    <div id="buildId" aria-hidden="true">build 2026-11-21 21:42</div>
+    <div id="buildId" aria-hidden="true">build 2026-11-21 21:47</div>
   </div>
 
   <div id="narou" aria-label="なろうダウンローダー">
@@ -2057,7 +2057,11 @@ function paraPrefix(para){
    列数ぶん累積し、実測で段の最終列だけが4〜5文字分短く終わる（上段・下段
    ともに下端まで使い切れない）原因になっていた。Canvas実測の文字送りは
    実描画と一致するため、余白はサブピクセルの溢れ防止に必要な最小限にする */
-function colCap(){ return Math.max(M.fs, M.tierH - Math.max(1.5, M.fs * 0.06)); }
+/* 実描画監査（auditRenderedPages）のはみ出し検出で段階的に締める自己
+   修復ぶん。通常は 0。列の容量と段幅の両方を少しだけ小さく見積もる
+   ことで、端末側の実描画がモデルより広がる環境でも欠けなくなる */
+let repairW = 0, repairH = 0;
+function colCap(){ return Math.max(M.fs, M.tierH - Math.max(1.5, M.fs * 0.06) - repairH); }
 function colsFor(px, ind){
   /* 段落単位の概算は禁則による列の無駄を見込んで少し保守側に倒す
      （正確な詰め込みは分割側の simulateSplit が担う） */
@@ -2289,7 +2293,7 @@ function tierSig(res){
 }
 function fillTier(paras, pos, prefix){
   if (!M) return fillTierProbe(paras, pos, prefix);
-  let budget = M.tierW - 1;
+  let budget = M.tierW - 1 - repairW;
   if (prefix) budget -= prefixWidth(prefix[0]);
   const res0 = fillTierCore(paras, pos, prefix, budget);
   /* 実測検証が要る段だけプローブにかける（長編の割り付け速度を保つため、
@@ -2307,9 +2311,14 @@ function fillTier(paras, pos, prefix){
      実例（刀語第七話、Pixel実機）：最初の列にルビが無く傍点も無い段で、
      実描画の列がモデルより増えて段末の文の途中が欠けた。(1)(2) の
      判定をすり抜けたため、詰まり具合でも判定する */
-  const suspect = firstColHasRuby(paras, pos, prefix) || chunksHaveBoten(res0.chunks)
-    || tierSlack(res0.chunks, paras, prefix) < M.lh;
-  if (!suspect) return res0;
+  /* 第73版：判定を「怪しい段だけ」から「全段」に変えた。(1)〜(3) の
+     判定材料はすべて列モデル自身の見積もり（tierSlack はモデルの幅
+     勘定の再生）で、モデルが幅を楽観している段では余りも楽観に
+     なり、検証をすり抜ける。実測（411幅・fs3・段高376）：プローブ
+     が幅26px超過を返す段が、ルビも傍点も詰まりも無いため未検証の
+     まま返っていた。速度より正確さを優先し、全段を実描画で判定
+     する。なお端末によってはプローブ段と実ページ段でもずれるため、
+     描画後の実ページ監査（auditRenderedPages）が最終段にいる */
   if (probeFits(res0.chunks)) return res0;
   /* 高さのはみ出し（列内部のぶら下げ等で列が段より高く測れる型）は、
      幅を削る従来の修復では直らない。犯人の列は段の中に残り続け、
@@ -3296,6 +3305,51 @@ function renderWindow(){
   if (mangaState) prefetchMangaAround(mangaIndexBase(S.ep) + S.page);
   afterNav();
   scheduleAdjacentPrefetch();
+  scheduleRenderAudit();
+}
+/* ---------------- 描画後の実ページ監査と自己修復 ----------------
+   プローブ段は実ページ段の近似でしかなく、端末によっては実ページで
+   だけ列がはみ出すことがある（実例：刀語第七話、Pixel の PWA 表示。
+   プローブも列モデルも「収まる」と判定した段の最終列が実ページで
+   段外に押し出され、文の途中が欠けた）。最後の砦として、実際に
+   描いたページの文字範囲をはみ出し実測し、検出したら割り付けの
+   見積もりを一段締めて（repairW / repairH）組み直す。締めは最大
+   4段まで。話と文字設定が変われば修復は畳む（openEpisode /
+   applyTypography でリセット） */
+let renderAuditTimer = null, renderAuditBusy = false;
+function scheduleRenderAudit(){
+  if (renderAuditTimer) clearTimeout(renderAuditTimer);
+  renderAuditTimer = setTimeout(auditRenderedPages, 400);
+}
+function auditRenderedPages(){
+  if (renderAuditBusy || !S.ep || !M || mangaState) return;
+  let spilled = false;
+  document.querySelectorAll("#track .tier").forEach(tierEl => {
+    if (spilled) return;
+    const tr = tierEl.getBoundingClientRect();
+    if (!tr.width) return;
+    const tw = document.createTreeWalker(tierEl, NodeFilter.SHOW_TEXT);
+    while (tw.nextNode()){
+      const n = tw.currentNode;
+      if (!n.textContent.trim()) continue;
+      const rg = document.createRange();
+      rg.selectNodeContents(n);
+      const r2 = rg.getBoundingClientRect();
+      if (r2.width === 0 && r2.height === 0) continue;
+      if (tr.left - r2.left > 1.5) { spilled = true; break; }
+    }
+  });
+  if (!spilled) return;
+  const level = S.repairLevel || 0;
+  if (level >= 4) return;
+  renderAuditBusy = true;
+  S.repairLevel = level + 1;
+  repairW = S.repairLevel * (M.lh / 2);
+  repairH = S.repairLevel * (M.fs / 2);
+  S.cache.clear();
+  clearPrebuiltPages();
+  renderWindow();
+  renderAuditBusy = false;
 }
 /* ---------------- 話跨ぎの先行組版 ----------------
    話の境界を越えるページ送りだけ感触が違った原因は、遷移先の話の組版
@@ -3763,6 +3817,7 @@ function moveOnePage(dir){
 }
 function openEpisode(i, pageSpec){
   S.ep = i;
+  S.repairLevel = 0; repairW = 0; repairH = 0;
   const pages = paginate(i);
   S.page = pageSpec === "last" ? lastWindowStart(i)
                                : Math.max(0, Math.min(pageSpec || 0, Math.max(0, pages.length - 1)));
@@ -3883,7 +3938,7 @@ function diagRender(){
     L.push((bid ? bid.textContent : 'build?') + ' sw:' + (navigator.serviceWorker && navigator.serviceWorker.controller ? 'ctrl' : 'none') + ' fonts:' + document.fonts.status);
     L.push('inner ' + innerWidth + 'x' + innerHeight + ' dpr ' + devicePixelRatio);
     L.push('set fs' + S.fsIdx + ' lh' + S.lhIdx + ' mg' + S.marginIdx + ' font' + S.fontIdx + ' mode ' + S.mode);
-    if (M) L.push('M fs ' + M.fs + ' lh ' + (Math.round(M.lh * 100) / 100) + ' tierW ' + Math.round(M.tierW) + ' tierH ' + Math.round(M.tierH) + ' cap ' + Math.round(colCap()));
+    if (M) L.push('M fs ' + M.fs + ' lh ' + (Math.round(M.lh * 100) / 100) + ' tierW ' + Math.round(M.tierW) + ' tierH ' + Math.round(M.tierH) + ' cap ' + Math.round(colCap()) + ' rep ' + (S.repairLevel || 0));
     if (S.ep && S.ep.paragraphs){
       const pages = paginate(S.ep);
       L.push('page ' + (S.page + 1) + '/' + pages.length);
@@ -4339,6 +4394,7 @@ async function deleteCustomFont(id){
 function applyTypography(repaginate){
   /* 再割り付けのたびに文字幅キャッシュを作り直す（フォント読込完了後の実フォントで測り直すため） */
   if (repaginate) advGen++;
+  S.repairLevel = 0; repairW = 0; repairH = 0;
   const savedPos = S.episodes.length ? currentPos() : { pi: 0, off: 0 };
   const savedEp = S.ep;
   stage.style.setProperty("--font", fontCss(S.font));
