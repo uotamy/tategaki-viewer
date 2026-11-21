@@ -121,7 +121,18 @@
   .tier p.title { font-size: 1.3em; font-weight: 600; line-height: 1.55; margin-left: 1em; }
   .tier p.head { font-size: 1.06em; font-weight: 600; margin-left: .8em; }
   .tier p.endmark { text-align: end; color: var(--sub); }
-  .tier rt { font-size: .5em; }
+  /* ルビはネイティブ <ruby> を使わず、読みを絶対配置の注釈として描く。
+     一部の端末（Pixel の Chrome）では <ruby> のある列だけブラウザの
+     折り返し位置が大きくずれ、列の下半分が空くため（刀語第七話で実害）。
+     注釈をレイアウトの外に置けば、親文字は通常の文字とまったく同じ送りで
+     割り付けられ、組版モデルの見積もりとも一致する */
+  .tier .rb { position: relative; }
+  .tier .rbt {
+    position: absolute; top: 50%; transform: translateY(-50%);
+    right: calc((var(--lh) - var(--fs)) / 2 - var(--fs) * .5 - 1px);
+    font-size: calc(var(--fs) * .5);
+    line-height: 1; letter-spacing: 0; white-space: nowrap;
+  }
   /* 半角数字は縦中横で正立させる：縦書きの中で数字だけが寝てしまうのを防ぎ、
      1文字＝1emのマスに立ったまま収める（組版側の文字送りも1emで見積もる） */
   .tier .tcy { text-combine-upright: all; -webkit-text-combine: horizontal; }
@@ -960,7 +971,7 @@
         })();
       </script><script src="https://adm.shinobi.jp/s/15f61b0238a01ce2999b531089637173"></script></div>
     </div>
-    <div id="buildId" aria-hidden="true">build 2026-11-21 22:27</div>
+    <div id="buildId" aria-hidden="true">build 2026-11-21 22:45</div>
   </div>
 
   <div id="narou" aria-label="なろうダウンローダー">
@@ -1895,7 +1906,7 @@ function chunkHTML(units){
   return units.map(u => {
     let h;
     if (u.c !== undefined) h = /^[0-9]$/.test(u.c) ? '<span class="tcy">' + u.c + "</span>" : esc(u.c);
-    else if (u.r !== undefined) h = "<ruby>" + tcyDigits(esc(u.r)) + "<rt>" + esc(u.t) + "</rt></ruby>";
+    else if (u.r !== undefined) h = "<span class=\"rb\">" + tcyDigits(esc(u.r)) + "<span class=\"rbt\">" + esc(u.t) + "</span></span>";
     else h = "";
     if (u.b) h = '<span class="fbold">' + h + "</span>";
     if (u.e) h = '<span class="boten">' + h + "</span>";
@@ -1977,7 +1988,7 @@ function computeMetrics(){
              収めるために行高より広がって置かれ、後続の列がすべて左へ押される
              （実測：lh=1.7で約4.5px、フォント最大・行間最小で約6px）。その列を
              含む段では、この広がりぶんを予算からあらかじめ差し引く */
-          rubyPad: Math.max(0, fs * 1.15 - lh / 2) + 1,
+          rubyPad: 0, /* 第75版〜：注釈は絶対配置で段幅を広げない */
           /* 段落ごとの文字送りキャッシュ（paraPrefix）の照合キーは、必ず
              「実測した」書体・寸法で作る。設定値（S.fsIdx 等）で作ると、
              設定変更のときに applyTypography が現在位置の取得のため
@@ -1996,17 +2007,13 @@ function advOf(u){
     if (u.c >= "0" && u.c <= "9") return M.fs + M.ls;
     return M.ctx.measureText(u.c).width + M.ls;
   }
-  /* ルビ単位の縦の進みは、ベース（親文字）と読みのうち広い方になる。読みが
-     ベースより長いルビ（私《わたし》、心《こころ》等）ではブラウザは読みの
-     幅まで進みを広げるため、ベース幅だけで見積もると列数が過小になり、
-     段の最終列がはみ出して欠ける。読みは rt の 0.5em として測る（実測で
-     ブラウザの進みと一致することを確認済み） */
-  const base = u.r || "", read = u.t || "";
+  /* ルビ単位の縦の進みは親文字ぶんだけ（第75版〜）。読みは絶対配置の
+     注釈として描かれ、レイアウトの送りに一切関与しないため、読みが
+     親文字より長くても進みは広がらない */
+  const base = u.r || "";
   let baseW = 0;
   for (const ch of base) baseW += (ch >= "0" && ch <= "9") ? M.fs : M.ctx.measureText(ch).width;
-  const bAdv = baseW + M.ls * Math.max(1, [...base].length);
-  const rAdv = M.ctx.measureText(read).width * 0.5 + M.ls * Math.max(1, [...read].length);
-  return Math.max(bAdv, rAdv);
+  return baseW + M.ls * Math.max(1, [...base].length);
 }
 /* 列末の追い込みで半分に圧縮できる約物（実ブラウザで実測して確認した
    Chrome の組版挙動）。句読点と終わり括弧類だけが対象で、小書き仮名や
@@ -2027,12 +2034,9 @@ const OIKOMI_HEAD = "）〕］｝〉》」』】｣";
    環境でもはみ出さないよう、実測値の0.85倍で見積もる */
 const RUBY_ABSORB = /[ぁ-ゖァ-ヶー・：；！？、。，．）〕］｝〉》」』】｣（〔［｛〈《「『【｢゛゜ヽヾゝゞ…‥]/;
 function rubyReach(u){
-  /* その単位の読みが親文字の片側へはみ出す量。ルビ単位でなければ0 */
-  if (u.c !== undefined) return 0;
-  const base = u.r || "", read = u.t || "";
-  let baseW = 0;
-  for (const ch of base) baseW += (ch >= "0" && ch <= "9") ? M.fs : M.ctx.measureText(ch).width;
-  return Math.max(0, M.ctx.measureText(read).width * 0.5 - baseW) / 2;
+  /* 第75版〜：読みは絶対配置の注釈で、隣の単位の送りへはみ出さない。
+     常に0（paraPrefix の吸収計算はそのまま無力化される） */
+  return 0;
 }
 function paraPrefix(para){
   if (para._pk === M.key && para._prefix) return para._prefix;
