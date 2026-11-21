@@ -868,6 +868,15 @@
     </div>
 
     <div class="setgroup">
+      <div class="lab">診断</div>
+      <div class="seg" id="diagSeg">
+        <button data-v="on">表示する</button>
+        <button data-v="off">表示しない</button>
+      </div>
+      <p class="worknote" style="margin:8px 0 0;">組版の計測値（画面の実寸・計画・実描画の内訳）を画面に重ねて表示します。不具合の切り分け用で、通常は「表示しない」のままで問題ありません。</p>
+    </div>
+
+    <div class="setgroup">
       <div class="lab">保存について</div>
       <p class="worknote" style="margin:0;">読書位置・しおり・表示設定はこの端末の保存領域（localStorage）に、開いた本の本文は端末内データベース（IndexedDB）に保存されます。サーバーには送信されません。</p>
       <p class="worknote" style="margin:8px 0 0;">PWA対応：ブラウザのメニューに「アプリをインストール」や「ホーム画面に追加」が出る環境では、ホーム画面のアイコンからアプリのように起動できます。オンライン時は起動や本棚のリロードのたびに新しい版を確認し、あればその場で切り替わります。オフラインでも、保存済みの版で本棚からそのまま読めます（ホスティング環境により、追加ができない場合があります）。</p>
@@ -971,7 +980,7 @@
         })();
       </script><script src="https://adm.shinobi.jp/s/15f61b0238a01ce2999b531089637173"></script></div>
     </div>
-    <div id="buildId" aria-hidden="true">build 2026-11-21 22:50</div>
+    <div id="buildId" aria-hidden="true">build 2026-11-21 23:00</div>
   </div>
 
   <div id="narou" aria-label="なろうダウンローダー">
@@ -3949,7 +3958,12 @@ stage.addEventListener("pointercancel", e => endDrag(e, true));
    実機の実寸・現在のページの計画・プローブ判定・実DOMのはみ出し実測を出す。
    2026-11-21 刀語第七話の欠けが第71版でも実機で直らず、端末側の数値が
    必要なための計測用。通常利用（フラグなし）では一切生成されない */
-const DIAG = /[?&]diag=1/.test(location.search);
+const DIAG_URL = /[?&]diag=1/.test(location.search);
+function diagOn(){
+  if (DIAG_URL) return true;
+  try { return localStorage.getItem('tategaki-diag') === '1'; } catch (e) { return false; }
+}
+const DIAG = DIAG_URL;
 function diagAuditTier(tierEl){
   const tr = tierEl.getBoundingClientRect();
   let worst = 0, worstText = '';
@@ -3967,7 +3981,7 @@ function diagAuditTier(tierEl){
   return { spill: Math.round(worst * 10) / 10, worstText };
 }
 function diagRender(){
-  if (!DIAG) return;
+  if (!diagOn()) { const b = document.getElementById('diagbox'); if (b) b.remove(); return; }
   let box = document.getElementById('diagbox');
   if (!box){
     box = document.createElement('div');
@@ -4029,7 +4043,7 @@ function diagRender(){
   } catch (e) { L.push('ERR ' + e.message); }
   box.textContent = L.join('\n');
 }
-if (DIAG) setInterval(diagRender, 1200);
+setInterval(diagRender, 1200);
 
 document.addEventListener("keydown", e => {
   if (e.key === "ArrowLeft") turn("next");
@@ -4582,6 +4596,22 @@ function syncFsSeg(){
     b.classList.toggle("on", (b.dataset.v === "on") === !!S.fullscreen));
 }
 syncFsSeg();
+$("#diagSeg").addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  try {
+    if (b.dataset.v === "on") localStorage.setItem('tategaki-diag', '1');
+    else localStorage.removeItem('tategaki-diag');
+  } catch (err) {}
+  syncDiagSeg();
+  if (typeof diagRender === "function") diagRender();
+});
+function syncDiagSeg(){
+  let on = false;
+  try { on = localStorage.getItem('tategaki-diag') === '1'; } catch (e) {}
+  document.querySelectorAll("#diagSeg button").forEach(b =>
+    b.classList.toggle("on", (b.dataset.v === "on") === on));
+}
+syncDiagSeg();
 $("#themeSeg").addEventListener("click", e => {
   const b = e.target.closest("button"); if (!b) return;
   S.theme = b.dataset.v; applyTheme();
