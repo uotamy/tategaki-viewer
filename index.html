@@ -960,7 +960,7 @@
         })();
       </script><script src="https://adm.shinobi.jp/s/15f61b0238a01ce2999b531089637173"></script></div>
     </div>
-    <div id="buildId" aria-hidden="true">build 2026-11-21 20:13</div>
+    <div id="buildId" aria-hidden="true">build 2026-11-21 21:42</div>
   </div>
 
   <div id="narou" aria-label="なろうダウンローダー">
@@ -3846,6 +3846,70 @@ function endDrag(e, cancelled){
 }
 stage.addEventListener("pointerup", e => endDrag(e, false));
 stage.addEventListener("pointercancel", e => endDrag(e, true));
+
+/* ---------- 診断オーバーレイ（?diag=1 のときだけ） ----------
+   実機の実寸・現在のページの計画・プローブ判定・実DOMのはみ出し実測を出す。
+   2026-11-21 刀語第七話の欠けが第71版でも実機で直らず、端末側の数値が
+   必要なための計測用。通常利用（フラグなし）では一切生成されない */
+const DIAG = /[?&]diag=1/.test(location.search);
+function diagAuditTier(tierEl){
+  const tr = tierEl.getBoundingClientRect();
+  let worst = 0, worstText = '';
+  const tw = document.createTreeWalker(tierEl, NodeFilter.SHOW_TEXT);
+  while (tw.nextNode()){
+    const n = tw.currentNode;
+    if (!n.textContent.trim()) continue;
+    const rg = document.createRange();
+    rg.selectNodeContents(n);
+    const r2 = rg.getBoundingClientRect();
+    if (r2.width === 0 && r2.height === 0) continue;
+    const spill = tr.left - r2.left;
+    if (spill > worst) { worst = spill; worstText = n.textContent.slice(0, 16); }
+  }
+  return { spill: Math.round(worst * 10) / 10, worstText };
+}
+function diagRender(){
+  if (!DIAG) return;
+  let box = document.getElementById('diagbox');
+  if (!box){
+    box = document.createElement('div');
+    box.id = 'diagbox';
+    box.style.cssText = 'position:fixed;left:4px;top:4px;z-index:9999;background:rgba(0,0,0,.85);color:#0f0;font:10px/1.5 monospace;padding:6px 8px;pointer-events:none;max-width:94vw;white-space:pre-wrap;';
+    document.body.appendChild(box);
+  }
+  const L = [];
+  try {
+    const bid = document.getElementById('buildId');
+    L.push((bid ? bid.textContent : 'build?') + ' sw:' + (navigator.serviceWorker && navigator.serviceWorker.controller ? 'ctrl' : 'none') + ' fonts:' + document.fonts.status);
+    L.push('inner ' + innerWidth + 'x' + innerHeight + ' dpr ' + devicePixelRatio);
+    L.push('set fs' + S.fsIdx + ' lh' + S.lhIdx + ' mg' + S.marginIdx + ' font' + S.fontIdx + ' mode ' + S.mode);
+    if (M) L.push('M fs ' + M.fs + ' lh ' + (Math.round(M.lh * 100) / 100) + ' tierW ' + Math.round(M.tierW) + ' tierH ' + Math.round(M.tierH) + ' cap ' + Math.round(colCap()));
+    if (S.ep && S.ep.paragraphs){
+      const pages = paginate(S.ep);
+      L.push('page ' + (S.page + 1) + '/' + pages.length);
+      const pg = pages[S.page];
+      if (pg) pg.tiers.forEach((chunks, ti) => {
+        if (!chunks.length) return;
+        const ps = probeSize(chunks);
+        L.push('plan t' + ti + ' ' + chunks.map(c => c.pi + '+' + c.off + ':' + (c.units ? c.units.length : 'img')).join(' ') + ' pf:' + probeFits(chunks) + ' pw ' + Math.round(ps.w) + '/' + ps.cw + ' ph ' + Math.round(ps.h) + '/' + ps.ch);
+      });
+    }
+    document.querySelectorAll('#track .tier').forEach((tierEl, ti) => {
+      const a = diagAuditTier(tierEl);
+      if (a.spill > 0.5) L.push('LIVE tier#' + ti + ' spill ' + a.spill + ' 「' + a.worstText + '」');
+      tierEl.querySelectorAll('p').forEach(p => {
+        if (p.textContent.includes('七花はまだ')){
+          const r = p.getBoundingClientRect();
+          L.push('TARGET cols ' + (M ? Math.round(r.width / M.lh * 100) / 100 : '?') + ' len ' + p.textContent.length + ' h ' + Math.round(r.height));
+        }
+      });
+    });
+    if (L.length <= 4) L.push('(reader not open)');
+  } catch (e) { L.push('ERR ' + e.message); }
+  box.textContent = L.join('\n');
+}
+if (DIAG) setInterval(diagRender, 1200);
+
 document.addEventListener("keydown", e => {
   if (e.key === "ArrowLeft") turn("next");
   else if (e.key === "ArrowRight") turn("prev");
