@@ -867,7 +867,7 @@
       <p class="worknote" style="margin:8px 0 0;">「使う」にすると、本を開いたときだけ全画面表示になり、本棚に戻ると解除されます。ページ送りや設定などの開閉で全画面に入り直すことはありません。読書中に端末の操作で全画面を抜けた場合は、その読書中はそのまま表示され、次に本を開いたときから再び全画面になります。</p>
     </div>
 
-    <div class="setgroup">
+    <div class="setgroup" id="diagGroup" style="display:none;">
       <div class="lab">診断</div>
       <div class="seg" id="diagSeg">
         <button data-v="on">表示する</button>
@@ -878,6 +878,7 @@
 
     <div class="setgroup">
       <div class="lab">保存について</div>
+      <p class="worknote" id="verRow" style="margin:0 0 8px;">バージョン：</p>
       <p class="worknote" style="margin:0;">読書位置・しおり・表示設定はこの端末の保存領域（localStorage）に、開いた本の本文は端末内データベース（IndexedDB）に保存されます。サーバーには送信されません。</p>
       <p class="worknote" style="margin:8px 0 0;">PWA対応：ブラウザのメニューに「アプリをインストール」や「ホーム画面に追加」が出る環境では、ホーム画面のアイコンからアプリのように起動できます。オンライン時は起動や本棚のリロードのたびに新しい版を確認し、あればその場で切り替わります。オフラインでも、保存済みの版で本棚からそのまま読めます（ホスティング環境により、追加ができない場合があります）。</p>
     </div>
@@ -980,7 +981,7 @@
         })();
       </script><script src="https://adm.shinobi.jp/s/15f61b0238a01ce2999b531089637173"></script></div>
     </div>
-    <div id="buildId" aria-hidden="true">build 2026-11-21 23:00</div>
+    <div id="buildId" aria-hidden="true">build 2026-11-21 23:04</div>
   </div>
 
   <div id="narou" aria-label="なろうダウンローダー">
@@ -4006,36 +4007,59 @@ function diagRender(){
         L.push('plan t' + ti + ' ' + chunks.map(c => c.pi + '+' + c.off + ':' + (c.units ? c.units.length : 'img')).join(' ') + ' pf:' + probeFits(chunks) + ' pw ' + Math.round(ps.w) + '/' + ps.cw + ' ph ' + Math.round(ps.h) + '/' + ps.ch);
       });
     }
+    /* <p> の実描画の列内訳と、1列目の字形が実際に占める縦幅（ext）。
+       注釈 .rbt の読みは数えない */
+    const colLensOf = p => {
+      const items = [];
+      const tw2 = document.createTreeWalker(p, NodeFilter.SHOW_TEXT);
+      while (tw2.nextNode()){
+        const n = tw2.currentNode;
+        if (n.parentElement && n.parentElement.closest('.rbt')) continue;
+        for (let i = 0; i < n.textContent.length; i++){
+          const rg = document.createRange();
+          rg.setStart(n, i); rg.setEnd(n, i + 1);
+          const rr = rg.getBoundingClientRect();
+          items.push({ x: Math.round(rr.x), y: rr.y, h: rr.height });
+          rg.detach();
+        }
+      }
+      const xs = [...new Set(items.map(it => it.x))].sort((a, b) => b - a);
+      const usedX = new Set(); const lens = [];
+      let ext = 0;
+      for (const x of xs){
+        if ([...usedX].some(u => Math.abs(u - x) <= 3)) continue;
+        usedX.add(x);
+        const col = items.filter(it => Math.abs(it.x - x) <= 3);
+        lens.push(col.length);
+        if (lens.length === 1 && col.length)
+          ext = Math.round(Math.max(...col.map(it => it.y + it.h)) - Math.min(...col.map(it => it.y)));
+      }
+      return { lens, ext };
+    };
     document.querySelectorAll('#track .tier').forEach((tierEl, ti) => {
       const a = diagAuditTier(tierEl);
       if (a.spill > 0.5) L.push('LIVE tier#' + ti + ' spill ' + a.spill + ' 「' + a.worstText + '」');
       tierEl.querySelectorAll('p').forEach(p => {
         if (p.textContent.includes('七花はまだ')){
           const r = p.getBoundingClientRect();
-          /* 実描画の列ごとの文字数（注釈 .rbt の読みは数えない）。
-             計画（plan 行のチャンク境界）と食い違えば、折り返しは
-             ブラウザ側で起きていると切り分けられる */
-          const items = [];
-          const tw2 = document.createTreeWalker(p, NodeFilter.SHOW_TEXT);
-          while (tw2.nextNode()){
-            const n = tw2.currentNode;
-            if (n.parentElement && n.parentElement.closest('.rbt')) continue;
-            for (let i = 0; i < n.textContent.length; i++){
-              const rg = document.createRange();
-              rg.setStart(n, i); rg.setEnd(n, i + 1);
-              const rr = rg.getBoundingClientRect();
-              items.push({ x: Math.round(rr.x), y: Math.round(rr.y) });
-              rg.detach();
+          const cl = colLensOf(p);
+          const cs = getComputedStyle(p);
+          L.push('TARGET cols ' + (M ? Math.round(r.width / M.lh * 100) / 100 : '?') + ' len ' + p.textContent.length + ' h ' + Math.round(r.height) + ' colLens [' + cl.lens.join(',') + '] ch ' + p.clientHeight + ' cfs ' + cs.fontSize + ' ext ' + cl.ext);
+          /* 同じ段落をプローブ段に単独で置いたときの内訳。実段と
+             食い違えば、原因は実段側のレイアウト文脈にある */
+          if (S.episodes && S.episodes[S.ep]){
+            const paras = S.episodes[S.ep].paragraphs;
+            let tPi = -1;
+            paras.forEach((pp, pi) => { if (!pp.img && unitsToText(pp.units).includes('七花はまだ')) tPi = pi; });
+            if (tPi >= 0){
+              probeSize([{ pi: tPi, off: 0, units: paras[tPi].units, cls: chunkClsFor(paras[tPi], 0) }]);
+              const pp2 = probeTier.querySelector('p');
+              if (pp2){
+                const pcl = colLensOf(pp2);
+                L.push('PROBE colLens [' + pcl.lens.join(',') + '] ext ' + pcl.ext + ' tierCH ' + probeTier.clientHeight);
+              }
             }
           }
-          const xs = [...new Set(items.map(it => it.x))].sort((a, b) => b - a);
-          const usedX = new Set(); const colLens = [];
-          for (const x of xs){
-            if ([...usedX].some(u => Math.abs(u - x) <= 3)) continue;
-            usedX.add(x);
-            colLens.push(items.filter(it => Math.abs(it.x - x) <= 3).length);
-          }
-          L.push('TARGET cols ' + (M ? Math.round(r.width / M.lh * 100) / 100 : '?') + ' len ' + p.textContent.length + ' h ' + Math.round(r.height) + ' colLens [' + colLens.join(',') + ']');
         }
       });
     });
@@ -4605,6 +4629,33 @@ $("#diagSeg").addEventListener("click", e => {
   syncDiagSeg();
   if (typeof diagRender === "function") diagRender();
 });
+/* バージョン表示を5回タップすると診断グループが出る（隠しメニュー）。
+   一度出せば、その端末では以後も表示されたままになる */
+function syncDiagGroup(){
+  let show = false;
+  try { show = diagOn() || localStorage.getItem('tategaki-diag-unlocked') === '1'; } catch (e) {}
+  const g = document.getElementById('diagGroup');
+  if (g) g.style.display = show ? '' : 'none';
+}
+(function(){
+  const row = document.getElementById('verRow');
+  const bid = document.getElementById('buildId');
+  if (row && bid) row.textContent = 'バージョン： ' + bid.textContent.replace(/^build /, '');
+  if (!row) return;
+  let taps = 0, lastTap = 0;
+  row.addEventListener('click', () => {
+    const now = Date.now();
+    taps = (now - lastTap < 2000) ? taps + 1 : 1;
+    lastTap = now;
+    if (taps >= 5){
+      taps = 0;
+      try { localStorage.setItem('tategaki-diag-unlocked', '1'); } catch (e) {}
+      syncDiagGroup();
+      row.textContent = 'バージョン： ' + (bid ? bid.textContent.replace(/^build /, '') : '') + '（診断メニューを表示しました）';
+    }
+  });
+})();
+syncDiagGroup();
 function syncDiagSeg(){
   let on = false;
   try { on = localStorage.getItem('tategaki-diag') === '1'; } catch (e) {}
