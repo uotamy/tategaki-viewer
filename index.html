@@ -960,7 +960,7 @@
         })();
       </script><script src="https://adm.shinobi.jp/s/15f61b0238a01ce2999b531089637173"></script></div>
     </div>
-    <div id="buildId" aria-hidden="true">build 2026-11-21 21:47</div>
+    <div id="buildId" aria-hidden="true">build 2026-11-21 21:51</div>
   </div>
 
   <div id="narou" aria-label="なろうダウンローダー">
@@ -2342,14 +2342,26 @@ function fillTier(paras, pos, prefix){
      それ以上削っても無駄なので打ち切る。プローブ実測の許容（+1.5px）
      ぶん最後の列の行ボックスが段の左端を越えても、字面は半行間
      （(lh−fs)/2、最小でも約5px）の内側に収まるため欠けない */
-  let res = res0, prevSig = tierSig(res0);
+  /* 第73版で打ち切り条件を直した：従来は「予算を rubyPad ぶん削って
+     割り付けが変わらなければ即打ち切り」で、モデルの余りが rubyPad
+     より大きい段では、1列ぶん削る前に修復を諦めて未収納の段を返して
+     いた（実測：段高376で幅26px超過の段がそのまま返った）。割り付け
+     が変わらないまま累計3列ぶん削っても変わらなければ、そこで打ち
+     切る（挿絵・表だけの原子的な段はそれ以上削っても無駄なため） */
+  let res = res0, prevSig = tierSig(res0), sameSigShrink = 0;
   budget -= M.rubyPad;
   for (let step = 0; step < 80; step++) {
     res = fillTierCore(paras, pos, prefix, budget);
     if (probeFits(res.chunks)) return res;
     const sig = tierSig(res);
-    if (sig === prevSig || budget <= M.lh) break;
-    prevSig = sig;
+    if (sig === prevSig) {
+      sameSigShrink += M.lh;
+      if (sameSigShrink > M.lh * 3 || budget <= M.lh) break;
+    } else {
+      prevSig = sig;
+      sameSigShrink = 0;
+    }
+    if (budget <= M.lh) break;
     budget -= M.lh;
   }
   /* どの修復でも収まらなかった場合は従来どおりループの最終結果を返す
@@ -3939,7 +3951,7 @@ function diagRender(){
     L.push('inner ' + innerWidth + 'x' + innerHeight + ' dpr ' + devicePixelRatio);
     L.push('set fs' + S.fsIdx + ' lh' + S.lhIdx + ' mg' + S.marginIdx + ' font' + S.fontIdx + ' mode ' + S.mode);
     if (M) L.push('M fs ' + M.fs + ' lh ' + (Math.round(M.lh * 100) / 100) + ' tierW ' + Math.round(M.tierW) + ' tierH ' + Math.round(M.tierH) + ' cap ' + Math.round(colCap()) + ' rep ' + (S.repairLevel || 0));
-    if (S.ep && S.ep.paragraphs){
+    if (S.episodes && S.episodes[S.ep] && S.episodes[S.ep].paragraphs){
       const pages = paginate(S.ep);
       L.push('page ' + (S.page + 1) + '/' + pages.length);
       const pg = pages[S.page];
