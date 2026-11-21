@@ -981,7 +981,7 @@
         })();
       </script><script src="https://adm.shinobi.jp/s/15f61b0238a01ce2999b531089637173"></script></div>
     </div>
-    <div id="buildId" aria-hidden="true">build 2026-11-21 23:04</div>
+    <div id="buildId" aria-hidden="true">build 2026-11-21 23:11</div>
   </div>
 
   <div id="narou" aria-label="なろうダウンローダー">
@@ -1947,6 +1947,7 @@ function renderChunks(tierEl, chunks){
 }
 function probeSize(chunks){
   renderChunks(probeTier, chunks);
+  probeTier._forChunks = chunks;
   /* ルビの読み（.rbt）は絶対配置の注釈で、読みが親文字より長いと親文字の
      上下へはみ出して描かれる。それは組版上のはみ出しではないため、実測の
      対象から外す（注釈を含めて測ると、段が収まっているのに probeFits が
@@ -2129,9 +2130,9 @@ function headExtra(para, off){
    一部として扱う（「Shift_JIS」のような並びを割らない） */
 const WORD_CHAR = /[0-9A-Za-zÀ-ÖØ-öø-ÿ_]/;
 function isWordUnit(u){ return u.c !== undefined && WORD_CHAR.test(u.c); }
-function simulateSplit(para, off, colsAvail, ind, trace){
+function simulateSplit(para, off, colsAvail, ind, trace, capOverride){
   const pre = paraPrefix(para), total = para.units.length;
-  const capFull = colCap();
+  const capFull = capOverride || colCap();
   /* 見出しはフォントが1.06倍で、列方向への進みも1.06倍になる。容量判定を
      実寸に合わせないと見出しの列数を少なく数える（「保存のしくみ」が
      実描画では2列になるところを1列と数え、段の最終列がはみ出した） */
@@ -2326,6 +2327,56 @@ function splitTierChunks(chunks, paras){
 function tierSig(res){
   return res.pos.pi + ":" + res.pos.off + ":" + res.chunks.length;
 }
+/* 接着折り返しの検出：プローブ段に描いた各チャンクについて、実描画の
+   列数が計画列数（colsP）を超えていないかを見る。ブラウザは、列に
+   ほぼ収まりきる段落の中にインライン要素（ルビ・傍点・太字・縦中横）
+   があると、要素の直後から段落末尾までをひとかたまりとして次列へ
+   送ることがある（実測：段高377・刀語第七話のルビ段落で計画20単位が
+   [11,9] に割れた。素のテキストでは起きず、line-break 等の CSS では
+   止まらない）。段全体は収まってしまうため probeFits では検出できず、
+   列の途中から下半分が空白になる形でだけ現れる。
+   タイトル（行高1.55で列幅が違う）と見出しは判定から外す（短く、
+   はみ出しは描画後監査が見る） */
+function gluedChunkIdx(chunks, paras){
+  if (probeTier._forChunks !== chunks) probeSize(chunks);
+  const kids = probeTier.children;
+  if (kids.length !== chunks.length) return -1;
+  for (let j = 0; j < chunks.length; j++){
+    const ch = chunks[j], el = kids[j];
+    if (!ch.units || !ch.units.length || ch.table || ch.img || ch.blank) continue;
+    if (el.tagName !== 'P') continue;
+    if (ch.cls && /(title|head)/.test(ch.cls)) continue;
+    const rendered = Math.round(el.getBoundingClientRect().width / M.lh);
+    let planned = ch.colsP;
+    if (!planned){
+      if (ch.pi === undefined || !paras[ch.pi]) continue;
+      const pre = paraPrefix(paras[ch.pi]);
+      planned = (pre[ch.off + ch.units.length] - pre[ch.off]) <= colCap() + 1 ? 1 : 2;
+      if (planned > 1) continue;
+    }
+    if (rendered > planned) return j;
+  }
+  return -1;
+}
+/* 接着が見つかった段は、その段落だけ列容量を1文字分ずつ絞って
+   simulateSplit に通常の禁則位置で割らせ直す。ブラウザ任せの接着割り
+   （半分空の列）ではなく、モデルの禁則どおりの割りになる。修復した
+   割り付けが probeFits を落とす場合は元の計画を返す（安全弁） */
+function unglue(paras, pos, prefix, budget, res){
+  let cur = res;
+  const caps = new Map();
+  for (let step = 0; step < 4; step++){
+    const gi = gluedChunkIdx(cur.chunks, paras);
+    if (gi < 0) return cur;
+    const ch = cur.chunks[gi];
+    if (ch.pi === undefined || !paras[ch.pi]) return res;
+    caps.set(ch.pi, (caps.get(ch.pi) || colCap()) - M.fs);
+    const res2 = fillTierCore(paras, pos, prefix, budget, caps);
+    if (!res2.chunks.length || !probeFits(res2.chunks)) return res;
+    cur = res2;
+  }
+  return gluedChunkIdx(cur.chunks, paras) < 0 ? cur : res;
+}
 function fillTier(paras, pos, prefix){
   if (!M) return fillTierProbe(paras, pos, prefix);
   let budget = M.tierW - 1 - repairW;
@@ -2354,7 +2405,7 @@ function fillTier(paras, pos, prefix){
      まま返っていた。速度より正確さを優先し、全段を実描画で判定
      する。なお端末によってはプローブ段と実ページ段でもずれるため、
      描画後の実ページ監査（auditRenderedPages）が最終段にいる */
-  if (probeFits(res0.chunks)) return res0;
+  if (probeFits(res0.chunks)) return unglue(paras, pos, prefix, budget, res0);
   /* 高さのはみ出し（列内部のぶら下げ等で列が段より高く測れる型）は、
      幅を削る従来の修復では直らない。犯人の列は段の中に残り続け、
      予算を1列ずつ削るたびに段の末尾だけが痩せて、大きな空白のある
@@ -2409,7 +2460,7 @@ function fillTier(paras, pos, prefix){
   if (!res.chunks.length && res0.chunks.length) return res0;
   return res;
 }
-function fillTierCore(paras, pos, prefix, budget){
+function fillTierCore(paras, pos, prefix, budget, capMap){
   const chunks = prefix ? prefix.slice() : [];
   const baseLen = chunks.length;
   let pi = pos.pi, off = pos.off;
@@ -2453,15 +2504,15 @@ function fillTierCore(paras, pos, prefix, budget){
        以前の colsFor 概算（禁則による無駄を一律0.3em/列と見積もる）は、
        禁則が続く段落や大きなフォントでは実際の列数より少なく返ることが
        あり、そのまま「収まった」ことにして段の最終列をはみ出させていた */
-    const sim = simulateSplit(para, off, colsAvail, ind);
+    const sim = simulateSplit(para, off, colsAvail, ind, undefined, capMap ? capMap.get(pi) : undefined);
     const n = sim.n;
     if (n === 0) {
-      if (chunks.length === baseLen) { chunks.push({ units: para.units.slice(off, off + 1), cls: startCls, pi, off }); off += 1; }
+      if (chunks.length === baseLen) { chunks.push({ units: para.units.slice(off, off + 1), cls: startCls, pi, off, colsP: 1 }); off += 1; }
       break;
     }
     /* pi/off は実測修復（fillTier の列分割）が元の段落と開始位置を引くための注記。
-       描画・保存では使わない */
-    chunks.push({ units: para.units.slice(off, off + n), cls: startCls, pi, off });
+       描画・保存では使わない。colsP は計画列数（接着折り返しの検出用） */
+    chunks.push({ units: para.units.slice(off, off + n), cls: startCls, pi, off, colsP: sim.cols });
     /* 模擬では丸ごと収まった場合は、使った列数ぶん予算を引いて次の段落の
        詰め込みを続ける */
     if (n >= total - off) { budget -= sim.cols * colW + extra; pi++; off = 0; continue; }
