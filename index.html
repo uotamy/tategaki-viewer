@@ -981,7 +981,7 @@
         })();
       </script><script src="https://adm.shinobi.jp/s/15f61b0238a01ce2999b531089637173"></script></div>
     </div>
-    <div id="buildId" aria-hidden="true">build 2026-11-21 23:13</div>
+    <div id="buildId" aria-hidden="true">build 2026-11-21 23:15</div>
   </div>
 
   <div id="narou" aria-label="なろうダウンローダー">
@@ -2430,7 +2430,7 @@ function fillTier(paras, pos, prefix){
   const sz0 = probeSize(res0.chunks);
   if (sz0.h > sz0.ch + 1.5) {
     repaired = splitTierChunks(res0.chunks, paras);
-    if (repaired.length && probeFits(repaired)) return { chunks: repaired, pos: res0.pos };
+    if (repaired.length && probeFits(repaired)) return unglue(paras, pos, prefix, budget, { chunks: repaired, pos: res0.pos });
   }
   /* 実測で収まらない場合は、予算を削って割り付け直す。まず従来どおり
      rubyPad を差し引き（段幅の余りが小さいときは引き算が列数の floor を
@@ -2452,7 +2452,7 @@ function fillTier(paras, pos, prefix){
   budget -= M.rubyPad;
   for (let step = 0; step < 80; step++) {
     res = fillTierCore(paras, pos, prefix, budget);
-    if (probeFits(res.chunks)) return res;
+    if (probeFits(res.chunks)) return unglue(paras, pos, prefix, budget, res);
     const sig = tierSig(res);
     if (sig === prevSig) {
       sameSigShrink += M.lh;
@@ -2471,8 +2471,8 @@ function fillTier(paras, pos, prefix){
      切り」に当たって本の残り全部が消える（実例：第73版、Pixel 実機で
      第七話が90ページに切れた）。空になるくらいなら未修復の段を返す
      ——はみ出しは描画後監査の自己修復が締めて直す */
-  if (!res.chunks.length && res0.chunks.length) return res0;
-  return res;
+  if (!res.chunks.length && res0.chunks.length) return unglue(paras, pos, prefix, budget, res0);
+  return unglue(paras, pos, prefix, budget, res);
 }
 function fillTierCore(paras, pos, prefix, budget, capMap, cols1Set){
   const chunks = prefix ? prefix.slice() : [];
