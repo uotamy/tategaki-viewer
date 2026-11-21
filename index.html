@@ -971,7 +971,7 @@
         })();
       </script><script src="https://adm.shinobi.jp/s/15f61b0238a01ce2999b531089637173"></script></div>
     </div>
-    <div id="buildId" aria-hidden="true">build 2026-11-21 22:45</div>
+    <div id="buildId" aria-hidden="true">build 2026-11-21 22:50</div>
   </div>
 
   <div id="narou" aria-label="なろうダウンローダー">
@@ -1937,11 +1937,32 @@ function renderChunks(tierEl, chunks){
 }
 function probeSize(chunks){
   renderChunks(probeTier, chunks);
-  const r = document.createRange();
-  r.selectNodeContents(probeTier);
-  const b = r.getBoundingClientRect();
-  r.detach();
-  return { w: b.width, h: b.height, cw: probeTier.clientWidth, ch: probeTier.clientHeight };
+  /* ルビの読み（.rbt）は絶対配置の注釈で、読みが親文字より長いと親文字の
+     上下へはみ出して描かれる。それは組版上のはみ出しではないため、実測の
+     対象から外す（注釈を含めて測ると、段が収まっているのに probeFits が
+     落ちて無用な修復が走る）。本文テキストと原子ブロック（画像・表）の
+     矩形の和集合で測る */
+  let minX = 1e9, maxX = -1e9, minY = 1e9, maxY = -1e9, seen = false;
+  const add = r => {
+    if (!r || (r.width === 0 && r.height === 0)) return;
+    seen = true;
+    if (r.left < minX) minX = r.left;
+    if (r.right > maxX) maxX = r.right;
+    if (r.top < minY) minY = r.top;
+    if (r.bottom > maxY) maxY = r.bottom;
+  };
+  const tw = document.createTreeWalker(probeTier, NodeFilter.SHOW_TEXT);
+  while (tw.nextNode()){
+    const n = tw.currentNode;
+    if (n.parentElement && n.parentElement.closest('.rbt')) continue;
+    const rg = document.createRange();
+    rg.selectNodeContents(n);
+    add(rg.getBoundingClientRect());
+    rg.detach();
+  }
+  probeTier.querySelectorAll('img, .mdtable, .illus').forEach(el => add(el.getBoundingClientRect()));
+  return { w: seen ? maxX - minX : 0, h: seen ? maxY - minY : 0,
+           cw: probeTier.clientWidth, ch: probeTier.clientHeight };
 }
 function probeFits(chunks){
   const s = probeSize(chunks);
@@ -3977,7 +3998,30 @@ function diagRender(){
       tierEl.querySelectorAll('p').forEach(p => {
         if (p.textContent.includes('七花はまだ')){
           const r = p.getBoundingClientRect();
-          L.push('TARGET cols ' + (M ? Math.round(r.width / M.lh * 100) / 100 : '?') + ' len ' + p.textContent.length + ' h ' + Math.round(r.height));
+          /* 実描画の列ごとの文字数（注釈 .rbt の読みは数えない）。
+             計画（plan 行のチャンク境界）と食い違えば、折り返しは
+             ブラウザ側で起きていると切り分けられる */
+          const items = [];
+          const tw2 = document.createTreeWalker(p, NodeFilter.SHOW_TEXT);
+          while (tw2.nextNode()){
+            const n = tw2.currentNode;
+            if (n.parentElement && n.parentElement.closest('.rbt')) continue;
+            for (let i = 0; i < n.textContent.length; i++){
+              const rg = document.createRange();
+              rg.setStart(n, i); rg.setEnd(n, i + 1);
+              const rr = rg.getBoundingClientRect();
+              items.push({ x: Math.round(rr.x), y: Math.round(rr.y) });
+              rg.detach();
+            }
+          }
+          const xs = [...new Set(items.map(it => it.x))].sort((a, b) => b - a);
+          const usedX = new Set(); const colLens = [];
+          for (const x of xs){
+            if ([...usedX].some(u => Math.abs(u - x) <= 3)) continue;
+            usedX.add(x);
+            colLens.push(items.filter(it => Math.abs(it.x - x) <= 3).length);
+          }
+          L.push('TARGET cols ' + (M ? Math.round(r.width / M.lh * 100) / 100 : '?') + ' len ' + p.textContent.length + ' h ' + Math.round(r.height) + ' colLens [' + colLens.join(',') + ']');
         }
       });
     });
