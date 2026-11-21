@@ -981,7 +981,7 @@
         })();
       </script><script src="https://adm.shinobi.jp/s/15f61b0238a01ce2999b531089637173"></script></div>
     </div>
-    <div id="buildId" aria-hidden="true">build 2026-11-21 23:15</div>
+    <div id="buildId" aria-hidden="true">build 2026-11-22 00:34</div>
   </div>
 
   <div id="narou" aria-label="なろうダウンローダー">
@@ -2391,6 +2391,45 @@ function unglue(paras, pos, prefix, budget, res){
   }
   return gluedChunkIdx(cur.chunks, paras) < 0 ? cur : res;
 }
+/* 高さ型のはみ出しの実測修復：段より高く測れる列を持つ段落について、
+   プローブ段の flex と高さを一時的に外して1列の実高を測り、段に収まる
+   最大の接頭辞まで列容量（capOverride）を絞って割り付け直す。モデルが
+   楽観している列はモデルの容量では割れないため、実測で割るのが要る。
+   capOverride は simulateSplit の全列に効くので、その段落の後続列も
+   同じ容量で割られ、犯人の列が段の中ほどにあっても直る。最後は
+   probeFits で判定するため、合わなければ従来の修復経路へ落ちる */
+function heightSplitRepair(paras, pos, prefix, budget, res0, chLimit){
+  const soloH = part => {
+    const pf = probeTier.style.flex, ph = probeTier.style.height;
+    probeTier.style.flex = "none"; probeTier.style.height = "100000px";
+    try { return probeSize([part]).h; } finally {
+      probeTier.style.flex = pf; probeTier.style.height = ph;
+    }
+  };
+  const capMap = new Map();
+  for (const ch of res0.chunks) {
+    if (!ch.units || !ch.units.length || ch.pi === undefined || ch.table || ch.img || ch.blank) continue;
+    if (probeSize([ch]).h <= chLimit + 1.5) continue;
+    const para = paras[ch.pi];
+    if (!para || !para.units) continue;
+    let lo = 0, hi = ch.units.length;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      const part = { units: ch.units.slice(0, mid), cls: ch.cls, pi: ch.pi, off: ch.off };
+      if (soloH(part) <= chLimit + 1.5) lo = mid; else hi = mid - 1;
+    }
+    if (lo <= 0 || lo >= ch.units.length) continue;
+    const pre = paraPrefix(para);
+    const ind = !/(cont|noind|head|title|endmark)/.test(ch.cls || "");
+    const scale = (para.cls && para.cls.includes("head")) ? 1.06 : 1;
+    const cap = (pre[ch.off + lo] - pre[ch.off]) * scale + (ind ? M.fs : 0);
+    const prev = capMap.get(ch.pi);
+    if (prev === undefined || cap < prev) capMap.set(ch.pi, cap);
+  }
+  if (!capMap.size) return null;
+  const res = fillTierCore(paras, pos, prefix, budget, capMap);
+  return (res.chunks.length && probeFits(res.chunks)) ? res : null;
+}
 function fillTier(paras, pos, prefix){
   if (!M) return fillTierProbe(paras, pos, prefix);
   let budget = M.tierW - 1 - repairW;
@@ -2431,6 +2470,11 @@ function fillTier(paras, pos, prefix){
   if (sz0.h > sz0.ch + 1.5) {
     repaired = splitTierChunks(res0.chunks, paras);
     if (repaired.length && probeFits(repaired)) return unglue(paras, pos, prefix, budget, { chunks: repaired, pos: res0.pos });
+    /* モデルの列容量で割る splitTierChunks は、モデルが楽観している列
+       （実描画では段より高いのにモデルでは1列に収まると見積もる列）を
+       割れない。その場合は実測で容量を絞って割り付け直す */
+    const hr = heightSplitRepair(paras, pos, prefix, budget, res0, sz0.ch);
+    if (hr) return unglue(paras, pos, prefix, budget, hr);
   }
   /* 実測で収まらない場合は、予算を削って割り付け直す。まず従来どおり
      rubyPad を差し引き（段幅の余りが小さいときは引き算が列数の floor を
@@ -2472,6 +2516,13 @@ function fillTier(paras, pos, prefix){
      第七話が90ページに切れた）。空になるくらいなら未修復の段を返す
      ——はみ出しは描画後監査の自己修復が締めて直す */
   if (!res.chunks.length && res0.chunks.length) return unglue(paras, pos, prefix, budget, res0);
+  /* 高さ型の失敗で、幅を削る修復が元の割り付けより後退した結果しか
+     生まなかった場合は元の割り付けを返す。数pxのはみ出しは描画後監査の
+     自己修復が締めるが、ほぼ空の段は読書を壊す（実例：刀語第七話
+     186ページ相当。5チャンクの段が修復の末に1チャンクへ痩せた） */
+  if (sz0.h > sz0.ch + 1.5 &&
+      (res.pos.pi < res0.pos.pi || (res.pos.pi === res0.pos.pi && res.pos.off < res0.pos.off)))
+    return unglue(paras, pos, prefix, budget, res0);
   return unglue(paras, pos, prefix, budget, res);
 }
 function fillTierCore(paras, pos, prefix, budget, capMap, cols1Set){
