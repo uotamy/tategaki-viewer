@@ -126,11 +126,12 @@
      折り返し位置が大きくずれ、列の下半分が空くため（刀語第七話で実害）。
      注釈をレイアウトの外に置けば、親文字は通常の文字とまったく同じ送りで
      割り付けられ、組版モデルの見積もりとも一致する */
-  /* 第83版：.rb を inline-block にして原子化する。インラインのままだと
-     親文字が列の境目で分かれたとき、注釈の基準枠が分かれた断片全体の
-     合算になり、読みが対象から大きく外れた場所に落ちる（実機で確認）。
-     原子化すれば単位ごと次の列へ送られ、枠は常に親文字と一致する */
-  .tier .rb { position: relative; display: inline-block; }
+  /* 第83版で .rb を inline-block にして原子化したが、第85版で撤回。
+     実測すると inline-block の箱は中身の文字より 1em ぶん高くなり
+     （fs 20.5 で箱 61.9px 対 文字 41.4px）、ルビ単位ごとに列の
+     容量を 1em 余分に食って密度が落ちる（同一文で 40列→51列）。
+     原子化は組版モデル側の収まりガード（simulateSplit）で代替する */
+  .tier .rb { position: relative; }
   .tier .rbt {
     /* 第83版：中央寄せを transform の % に頼らない。Android Chrome では
        縦書き中の絶対配置要素で translateY(-50%) が効かず、読みが
@@ -994,7 +995,7 @@
         })();
       </script><script src="https://adm.shinobi.jp/s/15f61b0238a01ce2999b531089637173"></script></div>
     </div>
-    <div id="buildId" aria-hidden="true">build 2026-11-22 20:27</div>
+    <div id="buildId" aria-hidden="true">build 2026-11-22 20:30</div>
   </div>
 
   <div id="narou" aria-label="なろうダウンローダー">
@@ -2161,7 +2162,14 @@ function simulateSplit(para, off, colsAvail, ind, trace, capOverride){
   let compSet = new Set(), saved = 0;
   let i = off;
   while (i < total) {
-    if ((pre[i + 1] - pre[colStart]) * scale - saved > capNow) {
+    /* 第85版：ルビ単位の収まりガード。ブラウザはルビの親文字の途中でも
+       列を割れるため、モデルの見積もりがわずかに甘いと親文字が列を
+       またぎ、注釈の基準枠が断片の合算になって読みが外れる（実機で
+       確認）。ルビ単位は半文字ぶん余分に見積もって、際どい位置では
+       丸ごと次列へ送る。inline-block での原子化は 1単位ごとに 1em
+       ぶん列容量を食うため不採用（.rb のコメント参照） */
+    const rubyGuard = para.units[i].r !== undefined ? M.fs * 0.5 * scale : 0;
+    if ((pre[i + 1] - pre[colStart]) * scale - saved + rubyGuard > capNow) {
       /* 追い込み：溢れた単位が終わり括弧類で、その行頭禁則の並びの先頭が
          通常の送りのまま今の列に収まっている（並びが列を跨いでいる）と
          きに限り、並びの中の約物を半分に詰めて収まるか試す。並び全体が
