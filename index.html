@@ -126,12 +126,14 @@
      折り返し位置が大きくずれ、列の下半分が空くため（刀語第七話で実害）。
      注釈をレイアウトの外に置けば、親文字は通常の文字とまったく同じ送りで
      割り付けられ、組版モデルの見積もりとも一致する */
-  /* 第83版で .rb を inline-block にして原子化したが、第85版で撤回。
-     実測すると inline-block の箱は中身の文字より 1em ぶん高くなり
-     （fs 20.5 で箱 61.9px 対 文字 41.4px）、ルビ単位ごとに列の
-     容量を 1em 余分に食って密度が落ちる（同一文で 40列→51列）。
-     原子化は組版モデル側の収まりガード（simulateSplit）で代替する */
-  .tier .rb { position: relative; }
+  /* 第86版：.rb を inline-block で原子化し、text-indent: 0 を付ける。
+     第83版の原子化で「箱が中身より 1em 高くなり密度が落ちる」問題は、
+     inline-block 自体の性質ではなく、段落の text-indent: 1em が
+     inline-block 内部の先頭行にも継承して効いていたのが原因だった
+     （実測：text-indent: 0 を付けると箱 61.9px→41.4px＝中身と一致し、
+     同一文の列数はプレーン 40列 に対して 42列＝原子化の隙間のみ）。
+     注釈 .rbt のずれの主因も同じ継承（下記 .rbt の注記） */
+  .tier .rb { position: relative; display: inline-block; text-indent: 0; }
   .tier .rbt {
     /* 第83版：中央寄せを transform の % に頼らない。Android Chrome では
        縦書き中の絶対配置要素で translateY(-50%) が効かず、読みが
@@ -141,11 +143,15 @@
        第84版：基準を「枠の高さの50%」からも外す。同じ列にルビが複数ある
        と実機でまだずれる箇所が残ったため（第83版の実機確認）、単位の
        先頭を起点に、親文字数（--bl）と読み文字数だけで位置を決める。
-       枠の寸法への依存を残さない */
+       枠の寸法への依存を残さない
+       第86版：ずれの主因は text-indent の継承だった（実測）。段落の
+       text-indent: 1em は絶対配置の注釈内部の先頭行にも効き、読みの
+       字形が箱の内側で 1em ぶん下へずれていた（箱の位置計算は正しく
+       ても字形の中心が 1em 外れる）。text-indent: 0 で継承を断つ */
     position: absolute; top: calc((var(--bl, 0) * 2 - var(--rl, 0)) * var(--fs) * .25);
     right: calc((var(--lh) - var(--fs)) / 2 - var(--fs) * .5 - 1px);
     font-size: calc(var(--fs) * .5);
-    line-height: 1; letter-spacing: 0; white-space: nowrap;
+    line-height: 1; letter-spacing: 0; white-space: nowrap; text-indent: 0;
   }
   /* 半角数字は縦中横で正立させる：縦書きの中で数字だけが寝てしまうのを防ぎ、
      1文字＝1emのマスに立ったまま収める（組版側の文字送りも1emで見積もる） */
@@ -995,7 +1001,7 @@
         })();
       </script><script src="https://adm.shinobi.jp/s/15f61b0238a01ce2999b531089637173"></script></div>
     </div>
-    <div id="buildId" aria-hidden="true">build 2026-11-22 20:30</div>
+    <div id="buildId" aria-hidden="true">build 2026-11-22 20:35</div>
   </div>
 
   <div id="narou" aria-label="なろうダウンローダー">
@@ -2162,12 +2168,11 @@ function simulateSplit(para, off, colsAvail, ind, trace, capOverride){
   let compSet = new Set(), saved = 0;
   let i = off;
   while (i < total) {
-    /* 第85版：ルビ単位の収まりガード。ブラウザはルビの親文字の途中でも
-       列を割れるため、モデルの見積もりがわずかに甘いと親文字が列を
-       またぎ、注釈の基準枠が断片の合算になって読みが外れる（実機で
-       確認）。ルビ単位は半文字ぶん余分に見積もって、際どい位置では
-       丸ごと次列へ送る。inline-block での原子化は 1単位ごとに 1em
-       ぶん列容量を食うため不採用（.rb のコメント参照） */
+    /* 第85版：ルビ単位の収まりガード。モデルの見積もりと実描画の
+       折り返しがわずかにずれると、親文字が列をまたいで注釈が壊れる
+       余地が残るため、ルビ単位は半文字ぶん余分に見積もって、際どい
+       位置では丸ごと次列へ送る。第86版で描画側も inline-block で
+       原子化した（.rb のコメント参照）ので、これは二重の守り */
     const rubyGuard = para.units[i].r !== undefined ? M.fs * 0.5 * scale : 0;
     if ((pre[i + 1] - pre[colStart]) * scale - saved + rubyGuard > capNow) {
       /* 追い込み：溢れた単位が終わり括弧類で、その行頭禁則の並びの先頭が
