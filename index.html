@@ -126,9 +126,18 @@
      折り返し位置が大きくずれ、列の下半分が空くため（刀語第七話で実害）。
      注釈をレイアウトの外に置けば、親文字は通常の文字とまったく同じ送りで
      割り付けられ、組版モデルの見積もりとも一致する */
-  .tier .rb { position: relative; }
+  /* 第83版：.rb を inline-block にして原子化する。インラインのままだと
+     親文字が列の境目で分かれたとき、注釈の基準枠が分かれた断片全体の
+     合算になり、読みが対象から大きく外れた場所に落ちる（実機で確認）。
+     原子化すれば単位ごと次の列へ送られ、枠は常に親文字と一致する */
+  .tier .rb { position: relative; display: inline-block; }
   .tier .rbt {
-    position: absolute; top: 50%; transform: translateY(-50%);
+    /* 第83版：中央寄せを transform の % に頼らない。Android Chrome では
+       縦書き中の絶対配置要素で translateY(-50%) が効かず、読みが
+       「読みの高さの半分」だけ下へずれる（実機で確認：読みと親文字が
+       同じ長さでも半分はみ出す）。読みの文字数（--rl、描画側が付ける）
+       から半分の高さを直接引いて決める */
+    position: absolute; top: calc(50% - var(--rl, 0) * var(--fs) * .25);
     right: calc((var(--lh) - var(--fs)) / 2 - var(--fs) * .5 - 1px);
     font-size: calc(var(--fs) * .5);
     line-height: 1; letter-spacing: 0; white-space: nowrap;
@@ -981,7 +990,7 @@
         })();
       </script><script src="https://adm.shinobi.jp/s/15f61b0238a01ce2999b531089637173"></script></div>
     </div>
-    <div id="buildId" aria-hidden="true">build 2026-11-22 00:34</div>
+    <div id="buildId" aria-hidden="true">build 2026-11-22 20:21</div>
   </div>
 
   <div id="narou" aria-label="なろうダウンローダー">
@@ -1916,7 +1925,7 @@ function chunkHTML(units){
   return units.map(u => {
     let h;
     if (u.c !== undefined) h = /^[0-9]$/.test(u.c) ? '<span class="tcy">' + u.c + "</span>" : esc(u.c);
-    else if (u.r !== undefined) h = "<span class=\"rb\">" + tcyDigits(esc(u.r)) + "<span class=\"rbt\">" + esc(u.t) + "</span></span>";
+    else if (u.r !== undefined) h = "<span class=\"rb\">" + tcyDigits(esc(u.r)) + "<span class=\"rbt\" style=\"--rl:" + [...u.t].length + "\">" + esc(u.t) + "</span></span>";
     else h = "";
     if (u.b) h = '<span class="fbold">' + h + "</span>";
     if (u.e) h = '<span class="boten">' + h + "</span>";
