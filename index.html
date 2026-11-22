@@ -1001,7 +1001,7 @@
         })();
       </script><script src="https://adm.shinobi.jp/s/15f61b0238a01ce2999b531089637173"></script></div>
     </div>
-    <div id="buildId" aria-hidden="true">build 2026-11-22 20:35</div>
+    <div id="buildId" aria-hidden="true">build 2026-11-22 20:41</div>
   </div>
 
   <div id="narou" aria-label="なろうダウンローダー">
@@ -1933,10 +1933,22 @@ function tcyDigits(escaped){
   return escaped.replace(/[0-9]/g, d => '<span class="tcy">' + d + "</span>");
 }
 function chunkHTML(units){
-  return units.map(u => {
+  return units.map((u, idx) => {
     let h;
     if (u.c !== undefined) h = /^[0-9]$/.test(u.c) ? '<span class="tcy">' + u.c + "</span>" : esc(u.c);
-    else if (u.r !== undefined) h = "<span class=\"rb\">" + tcyDigits(esc(u.r)) + "<span class=\"rbt\" style=\"--rl:" + [...u.t].length + ";--bl:" + [...u.r].length + "\">" + esc(u.t) + "</span></span>";
+    else if (u.r !== undefined) {
+      /* 第87版：次の単位もルビなら、読み同士が重ならない間隔をこの単位の
+         後ろに空ける（組版側 paraPrefix の間隔と対。量は rubyOh 参照）。
+         チャンクをまたぐ相手は別列になるため対象外（モデル側は安全側に
+         数えたままになる） */
+      const nx = units[idx + 1];
+      let gap = "";
+      if (nx && nx.r !== undefined) {
+        const g = (rubyOh(u) + rubyOh(nx)) / M.fs;
+        if (g > 0.01) gap = " style=\"margin-bottom:" + g.toFixed(3) + "em\"";
+      }
+      h = "<span class=\"rb\"" + gap + ">" + tcyDigits(esc(u.r)) + "<span class=\"rbt\" style=\"--rl:" + [...u.t].length + ";--bl:" + [...u.r].length + "\">" + esc(u.t) + "</span></span>";
+    }
     else h = "";
     if (u.b) h = '<span class="fbold">' + h + "</span>";
     if (u.e) h = '<span class="boten">' + h + "</span>";
@@ -2090,6 +2102,13 @@ function rubyReach(u){
      常に0（paraPrefix の吸収計算はそのまま無力化される） */
   return 0;
 }
+/* 読みが親文字よりはみ出す量（片側、px）。読みは親文字の中央に置かれる
+   ため、読みの送り（読み文字数 × fs × 0.5）が親文字の送りより長いぶんが
+   上下へ均等にはみ出す */
+function rubyOh(u){
+  if (u.r === undefined) return 0;
+  return Math.max(0, ([...u.t].length * M.fs * 0.5 - advOf(u)) / 2);
+}
 function paraPrefix(para){
   if (para._pk === M.key && para._prefix) return para._prefix;
   const units = para.units, n = units.length, pre = new Float32Array(n + 1);
@@ -2103,6 +2122,13 @@ function paraPrefix(para){
       if (prevReach > 0 && absorb) adv -= Math.min(prevReach, shedCap);
       else if (reach > 0 && prevAbsorb) adv -= Math.min(reach, shedCap);
     }
+    /* 第87版：ルビ同士が隣り合うとき、互いのはみ出しがぶつからないよう
+       境界の間隔を送りに足す（描画側 chunkHTML の margin-bottom と対）。
+       読みが親文字より長い単位同士が並ぶと、中央寄せされた読み同士が
+       重なる（実機：長い役職名の並びで確認）。隣が通常文字なら、読みは
+       その文字の脇の空きへはみ出せるので間隔は要らない */
+    if (u.r !== undefined && i + 1 < n && units[i + 1].r !== undefined)
+      adv += rubyOh(u) + rubyOh(units[i + 1]);
     pre[i + 1] = pre[i] + adv;
     prevReach = reach; prevAbsorb = absorb;
   }
