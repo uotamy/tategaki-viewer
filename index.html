@@ -136,8 +136,12 @@
        縦書き中の絶対配置要素で translateY(-50%) が効かず、読みが
        「読みの高さの半分」だけ下へずれる（実機で確認：読みと親文字が
        同じ長さでも半分はみ出す）。読みの文字数（--rl、描画側が付ける）
-       から半分の高さを直接引いて決める */
-    position: absolute; top: calc(50% - var(--rl, 0) * var(--fs) * .25);
+       から半分の高さを直接引いて決める
+       第84版：基準を「枠の高さの50%」からも外す。同じ列にルビが複数ある
+       と実機でまだずれる箇所が残ったため（第83版の実機確認）、単位の
+       先頭を起点に、親文字数（--bl）と読み文字数だけで位置を決める。
+       枠の寸法への依存を残さない */
+    position: absolute; top: calc((var(--bl, 0) * 2 - var(--rl, 0)) * var(--fs) * .25);
     right: calc((var(--lh) - var(--fs)) / 2 - var(--fs) * .5 - 1px);
     font-size: calc(var(--fs) * .5);
     line-height: 1; letter-spacing: 0; white-space: nowrap;
@@ -990,7 +994,7 @@
         })();
       </script><script src="https://adm.shinobi.jp/s/15f61b0238a01ce2999b531089637173"></script></div>
     </div>
-    <div id="buildId" aria-hidden="true">build 2026-11-22 20:21</div>
+    <div id="buildId" aria-hidden="true">build 2026-11-22 20:27</div>
   </div>
 
   <div id="narou" aria-label="なろうダウンローダー">
@@ -1925,7 +1929,7 @@ function chunkHTML(units){
   return units.map(u => {
     let h;
     if (u.c !== undefined) h = /^[0-9]$/.test(u.c) ? '<span class="tcy">' + u.c + "</span>" : esc(u.c);
-    else if (u.r !== undefined) h = "<span class=\"rb\">" + tcyDigits(esc(u.r)) + "<span class=\"rbt\" style=\"--rl:" + [...u.t].length + "\">" + esc(u.t) + "</span></span>";
+    else if (u.r !== undefined) h = "<span class=\"rb\">" + tcyDigits(esc(u.r)) + "<span class=\"rbt\" style=\"--rl:" + [...u.t].length + ";--bl:" + [...u.r].length + "\">" + esc(u.t) + "</span></span>";
     else h = "";
     if (u.b) h = '<span class="fbold">' + h + "</span>";
     if (u.e) h = '<span class="boten">' + h + "</span>";
