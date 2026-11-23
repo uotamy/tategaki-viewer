@@ -1001,7 +1001,7 @@
         })();
       </script><script src="https://adm.shinobi.jp/s/15f61b0238a01ce2999b531089637173"></script></div>
     </div>
-    <div id="buildId" aria-hidden="true">build 2026-11-22 20:41</div>
+    <div id="buildId" aria-hidden="true">build 2026-11-23 20:57</div>
   </div>
 
   <div id="narou" aria-label="なろうダウンローダー">
@@ -2458,6 +2458,56 @@ function heightSplitRepair(paras, pos, prefix, budget, res0, chLimit){
       probeTier.style.flex = pf; probeTier.style.height = ph;
     }
   };
+  /* 第88版：まず実測位置で実チャンクとして割る。従来の capMap 経由の
+     割り付け直しはチャンク内部の改列をブラウザに委ねたままで、ブラウザが
+     モデルより長い列を作る型では割り付けが変わらず直らない（実測：単位の
+     実効送り約19.2px×20単位＝384px > 段高377。モデルは送り約19.0pxで
+     cap 内と見積もるため、モデル予測で割る splitTierChunks でもその列は
+     温存される）。直らないまま幅を削る修復へ落ち、段の末尾だけが痩せて
+     大きな空白のある段になっていた（実例：段幅371に対し実測207で確定）。
+     高いチャンクを、1列の実高が段に収まる最大の接頭辞の位置で割れば、
+     その列はチャンク末尾として確定し、ブラウザは列を延ばせない
+     （splitTierChunks と同じ原理を、モデル予測でなく実測の位置でやる）。
+     分割は段の内容・終端位置を変えないため pos は res0 のまま返す。
+     割っても収まらない場合は従来の capMap 経路へ落とす */
+  let chunks88 = res0.chunks, splitAny88 = false;
+  for (let round = 0; round < 6; round++){
+    let tall = null;
+    for (const ch of chunks88) {
+      if (!ch.units || !ch.units.length || ch.pi === undefined || ch.table || ch.img || ch.blank) continue;
+      if (probeSize([ch]).h > chLimit + 1.5) { tall = ch; break; }
+    }
+    if (!tall) break;
+    let lo = 0, hi = tall.units.length;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      const part = { units: tall.units.slice(0, mid), cls: tall.cls, pi: tall.pi, off: tall.off };
+      if (soloH(part) <= chLimit + 1.5) lo = mid; else hi = mid - 1;
+    }
+    if (lo <= 0 || lo >= tall.units.length) break;
+    const para = paras[tall.pi];
+    if (!para) break;
+    const idx = chunks88.indexOf(tall);
+    chunks88 = chunks88.slice(0, idx).concat([
+      { units: tall.units.slice(0, lo), cls: tall.cls, pi: tall.pi, off: tall.off },
+      { units: tall.units.slice(lo), cls: chunkClsFor(para, tall.off + lo), pi: tall.pi, off: tall.off + lo },
+    ], chunks88.slice(idx + 1));
+    splitAny88 = true;
+  }
+  if (splitAny88 && probeFits(chunks88)) return { chunks: chunks88, pos: res0.pos };
+  /* 割ると列が増えて幅が溢れる場合は、末尾のチャンクから次の段へ送る
+     （幅を削る従来修復は割り付け直しで分割ごと失うため、ここで確定させる）。
+     送る先頭が通常のテキストチャンクのときだけ、その開始位置を段の終端
+     として返せる。それ以外（表・挿絵・空行が境界に来る場合）は従来経路へ */
+  if (splitAny88) {
+    let end = chunks88.length;
+    while (end > 0 && !probeFits(chunks88.slice(0, end))) end--;
+    if (end > 0 && end < chunks88.length) {
+      const dropped = chunks88[end];
+      if (dropped && dropped.pi !== undefined && dropped.units && !dropped.blank)
+        return { chunks: chunks88.slice(0, end), pos: { pi: dropped.pi, off: dropped.off } };
+    }
+  }
   const capMap = new Map();
   for (const ch of res0.chunks) {
     if (!ch.units || !ch.units.length || ch.pi === undefined || ch.table || ch.img || ch.blank) continue;
