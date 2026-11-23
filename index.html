@@ -1001,7 +1001,7 @@
         })();
       </script><script src="https://adm.shinobi.jp/s/15f61b0238a01ce2999b531089637173"></script></div>
     </div>
-    <div id="buildId" aria-hidden="true">build 2026-11-23 20:36</div>
+    <div id="buildId" aria-hidden="true">build 2026-11-23 20:42</div>
   </div>
 
   <div id="narou" aria-label="なろうダウンローダー">
@@ -2548,6 +2548,35 @@ function fillTier(paras, pos, prefix){
     return r;
   } finally { __tt = saved; }
 }
+/* 第90版：モデルの安全側の数え過ぎで段が痩せた場合の、実測での詰め直し。
+   モデルはルビ境界の間隔（第87版）などを実描画より多めに数えることが
+   あり（量は端末の書体で変わる）、収まった段でも実測では1列以上
+   空くことがある（実例：Pixel 実機、段幅371に対し実測280・段落の
+   途中で段が終了。分岐は path direct で修復経路ではなかった）。
+   段が段落の途中で終わっていて実測の余りが1列以上あるときだけ、
+   続きを1列ずつ実測で確かめながら足す。足すたびに段全体で
+   probeFits を見るため、はみ出しは起きない */
+function topUpTier(paras, res){
+  const last = res.chunks[res.chunks.length - 1];
+  if (!last || !last.units || last.pi === undefined || last.blank || last.table || last.img) return res;
+  let para = paras[res.pos.pi];
+  if (!para || para.table || para.img || res.pos.off <= 0 || res.pos.off >= para.units.length) return res;
+  const s0 = probeSize(res.chunks);
+  if (s0.cw - s0.w < M.lh) return res;
+  let chunks = res.chunks, pos = res.pos, added = 0;
+  for (let k = 0; k < 4; k++) {
+    para = paras[pos.pi];
+    if (!para || pos.off >= para.units.length) break;
+    const sim = simulateSplit(para, pos.off, 1, false);
+    if (!sim.n) break;
+    const cand = chunks.concat([{ units: para.units.slice(pos.off, pos.off + sim.n),
+      cls: chunkClsFor(para, pos.off), pi: pos.pi, off: pos.off, colsP: 1 }]);
+    if (!probeFits(cand)) break;
+    chunks = cand; pos = { pi: pos.pi, off: pos.off + sim.n }; added++;
+  }
+  if (added) ttLog("topup +" + added);
+  return added ? { chunks, pos } : res;
+}
 function fillTierImpl(paras, pos, prefix){
   if (!M) return fillTierProbe(paras, pos, prefix);
   let budget = M.tierW - 1 - repairW;
@@ -2577,7 +2606,7 @@ function fillTierImpl(paras, pos, prefix){
      まま返っていた。速度より正確さを優先し、全段を実描画で判定
      する。なお端末によってはプローブ段と実ページ段でもずれるため、
      描画後の実ページ監査（auditRenderedPages）が最終段にいる */
-  if (probeFits(res0.chunks)) { ttLog("path direct"); return unglue(paras, pos, prefix, budget, res0); }
+  if (probeFits(res0.chunks)) { ttLog("path direct"); return unglue(paras, pos, prefix, budget, topUpTier(paras, res0)); }
   /* 高さのはみ出し（列内部のぶら下げ等で列が段より高く測れる型）は、
      幅を削る従来の修復では直らない。犯人の列は段の中に残り続け、
      予算を1列ずつ削るたびに段の末尾だけが痩せて、大きな空白のある
@@ -2588,12 +2617,12 @@ function fillTierImpl(paras, pos, prefix){
   const sz0 = probeSize(res0.chunks);
   if (sz0.h > sz0.ch + 1.5) {
     repaired = splitTierChunks(res0.chunks, paras);
-    if (repaired.length && probeFits(repaired)) { ttLog("path split"); return unglue(paras, pos, prefix, budget, { chunks: repaired, pos: res0.pos }); }
+    if (repaired.length && probeFits(repaired)) { ttLog("path split"); return unglue(paras, pos, prefix, budget, topUpTier(paras, { chunks: repaired, pos: res0.pos })); }
     /* モデルの列容量で割る splitTierChunks は、モデルが楽観している列
        （実描画では段より高いのにモデルでは1列に収まると見積もる列）を
        割れない。その場合は実測で容量を絞って割り付け直す */
     const hr = heightSplitRepair(paras, pos, prefix, budget, res0, sz0.ch);
-    if (hr) { ttLog("path hsr"); return unglue(paras, pos, prefix, budget, hr); }
+    if (hr) { ttLog("path hsr"); return unglue(paras, pos, prefix, budget, topUpTier(paras, hr)); }
     ttLog("h-fail");
   }
   /* 実測で収まらない場合は、予算を削って割り付け直す。まず従来どおり
@@ -2617,7 +2646,7 @@ function fillTierImpl(paras, pos, prefix){
   for (let step = 0; step < 80; step++) {
     res = fillTierCore(paras, pos, prefix, budget);
     if (__tt) { const sr = probeSize(res.chunks); ttLog("cut b" + Math.round(budget) + " w" + Math.round(sr.w) + " h" + Math.round(sr.h) + " end " + res.pos.pi + "+" + res.pos.off); }
-    if (probeFits(res.chunks)) { ttLog("path shrink"); return unglue(paras, pos, prefix, budget, res); }
+    if (probeFits(res.chunks)) { ttLog("path shrink"); return unglue(paras, pos, prefix, budget, topUpTier(paras, res)); }
     const sig = tierSig(res);
     if (sig === prevSig) {
       sameSigShrink += M.lh;
