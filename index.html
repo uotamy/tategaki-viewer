@@ -887,6 +887,15 @@
       <p class="worknote" style="margin:8px 0 0;">「使う」にすると、本を開いたときだけ全画面表示になり、本棚に戻ると解除されます。ページ送りや設定などの開閉で全画面に入り直すことはありません。読書中に端末の操作で全画面を抜けた場合は、その読書中はそのまま表示され、次に本を開いたときから再び全画面になります。</p>
     </div>
 
+    <div class="setgroup">
+      <div class="lab">組版</div>
+      <div class="seg" id="flowSeg">
+        <button data-v="on">段落を流す</button>
+        <button data-v="off">段落ごと</button>
+      </div>
+      <p class="worknote" style="margin:8px 0 0;">「段落を流す」では、段落が替わっても同じ列の中で本文が続きます（紙の本と同じ組み方）。「段落ごと」は従来の組み方で、段落ごとに新しい列から始まります。</p>
+    </div>
+
     <div class="setgroup" id="diagGroup" style="display:none;">
       <div class="lab">診断</div>
       <div class="seg" id="diagSeg">
@@ -1001,7 +1010,7 @@
         })();
       </script><script src="https://adm.shinobi.jp/s/15f61b0238a01ce2999b531089637173"></script></div>
     </div>
-    <div id="buildId" aria-hidden="true">build 2026-11-24 22:31</div>
+    <div id="buildId" aria-hidden="true">build 2026-11-24 22:56</div>
   </div>
 
   <div id="narou" aria-label="なろうダウンローダー">
@@ -1385,6 +1394,7 @@ const S = {
   pageDir: "rtl",           // 下部バーの進行方向: "rtl"=右から左（本の進行） / "ltr"=左から右（標準）
   theme: "light", customBg: "#f7f1e3", customInk: "#33302a",
   showThumbs: true,         // 本棚サムネイルの表示ON/OFF（設定で切り替え）
+  flow: true,               // 流し組み（段落を列の中で流す）。設定で従来の段落ごとへ戻せる
   fullscreen: false,        // 全画面表示：ONのとき本を開く流れで1回だけ全画面へ入る（設定で切り替え、既定OFF）
   bookmarks: [],            // {bookKey, ep, pos:{pi,off}, epTitle, label}
   positions: {},            // bookKey -> {ep, pos, charInEp}（現在位置のみ。読了は finished 側で保持）
@@ -1419,7 +1429,7 @@ function persistNow(){
     localStorage.setItem(LS_KEY, JSON.stringify({
       font: S.font, fsIdx: S.fsIdx, lhIdx: S.lhIdx, marginIdx: S.marginIdx, mode: S.mode,
       turnStyle: S.turnStyle, pageDir: S.pageDir, theme: S.theme, customBg: S.customBg, customInk: S.customInk,
-      showThumbs: S.showThumbs, fullscreen: S.fullscreen,
+      showThumbs: S.showThumbs, fullscreen: S.fullscreen, flow: S.flow,
       positions: S.positions, bookmarks: S.bookmarks, finished: S.finished,
       /* 遅延復元中（前回の本をまだ開いていない）は、その本を lastKey として
          保持する。今ガイドを表示しているからといって上書きしない */
@@ -1434,7 +1444,7 @@ function persistLoad(){
     const raw = localStorage.getItem(LS_KEY);
     if (!raw) return false;
     const d = JSON.parse(raw);
-    ["font","fsIdx","lhIdx","marginIdx","mode","turnStyle","pageDir","theme","customBg","customInk","showThumbs","fullscreen"]
+    ["font","fsIdx","lhIdx","marginIdx","mode","turnStyle","pageDir","theme","customBg","customInk","showThumbs","fullscreen","flow"]
       .forEach(k => { if (d[k] !== undefined) S[k] = d[k]; });
     /* 廃止したIPA明朝が選ばれたまま保存されている場合は端末の明朝へ戻す。
        任意フォント（"u…" で始まるキー）は起動後にIndexedDBから登録し直すので、
@@ -2176,7 +2186,7 @@ function headExtra(para, off){
    一部として扱う（「Shift_JIS」のような並びを割らない） */
 const WORD_CHAR = /[0-9A-Za-zÀ-ÖØ-öø-ÿ_]/;
 function isWordUnit(u){ return u.c !== undefined && WORD_CHAR.test(u.c); }
-function simulateSplit(para, off, colsAvail, ind, trace, capOverride){
+function simulateSplit(para, off, colsAvail, ind, trace, capOverride, glue){
   const pre = paraPrefix(para), total = para.units.length;
   const capFull = capOverride || colCap();
   /* 見出しはフォントが1.06倍で、列方向への進みも1.06倍になる。容量判定を
@@ -2239,7 +2249,8 @@ function simulateSplit(para, off, colsAvail, ind, trace, capOverride){
     }
     if (i + 1 < total) {
       const nu = para.units[i + 1], lu = para.units[i];
-      if (!NO_START.includes(unitStartChar(nu)) && !NO_END.includes(unitEndChar(lu))
+      if (!(glue && glue.has(i))
+          && !NO_START.includes(unitStartChar(nu)) && !NO_END.includes(unitEndChar(lu))
           && !(isWordUnit(lu) && isWordUnit(nu))
           && !((lu.c === "." || lu.c === "'") && isWordUnit(nu))
           && !(isWordUnit(lu) && (nu.c === "." || nu.c === "'")
@@ -2329,6 +2340,7 @@ function tierSlack(chunks, paras, prefix){
     const ch = chunks[i];
     if (ch.blank) { used += M.lh; continue; }
     if (!ch.units || ch.pi === undefined || ch.table || ch.img) return Infinity;
+    if (ch.flow) { used += (ch.colsP || 1) * M.lh; continue; }
     const para = paras[ch.pi];
     if (!para) return Infinity;
     const ind = !/(cont|noind|head|title|endmark)/.test(ch.cls || "");
@@ -2354,6 +2366,24 @@ function splitTierChunks(chunks, paras){
   const out = [];
   for (const ch of chunks) {
     if (!ch.units || !ch.units.length || ch.pi === undefined || ch.table || ch.img) { out.push(ch); continue; }
+    if (ch.flow) {
+      /* 流しチャンクは仮想段落として模擬し直し、モデルの改列位置で割る。
+         各切片はちょうど1列ぶんになる */
+      const breaks = [];
+      simulateSplit({ units: ch.units }, 0, 1e9, false, breaks, undefined, flowGlueOf(ch.flow));
+      const endF = ch.units.length;
+      const cutsF = breaks.filter(b => b > 0 && b < endF);
+      if (!cutsF.length) { out.push(ch); continue; }
+      let startF = 0;
+      cutsF.concat([endF]).forEach(b => {
+        if (b <= startF) return;
+        const p0 = ch.flow[startF];
+        out.push({ units: ch.units.slice(startF, b), cls: "cont",
+                   pi: p0.pi, off: p0.off, flow: ch.flow.slice(startF, b), colsP: 1 });
+        startF = b;
+      });
+      continue;
+    }
     const para = paras[ch.pi];
     if (!para) { out.push(ch); continue; }
     const ind = !/(cont|noind|head|title|endmark)/.test(ch.cls || "");
@@ -2399,6 +2429,7 @@ function gluedChunkIdx(chunks, paras){
     if (el.tagName !== 'P') continue;
     if (ch.cls && /(title|head)/.test(ch.cls)) continue;
     const rendered = Math.round(el.getBoundingClientRect().width / M.lh);
+    if (ch.flow) { if (ch.colsP && rendered > ch.colsP) return j; continue; }
     let planned = ch.colsP;
     if (!planned){
       if (ch.pi === undefined || !paras[ch.pi]) continue;
@@ -2676,6 +2707,64 @@ function fillTierImpl(paras, pos, prefix){
   ttLog("path fallback-loop");
   return unglue(paras, pos, prefix, budget, res);
 }
+/* ---------- 流し組み（flow-columns ブランチで開発中） ----------
+   従来は段落ごとに新しい列から始めていたため、段落の最後の列は下半分が
+   空き、短い段落の多い本では列の大半が空白になっていた。流し組みでは
+   本文段落の連続を1つの仮想段落に連結し（段落の字下げは実単位として
+   差し込む）、ブラウザの折り返しに列の継続を委ねる。計画・実測・修復の
+   仕組みは従来のまま使え、チャンクには出所の対応表（flow）を持たせて
+   位置（pi/off）への復元を可能にする。設定で従来方式へ戻せる */
+function flowOn(){ return S.flow !== false; }
+function flowMergeable(para){
+  if (!para || para.table || para.img || para.blank) return false;
+  if (!para.units || !para.units.length) return false;
+  if (para.cls) return false;
+  return true;
+}
+function flowGlueOf(flowMap){
+  const glue = new Set();
+  flowMap.forEach((m, i) => { if (m.ind) { if (i > 0) glue.add(i - 1); glue.add(i); } });
+  return glue;
+}
+/* (pi, off) から始まる本文段落の連続を仮想段落へ連結する。needUnits に
+   達するか、連結できない段落（見出し・挿絵・改ページ等）に当たるまで。
+   map[i] は仮想段落の単位 i の出所 {pi, off}（字下げ単位は ind:true で
+   その段落の開始位置を指す）。glue は字下げの前後で列を割らないための
+   禁止位置。endPos は連結した最後の段落の次の位置 */
+function buildFlowRun(paras, pi, off, needUnits, capMap, cols1Set){
+  const units = [], map = [], glue = new Set();
+  let cp = pi, co = off, first = true;
+  while (cp < paras.length) {
+    const para = paras[cp];
+    if (!first) {
+      if (!flowMergeable(para)) break;
+      if (para.breakBefore || para.breakTier) break;
+      if (isFullIllus(para)) break;
+      if (capMap && capMap.has(cp)) break;
+      if (cols1Set && cols1Set.has(cp)) break;
+    }
+    if (co === 0) {
+      const cls0 = chunkClsFor(para, 0);
+      const ind = !/(cont|noind|head|title|endmark)/.test(cls0);
+      if (ind) {
+        if (units.length) glue.add(units.length - 1);
+        glue.add(units.length);
+        units.push({ c: "　" });
+        map.push({ pi: cp, off: 0, ind: true });
+      }
+    }
+    for (let i = co; i < para.units.length; i++) { units.push(para.units[i]); map.push({ pi: cp, off: i }); }
+    first = false;
+    cp++; co = 0;
+    if (units.length >= needUnits) break;
+  }
+  return { vpara: { units }, map, glue, endPos: { pi: cp, off: 0 } };
+}
+function flowPosAt(run, idx){
+  if (idx >= run.map.length) return run.endPos;
+  const m = run.map[idx];
+  return { pi: m.pi, off: m.off };
+}
 function fillTierCore(paras, pos, prefix, budget, capMap, cols1Set){
   const chunks = prefix ? prefix.slice() : [];
   const baseLen = chunks.length;
@@ -2710,6 +2799,26 @@ function fillTierCore(paras, pos, prefix, budget, capMap, cols1Set){
       if (probeFits(chunks.concat([whole]))) { chunks.push(whole); pi++; off = 0; break; }
       if (chunks.length > baseLen || baseLen > 0) break;
       chunks.push(whole); pi++; off = 0; break;
+    }
+    /* 流し組み：本文段落の連続を仮想段落として割り付け、段落境界を
+       跨いで列を継続させる。個別修復（capMap / cols1Set）の対象段落や
+       連結できない段落は従来の段落単位の割り付けに落とす */
+    if (flowOn() && !(capMap && capMap.has(pi)) && !(cols1Set && cols1Set.has(pi)) && flowMergeable(para)) {
+      const colsAvailF = Math.floor(budget / M.lh);
+      if (colsAvailF > 0) {
+        const needUnits = Math.ceil(colsAvailF * colCap() / Math.max(1, M.fs)) + 80;
+        const run = buildFlowRun(paras, pi, off, needUnits, capMap, cols1Set);
+        const simF = simulateSplit(run.vpara, 0, colsAvailF, false, undefined, undefined, run.glue);
+        if (simF.n > 0) {
+          chunks.push({ units: run.vpara.units.slice(0, simF.n), cls: "cont", pi, off,
+                        colsP: simF.cols, flow: run.map.slice(0, simF.n) });
+          budget -= simF.cols * M.lh;
+          const npF = flowPosAt(run, simF.n);
+          pi = npF.pi; off = npF.off;
+          if (simF.n < run.vpara.units.length) break;
+          continue;
+        }
+      }
     }
     const startCls = chunkClsFor(para, off);
     const ind = !/(cont|noind|head|title|endmark)/.test(startCls);
@@ -4917,6 +5026,18 @@ function syncFsSeg(){
     b.classList.toggle("on", (b.dataset.v === "on") === !!S.fullscreen));
 }
 syncFsSeg();
+function syncFlowSeg(){
+  document.querySelectorAll("#flowSeg button").forEach(b =>
+    b.classList.toggle("on", (b.dataset.v === "on") === flowOn()));
+}
+syncFlowSeg();
+$("#flowSeg").addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  S.flow = b.dataset.v === "on";
+  persist();
+  syncFlowSeg();
+  applyTypography(true);
+});
 $("#diagSeg").addEventListener("click", e => {
   const b = e.target.closest("button"); if (!b) return;
   try {
