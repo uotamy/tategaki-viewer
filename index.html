@@ -1001,7 +1001,7 @@
         })();
       </script><script src="https://adm.shinobi.jp/s/15f61b0238a01ce2999b531089637173"></script></div>
     </div>
-    <div id="buildId" aria-hidden="true">build 2026-11-23 20:42</div>
+    <div id="buildId" aria-hidden="true">build 2026-11-24 22:31</div>
   </div>
 
   <div id="narou" aria-label="なろうダウンローダー">
@@ -3641,7 +3641,13 @@ function renderWindow(){
    描いたページの文字範囲をはみ出し実測し、検出したら割り付けの
    見積もりを一段締めて（repairW / repairH）組み直す。締めは最大
    4段まで。話と文字設定が変われば修復は畳む（openEpisode /
-   applyTypography でリセット） */
+   applyTypography でリセット）。
+   2026-11-24 第91版：締めた段のまま固定される問題の修正。かつては
+   一度はみ出したら最大段まで締め上がったきり戻らず、話の残り全部が
+   「余白だらけ」になっていた。いまは、はみ出しを見た段を下限として
+   覚え（repairFloor）、実測が収まっている間は下限まで1段ずつ緩めて
+   組み直す。下限を覚えるので、緩める→はみ出す→締めるの往復には
+   ならず、必要最小の段に落ち着く */
 let renderAuditTimer = null, renderAuditBusy = false;
 function scheduleRenderAudit(){
   if (renderAuditTimer) clearTimeout(renderAuditTimer);
@@ -3665,10 +3671,25 @@ function auditRenderedPages(){
       if (tr.left - r2.left > 1.5) { spilled = true; break; }
     }
   });
-  if (!spilled) return;
   const level = S.repairLevel || 0;
+  if (!spilled) {
+    /* 締めた段で実測が収まっているなら、下限（はみ出しを見た段）
+       まで1段ずつ緩めて組み直す。すでに下限なら何もしない */
+    const floor = S.repairFloor || 0;
+    if (level <= floor) return;
+    renderAuditBusy = true;
+    S.repairLevel = level - 1;
+    repairW = S.repairLevel * M.lh;
+    repairH = S.repairLevel * (M.fs / 2);
+    S.cache.clear();
+    clearPrebuiltPages();
+    renderWindow();
+    renderAuditBusy = false;
+    return;
+  }
   if (level >= 4) return;
   renderAuditBusy = true;
+  S.repairFloor = level + 1;
   S.repairLevel = level + 1;
   repairW = S.repairLevel * M.lh;
   repairH = S.repairLevel * (M.fs / 2);
@@ -4143,7 +4164,7 @@ function moveOnePage(dir){
 }
 function openEpisode(i, pageSpec){
   S.ep = i;
-  S.repairLevel = 0; repairW = 0; repairH = 0;
+  S.repairLevel = 0; S.repairFloor = 0; repairW = 0; repairH = 0;
   const pages = paginate(i);
   S.page = pageSpec === "last" ? lastWindowStart(i)
                                : Math.max(0, Math.min(pageSpec || 0, Math.max(0, pages.length - 1)));
@@ -4774,7 +4795,7 @@ async function deleteCustomFont(id){
 function applyTypography(repaginate){
   /* 再割り付けのたびに文字幅キャッシュを作り直す（フォント読込完了後の実フォントで測り直すため） */
   if (repaginate) advGen++;
-  S.repairLevel = 0; repairW = 0; repairH = 0;
+  S.repairLevel = 0; S.repairFloor = 0; repairW = 0; repairH = 0;
   const savedPos = S.episodes.length ? currentPos() : { pi: 0, off: 0 };
   const savedEp = S.ep;
   stage.style.setProperty("--font", fontCss(S.font));
